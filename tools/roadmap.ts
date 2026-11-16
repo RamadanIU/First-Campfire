@@ -5,7 +5,7 @@
  *
  *   node tools/roadmap.ts next          — the next step to work on
  *   node tools/roadmap.ts status        — progress by stage
- *   node tools/roadmap.ts check         — consistency check (also runs in CI)
+ *   node tools/roadmap.ts check         — consistency check (part of `npm run check`)
  *   node tools/roadmap.ts done <id>     — mark a step finished (verifies evidence first)
  *   node tools/roadmap.ts shots <id>    — Markdown with the step's screenshots for the PR body
  */
