@@ -12,7 +12,25 @@ describe('parseParams', () => {
       scene: 'title',
       frame: 10,
       ui: false,
+      ticks: 0,
+      speed: 1,
     });
+  });
+
+  it('reads ticks and speed', () => {
+    expect(parseParams('?scene=clock&ticks=3130&speed=20')).toMatchObject({
+      scene: 'clock',
+      ticks: 3130,
+      speed: 20,
+    });
+    expect(parseParams('?speed=0').speed).toBe(0);
+  });
+
+  it('falls back to defaults for unknown speeds and bad tick counts', () => {
+    expect(parseParams('?speed=3').speed).toBe(DEFAULT_PARAMS.speed);
+    expect(parseParams('?speed=fast').speed).toBe(DEFAULT_PARAMS.speed);
+    expect(parseParams('?ticks=-5').ticks).toBe(0);
+    expect(parseParams('?ticks=12.5').ticks).toBe(0);
   });
 
   it('ignores malformed numbers instead of producing NaN', () => {
