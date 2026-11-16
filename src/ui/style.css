@@ -164,3 +164,135 @@ body {
 .journal-cause {
   color: #9aa6c4;
 }
+
+/* Sprite gallery (step 0.3). Each picture is a canvas of its exact size: never rescaled by CSS. */
+.gallery {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 16px 20px 32px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.gallery canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.gallery h1 {
+  margin: 0;
+  font-size: 22px;
+  color: #ffd27a;
+}
+
+.gallery h2 {
+  margin: 20px 0 8px;
+  font-size: 15px;
+  font-weight: normal;
+  color: #ffd27a;
+}
+
+.gallery-head p,
+.gallery .meta {
+  margin: 4px 0 0;
+  color: #9aa6c4;
+}
+
+.gallery .kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 24px;
+}
+
+.gallery .cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.sprite-card {
+  padding: 10px 12px;
+  background: rgba(241, 227, 196, 0.04);
+  border: 1px solid rgba(241, 227, 196, 0.14);
+  border-radius: 4px;
+}
+
+.sprite-card header span {
+  margin-left: 6px;
+  color: #9aa6c4;
+}
+
+.gallery .figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.gallery .figures.top {
+  align-items: flex-start;
+}
+
+.sprite-figure {
+  margin: 0;
+}
+
+.sprite-figure figcaption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #c9b48a;
+}
+
+.gallery .problems {
+  margin: 12px 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  color: #ffb4a0;
+  background: rgba(160, 40, 30, 0.25);
+  border: 1px solid rgba(255, 120, 100, 0.5);
+}
+
+.gallery .legend {
+  border-collapse: collapse;
+}
+
+.gallery .legend td {
+  padding: 2px 12px 2px 0;
+  color: #c9b48a;
+}
+
+.gallery .legend .symbol {
+  font-weight: bold;
+  color: #f1e3c4;
+}
+
+.gallery .swatch {
+  display: inline-block;
+  width: 18px;
+  height: 14px;
+  vertical-align: middle;
+  border: 1px solid rgba(241, 227, 196, 0.3);
+}
+
+.gallery .atlas canvas {
+  max-width: none;
+}
+
+/* ?ui=0 — pictures only. */
+.gallery.bare .gallery-head,
+.gallery.bare figcaption,
+.gallery.bare .meta,
+.gallery.bare h2,
+.gallery.bare .legend {
+  display: none;
+}
+
+.sprite-figure small {
+  font-size: 11px;
+  color: #9aa6c4;
+}

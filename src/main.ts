@@ -1,8 +1,6 @@
 import { parseParams } from './app/params.ts';
+import { PRESENTATION_FPS } from './app/scene.ts';
 import { DEFAULT_SCENE, SCENES } from './app/scenes.ts';
-
-/** Animation frames per second for presentation (not the simulation tick rate). */
-const FRAMES_PER_SECOND = 10;
 
 /**
  * Hook for automated checks (tools/screenshot.ts): `ready` flips to true once the
@@ -59,7 +57,7 @@ function start() {
     // Real time since the previous frame drives the scene's simulation (fixed-step game loop).
     scene.update?.(previous === null ? 0 : now - previous);
     previous = now;
-    hook.frame = Math.floor(((now - startedAt) / 1000) * FRAMES_PER_SECOND);
+    hook.frame = Math.floor(((now - startedAt) / 1000) * PRESENTATION_FPS);
     scene.render(hook.frame);
     hook.ready = true;
     requestAnimationFrame(loop);

@@ -1,6 +1,12 @@
 import type { LaunchParams } from './params.ts';
 
 /**
+ * Presentation clock: `render(frame)` receives frame numbers counted at this rate
+ * (frame 10 = one second after start). Animations convert it to time: frame × 1000 / rate ms.
+ */
+export const PRESENTATION_FPS = 10;
+
+/**
  * A scene owns the whole screen: the game itself, the title, the sprite gallery,
  * debug sandboxes. Scenes are picked with ?scene=<name>, which is also how the
  * screenshot tool reaches every state of the game.

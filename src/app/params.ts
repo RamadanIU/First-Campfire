@@ -2,6 +2,7 @@ import { isSpeed, type Speed } from './loop.ts';
 
 /**
  * Launch parameters read from the page URL (?seed=42&scene=clock&ticks=3000&speed=5&frame=10&ui=0).
+ * Scene-specific ones: `sprite=` (the gallery shows one sprite large).
  * They make every screen reproducible: the screenshot tool and bug reports
  * use the same URL to get the same picture.
  */
@@ -18,6 +19,8 @@ export interface LaunchParams {
   ticks: number;
   /** Initial game speed: 0 (pause), 1, 2, 5 or 20. */
   speed: Speed;
+  /** Gallery: show this one sprite large (by name) instead of all sprites. */
+  sprite: string | null;
 }
 
 export const DEFAULT_PARAMS: LaunchParams = {
@@ -27,6 +30,7 @@ export const DEFAULT_PARAMS: LaunchParams = {
   ui: true,
   ticks: 0,
   speed: 1,
+  sprite: null,
 };
 
 function parseInteger(raw: string | null, min: number): number | null {
@@ -43,6 +47,7 @@ function parseSpeed(raw: string | null): Speed | null {
 export function parseParams(search: string): LaunchParams {
   const query = new URLSearchParams(search);
   const scene = query.get('scene')?.trim();
+  const sprite = query.get('sprite')?.trim();
   return {
     seed: parseInteger(query.get('seed'), 0) ?? DEFAULT_PARAMS.seed,
     scene: scene ? scene : DEFAULT_PARAMS.scene,
@@ -50,5 +55,6 @@ export function parseParams(search: string): LaunchParams {
     ui: query.get('ui') !== '0',
     ticks: parseInteger(query.get('ticks'), 0) ?? DEFAULT_PARAMS.ticks,
     speed: parseSpeed(query.get('speed')) ?? DEFAULT_PARAMS.speed,
+    sprite: sprite ? sprite : DEFAULT_PARAMS.sprite,
   };
 }

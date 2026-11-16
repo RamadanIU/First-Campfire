@@ -40,6 +40,32 @@ const FORBIDDEN: { pattern: RegExp; why: string }[] = [
   { pattern: /from\s+['"]node:/, why: 'симуляция не зависит от Node — она работает и в браузере' },
 ];
 
+/**
+ * Graphics as code (src/art) depends only on itself: sprite descriptions, palette, rasterizer
+ * and atlas are pure functions that run in Node tests and in the browser alike. Drawing on a
+ * canvas belongs to src/render.
+ */
+const ART_FORBIDDEN: { pattern: RegExp; why: string }[] = [
+  { pattern: /\bMath\.random\b/, why: 'спрайт одинаков при каждом запуске' },
+  {
+    pattern: /\bDate\.now\b|\bnew Date\b|\bperformance\.now\b/,
+    why: 'спрайт не зависит от часов',
+  },
+  {
+    pattern: /\b(window|document|navigator|localStorage)\b/,
+    why: 'src/art работает и без браузера (тесты в Node); холст — дело src/render',
+  },
+  {
+    pattern: /\b(HTMLCanvasElement|CanvasRenderingContext2D|OffscreenCanvas|ImageData)\b/,
+    why: 'src/art работает и без браузера; холст — дело src/render',
+  },
+  {
+    pattern: /from\s+['"][^'"]*\/(sim|data|render|ui|app)\//,
+    why: 'src/art зависит только от себя (направление: app → render → art)',
+  },
+  { pattern: /from\s+['"]node:/, why: 'src/art работает и в браузере' },
+];
+
 function listSources(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).flatMap((name) => {
@@ -67,6 +93,29 @@ describe('архитектурные правила', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('графика как код (src/art) — чистые функции, без браузера и чужих модулей', () => {
+    const violations: string[] = [];
+    for (const file of listSources(join(ROOT, 'src/art'))) {
+      const source = stripComments(readFileSync(file, 'utf8'));
+      for (const { pattern, why } of ART_FORBIDDEN) {
+        const match = pattern.exec(source);
+        if (match) violations.push(`${relative(ROOT, file)}: «${match[0]}» — ${why}`);
+      }
+    }
+    expect(violations).toEqual([]);
+    for (const bad of [
+      "document.createElement('canvas')",
+      'new ImageData(pixels, 1, 1)',
+      "import { World } from '../sim/world.ts'",
+      "import { draw } from '../render/spriteSheet.ts'",
+    ]) {
+      expect(
+        ART_FORBIDDEN.some(({ pattern }) => pattern.test(bad)),
+        bad,
+      ).toBe(true);
+    }
   });
 
   it('правила ловят нарушения и не мешают разрешённому', () => {

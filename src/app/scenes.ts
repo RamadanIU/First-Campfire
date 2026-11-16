@@ -1,4 +1,5 @@
 import { createClockScene } from './clockScene.ts';
+import { createGalleryScene } from './galleryScene.ts';
 import type { SceneFactory } from './scene.ts';
 import { createTitleScene } from './titleScene.ts';
 
@@ -11,6 +12,8 @@ export const SCENES: Record<string, SceneFactory> = {
   title: createTitleScene,
   /** Debug: simulation core — calendar, sky by time of day, speed, event journal (step 0.2). */
   clock: createClockScene,
+  /** Debug: every sprite large and at natural size; &sprite=<name> — one sprite in detail (step 0.3). */
+  gallery: createGalleryScene,
 };
 
 export const DEFAULT_SCENE = 'title';
