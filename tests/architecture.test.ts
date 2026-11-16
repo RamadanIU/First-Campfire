@@ -19,6 +19,15 @@ const FORBIDDEN: { pattern: RegExp; why: string }[] = [
     why: 'время симуляции — это тики, а не часы компьютера',
   },
   { pattern: /\bperformance\.now\b/, why: 'время симуляции — это тики, а не часы компьютера' },
+  {
+    pattern:
+      /\bMath\.(?:a?sinh?|a?cosh?|a?tanh?|atan2|exp|expm1|log|log1p|log2|log10|pow|cbrt|hypot)\b/,
+    why: 'результат различается между браузерами — используй src/sim/math.ts',
+  },
+  {
+    pattern: /\*\*/,
+    why: 'возведение в степень неточно и различается между браузерами — умножай явно',
+  },
   { pattern: /\b(window|document|navigator|localStorage)\b/, why: 'симуляция не знает о браузере' },
   {
     pattern: /\bsetTimeout\b|\bsetInterval\b|\brequestAnimationFrame\b/,
@@ -58,5 +67,32 @@ describe('архитектурные правила', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('правила ловят нарушения и не мешают разрешённому', () => {
+    const caught = (source: string) =>
+      FORBIDDEN.some(({ pattern }) => pattern.test(stripComments(source)));
+    for (const bad of [
+      'Math.random()',
+      'Date.now()',
+      'Math.sin(a)',
+      'Math.atan2(y, x)',
+      'Math.log(x)',
+      'Math.pow(2, 3)',
+      'x ** 2',
+      "import { draw } from '../render/draw.ts'",
+    ]) {
+      expect(caught(bad), bad).toBe(true);
+    }
+    for (const good of [
+      'Math.sqrt(x)',
+      'Math.floor(x)',
+      'Math.imul(a, b)',
+      'Math.max(a, b)',
+      '/** Math.log is not allowed here */',
+      '// x ** 2 in a comment',
+    ]) {
+      expect(caught(good), good).toBe(false);
+    }
   });
 });
