@@ -14,7 +14,14 @@ describe('parseParams', () => {
       ui: false,
       ticks: 0,
       speed: 1,
+      sprite: null,
     });
+  });
+
+  it('reads the gallery sprite name', () => {
+    expect(parseParams('?scene=gallery&sprite=villager').sprite).toBe('villager');
+    expect(parseParams('?scene=gallery&sprite=%20tree%20').sprite).toBe('tree');
+    expect(parseParams('?scene=gallery&sprite=').sprite).toBeNull();
   });
 
   it('reads ticks and speed', () => {
