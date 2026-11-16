@@ -1,0 +1,31 @@
+{
+  "name": "first-campfire",
+  "version": "0.1.0",
+  "private": true,
+  "description": "«Первый костёр» — автономный 2D pixel-art симулятор эволюции цивилизации",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "roadmap": "node tools/roadmap.ts",
+    "next": "node tools/roadmap.ts next",
+    "shot": "node tools/screenshot.ts",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run roadmap -- check && npm run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}
