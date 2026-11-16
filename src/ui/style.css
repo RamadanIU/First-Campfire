@@ -50,3 +50,117 @@ body {
   font-size: 12px;
   color: #7f8aa8;
 }
+
+/* Debug HUD of the clock scene (step 0.2). A proper observer HUD arrives in stage 1. */
+.hud,
+.journal {
+  position: absolute;
+  left: 12px;
+  padding: 10px 12px;
+  max-width: calc(100% - 48px);
+  background: rgba(11, 16, 38, 0.72);
+  border: 1px solid rgba(241, 227, 196, 0.18);
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.hud {
+  top: 12px;
+  width: 340px;
+}
+
+.hud-date {
+  font-size: 16px;
+  color: #ffd27a;
+}
+
+.hud-time b {
+  font-size: 22px;
+  color: #f1e3c4;
+}
+
+.hud-meta,
+.hud-keys {
+  color: #9aa6c4;
+  font-size: 12px;
+}
+
+.hud-speed b {
+  color: #ffd27a;
+}
+
+.phasebar {
+  position: relative;
+  display: flex;
+  height: 10px;
+  margin: 6px 0 4px;
+  overflow: hidden;
+}
+
+.phase-legend {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #9aa6c4;
+}
+
+.phase-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+}
+
+.phase-dawn {
+  background: #e2918c;
+}
+
+.phase-day {
+  background: #9fcdee;
+}
+
+.phase-dusk {
+  background: #e2775a;
+}
+
+.phase-night {
+  background: #3a4a8a;
+}
+
+.phasebar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(11, 16, 38, 0.9);
+}
+
+.journal {
+  bottom: 12px;
+  width: 560px;
+  font-size: 12px;
+}
+
+.journal-title {
+  color: #ffd27a;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.journal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.journal-meta {
+  color: #7f8aa8;
+}
+
+.journal-cause {
+  color: #9aa6c4;
+}

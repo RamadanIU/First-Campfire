@@ -54,7 +54,11 @@ function start() {
 
   window.addEventListener('resize', resize);
   const startedAt = performance.now();
+  let previous: number | null = null;
   const loop = (now: number) => {
+    // Real time since the previous frame drives the scene's simulation (fixed-step game loop).
+    scene.update?.(previous === null ? 0 : now - previous);
+    previous = now;
     hook.frame = Math.floor(((now - startedAt) / 1000) * FRAMES_PER_SECOND);
     scene.render(hook.frame);
     hook.ready = true;
