@@ -19,6 +19,7 @@
     "roadmap": "node tools/roadmap.ts",
     "next": "node tools/roadmap.ts next",
     "shot": "node tools/screenshot.ts",
+    "bench": "node tools/bench.ts",
     "check": "npm run lint && npm run typecheck && npm run test && npm run roadmap -- check && npm run build"
   },
   "devDependencies": {
