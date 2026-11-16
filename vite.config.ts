@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
-// base: './' — сборка работает из любой папки (GitHub Pages, локальный файл-сервер).
+// base: './' — сборка работает из любой папки (локальный файл-сервер, скриншотер).
 export default defineConfig({
   base: './',
   define: {

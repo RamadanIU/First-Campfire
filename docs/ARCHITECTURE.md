@@ -15,8 +15,8 @@
 | Тесты                   | Vitest                                                    | `*.test.ts` рядом с кодом, сценарные — в `tests/`                       |
 | Линтер и форматирование | Biome                                                     | `npm run lint`, `npm run format`                                        |
 | Скриншоты               | Playwright + Chromium (предустановлены в облачной сессии) | `tools/screenshot.ts`; в `package.json` не добавлять                    |
-| CI                      | GitHub Actions                                            | `.github/workflows/ci.yml` — те же проверки, что `npm run check`        |
-| Публикация              | GitHub Pages                                              | `.github/workflows/deploy.yml`, после слияния в `main`                  |
+| Проверки                | `npm run check` в сессии                                  | GitHub Actions не используется (ADR-011)                                |
+| Публикация              | Нет                                                       | GitHub Pages не используется (ADR-011)                                  |
 
 Библиотек времени выполнения нет, и по умолчанию они не добавляются. Нужна зависимость — запись в `DECISIONS.md`.
 
