@@ -29,6 +29,7 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 const KIND_TITLE: Record<SpriteKind, string> = {
   tile: 'Тайлы',
   object: 'Объекты',
+  item: 'Предметы',
   character: 'Персонажи',
   icon: 'Значки',
 };
@@ -36,6 +37,7 @@ const KIND_TITLE: Record<SpriteKind, string> = {
 const KIND_NAME: Record<SpriteKind, string> = {
   tile: 'тайл',
   object: 'объект',
+  item: 'предмет',
   character: 'персонаж',
   icon: 'значок',
 };
