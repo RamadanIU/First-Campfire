@@ -3,14 +3,20 @@ import { SPRITES } from '../art/registry.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { prepareTerrain, TERRAIN_LOOKS } from '../art/terrain.ts';
 import { drawPicture, pixelScale, screenToWorld, ZOOMS } from '../render/camera.ts';
-import { drawChosen, drawPath, drawRefused } from '../render/debugOverlay.ts';
+import {
+  drawChosen,
+  drawNeeds,
+  drawPath,
+  drawRefused,
+  NEED_BARS_HEIGHT,
+} from '../render/debugOverlay.ts';
 import { createMapRenderer } from '../render/mapRenderer.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
 import { TIME } from '../sim/calendar.ts';
 import { findCampSite } from '../sim/mapgen.ts';
 import type { PathFailure, Tile } from '../sim/path.ts';
-import { findVillager, orderWalk } from '../sim/villagers.ts';
+import { findVillager, orderWalk, type Villager } from '../sim/villagers.ts';
 import { stepWorld, type World } from '../sim/world.ts';
 import { bindCameraInput, type CameraControl, createCameraControl } from './cameraControl.ts';
 import { bindSpeedKeys } from './controls.ts';
@@ -35,6 +41,8 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
  *   `debug=1` (step 1.3) — paths of the villagers are drawn as lines; a click on a villager
  *   chooses it, a click on a tile sends the chosen one there (the first by default). A refused
  *   order is marked with a red cross for a moment; the panel of the world says why.
+ *   `debug=needs` (step 1.4) — besides, bars of satiety, thirst and health over every head, and
+ *   for the panel a line per villager: what it is doing, its scales; the dead — of what they died.
  */
 export interface MapView {
   scene: Scene;
@@ -42,12 +50,42 @@ export interface MapView {
   camera: CameraControl;
   /** Debug mode: what the last click did, for the panel (null — debug is off). */
   debugNote(): string | null;
+  /** `debug=needs`: a line per villager for the panel — doing what, how fed (null — off). */
+  needsNotes(): string[] | null;
 }
 
 /** How long a refused order stays marked, ms of presentation time. */
 const REFUSED_MS = 2500;
 
 const WHO = { male: 'мужчина', female: 'женщина' } as const;
+const WALKS_TO = {
+  wander: 'гуляет у стоянки',
+  order: 'идёт, куда послали',
+  eat: 'идёт к малине',
+  drink: 'идёт к воде',
+} as const;
+const DIED_OF = { hunger: 'голод', thirst: 'жажда' } as const;
+
+/** What a villager is doing, in words (`debug=needs`). */
+export function doingOf(villager: Villager): string {
+  const action = villager.action;
+  switch (action.kind) {
+    case 'idle':
+      return 'отдыхает';
+    case 'walk':
+      return WALKS_TO[action.purpose];
+    case 'eat':
+      return 'ест ягоды';
+    case 'drink':
+      return 'пьёт';
+  }
+}
+
+/** A line of the panel for a villager (`debug=needs`): doing what, its scales. */
+export function needsLine(villager: Villager): string {
+  const round = (value: number) => Math.round(value);
+  return `${WHO[villager.sex]} (житель ${villager.id}): ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · здоровье ${round(villager.health)}`;
+}
 const WHY: Record<PathFailure, string> = {
   blocked: 'туда нельзя встать — вода, дерево, куст или там другой житель',
   unreachable: 'туда не дойти — путь отрезан водой',
@@ -104,6 +142,7 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
 
   // Debug: the chosen villager, the last refused order, what the last click did.
   const debug = params.debug.length > 0;
+  const needsMode = params.debug.includes('needs');
   let chosen = 1;
   let refused: { tile: Tile; untilMs: number } | null = null;
   /** What the last click did; null — no click yet (then the panel tells how to click). */
@@ -188,8 +227,20 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
           : villager.action.path;
       drawPath(ctx, view, pose, ahead, villager.action.goal, people);
     }
+    if (needsMode) {
+      for (const pose of poses) {
+        const villager = findVillager(world, pose.id);
+        if (!villager) continue;
+        const top = pose.y - sheet.entry(pose.sprite).anchor.y;
+        drawNeeds(ctx, view, pose.x, top, { ...villager.needs, health: villager.health });
+      }
+    }
     const mark = poses.find((pose) => pose.id === chosen);
-    if (mark) drawChosen(ctx, view, mark.x, mark.y - sheet.entry(mark.sprite).anchor.y);
+    if (mark) {
+      // Over the bars of needs, if they are shown.
+      const top = mark.y - sheet.entry(mark.sprite).anchor.y - (needsMode ? NEED_BARS_HEIGHT + 1 : 0);
+      drawChosen(ctx, view, mark.x, top);
+    }
     if (refused && nowMs < refused.untilMs) drawRefused(ctx, view, refused.tile);
   };
 
@@ -273,5 +324,23 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
       drawPicture(screen, buffer, layout);
     },
   };
-  return { scene, loop, camera, debugNote: () => (debug ? (note ?? defaultNote()) : null) };
+  const needsNotes = (): string[] => {
+    const lines = world.villagers.list.map(needsLine);
+    for (const event of world.events.list) {
+      if (event.type !== 'villager_died') continue;
+      const day = Math.floor(event.tick / TIME.ticksPerDay) + 1;
+      const died = event.sex === 'male' ? 'умер' : 'умерла';
+      lines.push(
+        `${WHO[event.sex]} (житель ${event.villager}): ${died} на ${day}-й день — ${DIED_OF[event.reason]}`,
+      );
+    }
+    return lines;
+  };
+  return {
+    scene,
+    loop,
+    camera,
+    debugNote: () => (debug ? (note ?? defaultNote()) : null),
+    needsNotes: () => (needsMode ? needsNotes() : null),
+  };
 }

@@ -104,6 +104,8 @@ interface VillagerState {
   action: string;
   goal: { x: number; y: number } | null;
   walked: number;
+  needs: { food: number; water: number };
+  health: number;
 }
 
 interface Download {
@@ -800,6 +802,42 @@ try {
       `пошли и дошли: мужчина в (34, 29), женщина в (26, 29); пройдено ${walked} тайла`,
     );
   });
+
+  // Step 1.4: needs. With debug=needs the panel tells what each villager is doing and how fed it
+  // is; at ×20 the scales fall and the two go to drink and to eat on their own.
+  await scenario(
+    'Нужды: debug=needs — шкалы и строки панели, жители сами едят и пьют',
+    async (page) => {
+      await open(page, '?scene=world&seed=1&debug=needs&speed=20&zoom=2');
+      const people = () => page.evaluate<VillagerState[]>('window.__fc.world.villagers()');
+      const panel = () => text(page, '.world-panel-needs');
+      const first = await panel();
+      check(
+        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · здоровье 100/.test(first) &&
+          first.includes('женщина (житель 2)'),
+        `панель: ${first}`,
+      );
+      const seen = new Set<string>();
+      let lowest = 100;
+      for (let i = 0; i < 80 && !(seen.has('eat') && seen.has('drink')); i++) {
+        await page.waitForTimeout(100);
+        for (const v of await people()) {
+          seen.add(v.action);
+          lowest = Math.min(lowest, v.needs.food, v.needs.water);
+        }
+      }
+      const tick = await page.evaluate<number>('window.__fc.world.tick');
+      check(
+        seen.has('eat') && seen.has('drink'),
+        `к тику ${tick} сами пошли есть и пить (действия: ${[...seen].join(', ')}), меньше всего на шкалах — ${lowest.toFixed(0)}`,
+      );
+      const later = await panel();
+      check(
+        /ест ягоды|пьёт|идёт к малине|идёт к воде|отдыхает|гуляет/.test(later),
+        `панель: ${later}`,
+      );
+    },
+  );
 } finally {
   await browser.close();
   server.close();

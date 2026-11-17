@@ -75,6 +75,8 @@ export function createWorldScene(context: SceneContext): Scene {
         action: villager.action.kind,
         goal: villager.action.kind === 'walk' ? { ...villager.action.goal } : null,
         walked: villager.walked,
+        needs: { ...villager.needs },
+        health: villager.health,
       })),
   };
 
@@ -95,12 +97,13 @@ export function createWorldScene(context: SceneContext): Scene {
 
 /**
  * Panel of the world: the date, the zoom, how it is saved, «Save to file», «To the menu»; with
- * `debug=1` — what the last debug click did.
+ * `debug=1` — what the last debug click did; with `debug=needs` — what each villager is doing and
+ * its scales, and who died of what.
  */
 function createWorldPanel(
   ui: HTMLElement,
   world: World,
-  { loop, camera, debugNote }: MapView,
+  { loop, camera, debugNote, needsNotes }: MapView,
   autosave: Autosave,
   origin: 'url' | 'saved' | 'new',
   warnings: LoadWarning[],
@@ -118,6 +121,8 @@ function createWorldPanel(
   view.className = 'world-panel-camera';
   const debugLine = document.createElement('div');
   debugLine.className = 'world-panel-debug';
+  const needsBlock = document.createElement('div');
+  needsBlock.className = 'world-panel-debug world-panel-needs';
   const status = document.createElement('div');
   status.className = 'world-panel-status';
   const hint = document.createElement('div');
@@ -143,7 +148,7 @@ function createWorldPanel(
   toMenu.type = 'button';
   toMenu.textContent = 'В меню';
   buttons.append(toFile, toMenu);
-  panel.append(title, date, clock, view, debugLine, status, hint, notes, buttons);
+  panel.append(title, date, clock, view, debugLine, needsBlock, status, hint, notes, buttons);
   ui.append(panel);
 
   const note = (text: string, kind: 'ok' | 'warn') => {
@@ -176,8 +181,22 @@ function createWorldPanel(
   let shownView = '';
   let shownDebug = '';
   debugLine.hidden = debugNote() === null;
+  needsBlock.hidden = needsNotes() === null;
+  let shownNeeds = '';
   return {
     update() {
+      const needsLines = needsNotes();
+      const needsText = needsLines?.join('\n') ?? '';
+      if (needsText !== shownNeeds) {
+        shownNeeds = needsText;
+        needsBlock.replaceChildren(
+          ...(needsLines ?? []).map((line) => {
+            const row = document.createElement('div');
+            row.textContent = line;
+            return row;
+          }),
+        );
+      }
       const debugText = debugNote();
       if (debugText !== null && debugText !== shownDebug) {
         shownDebug = debugText;
