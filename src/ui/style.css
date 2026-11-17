@@ -308,3 +308,85 @@ body {
   font-size: 11px;
   color: #9aa6c4;
 }
+
+/* Debug scene `palette` (step 0.4): ramps of the master palette and recolouring of people. */
+.palette .ramps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 10px 24px;
+  margin-top: 14px;
+}
+
+.palette .ramp {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.palette .ramp-name {
+  width: 130px;
+  flex: none;
+}
+
+.palette .ramp-name b {
+  display: block;
+  color: #f1e3c4;
+}
+
+.palette .ramp-name span {
+  font-size: 11px;
+  color: #9aa6c4;
+}
+
+.palette .swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.palette .swatch-card {
+  margin: 0;
+  width: 46px;
+}
+
+.palette .swatch-card i {
+  display: block;
+  height: 30px;
+  border: 1px solid rgba(241, 227, 196, 0.25);
+}
+
+.palette .swatch-card figcaption {
+  font-size: 10px;
+  line-height: 1.25;
+  color: #9aa6c4;
+}
+
+.palette .swatch-card b {
+  color: #c9b48a;
+  font-weight: normal;
+}
+
+.palette .swatch-card.unused b {
+  color: #ffb4a0;
+}
+
+.palette .recolour table {
+  border-collapse: collapse;
+}
+
+.palette .recolour th {
+  padding: 2px 8px;
+  font-weight: normal;
+  font-size: 12px;
+  color: #c9b48a;
+  text-align: left;
+}
+
+.palette .recolour td {
+  padding: 2px 4px;
+}
+
+.gallery.bare .ramp-name,
+.gallery.bare .swatch-card figcaption,
+.gallery.bare .recolour th {
+  display: none;
+}

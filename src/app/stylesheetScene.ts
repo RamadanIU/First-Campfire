@@ -20,7 +20,7 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
  */
 
 /** The map, 30×18 tiles: g grass, d dirt, s sand, w shallow water, D deep water. */
-const MAP = [
+export const MAP = [
   'gggggggggggggggggsswDDDwgggggg',
   'gggggggggggggggggswwDDwwgggggg',
   'ggggggggggggggggsswDDDwggggggg',
@@ -40,7 +40,7 @@ const MAP = [
   'gggggggggggggggggggswwDDwwgggg',
   'gggggggggggggggggggsswDDDwgggg',
 ];
-const GROUND: Record<string, string> = {
+export const GROUND: Record<string, string> = {
   g: 'grass',
   d: 'dirt',
   s: 'sand',
@@ -53,7 +53,7 @@ const HEIGHT = MAP.length * TILE_SIZE;
 const FOCUS = { x: 168, y: 140 };
 
 /** Everything that stands still. Trees get different phases so they do not sway in step. */
-const STILL: Placement[] = [
+export const STILL: Placement[] = [
   // Forest in the north-west.
   { sprite: 'tree', x: 26, y: 46, phase: 0 },
   { sprite: 'tree', x: 70, y: 34, phase: 900 },
@@ -111,14 +111,14 @@ const STILL: Placement[] = [
   { sprite: 'grass_tuft', x: 250, y: 250, phase: 200 },
 ];
 
-const MAN: Placement = { sprite: 'man', x: 148, y: 152, animation: 'idle_e' };
-const MAN_THINKS: Placement = { sprite: 'bubble_food', x: 151, y: 131, over: true };
+export const MAN: Placement = { sprite: 'man', x: 148, y: 152, animation: 'idle_e' };
+export const MAN_THINKS: Placement = { sprite: 'bubble_food', x: 151, y: 131, over: true };
 /** The woman: dark hair, tanned skin — the palette swaps of the same sprite. */
 const WOMAN_LOOK = { skin_light: 'skin_tan', hair_brown: 'hair_black' } as const;
 
 /** The woman's errand, ms: to the river (thirsty) — drinks — back — rests by the fire. */
 const ERRAND = { go: 1500, drink: 2000, back: 1500, rest: 2000 };
-const ERRAND_MS = ERRAND.go + ERRAND.drink + ERRAND.back + ERRAND.rest;
+export const ERRAND_MS = ERRAND.go + ERRAND.drink + ERRAND.back + ERRAND.rest;
 const CAMP_X = 192;
 const RIVER_X = 252;
 const PATH_Y = 158;

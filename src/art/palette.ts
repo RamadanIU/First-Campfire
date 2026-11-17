@@ -6,7 +6,7 @@
  * Recolouring (skin tone, hair, season, dye) swaps whole ramps: `{ skin_light: 'skin_dark' }`
  * draws every `skin_light.N` pixel as `skin_dark.N`. Swapped ramps must have the same length.
  *
- * This is the master palette of GDD §10.1 (step 0.4): 68 colours of the world, one translucent
+ * This is the master palette of GDD §10.1 (step 0.4): 69 colours of the world, one translucent
  * shadow colour and 3 service colours of debug screens. See docs/ART.md for what each ramp is for.
  */
 

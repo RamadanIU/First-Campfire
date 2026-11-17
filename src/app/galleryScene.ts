@@ -5,6 +5,7 @@ import {
   frameDurations,
   type SpriteDef,
   type SpriteKind,
+  shadowOrigin,
   usedRamps,
   validateSprite,
   validateSpriteSet,
@@ -105,7 +106,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
   const background = color(palette, 'ui', 0);
   const checkerDark = color(palette, 'ui', 1);
   const checkerLight = color(palette, 'ui', 2);
-  const marker = color(palette, 'ui', 3);
+  const marker = color(palette, 'bone', 2);
 
   // Validate everything first: problems go to the console (the screenshot tool fails on them)
   // and onto the page; broken sprites are left out so the rest can still be inspected.
@@ -160,10 +161,23 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
   function figure(def: SpriteDef, options: ViewOptions, caption: string): HTMLElement {
     const { scale, repeat = 1 } = options;
     const pad = scale; // one sprite pixel of checker around the picture
+    // The picture covers the sprite and its shadow (which may stick out below and aside).
+    const shadow = def.shadow ? shadowOrigin(def.shadow) : null;
+    const box = {
+      left: Math.min(0, shadow ? def.anchor.x + shadow.x : 0),
+      top: Math.min(0, shadow ? def.anchor.y + shadow.y : 0),
+      right: Math.max(def.width * repeat, shadow ? def.anchor.x + shadow.x + def.shadow!.width : 0),
+      bottom: Math.max(
+        def.height * repeat,
+        shadow ? def.anchor.y + shadow.y + def.shadow!.height : 0,
+      ),
+    };
+    const originX = pad - box.left * scale;
+    const originY = pad - box.top * scale;
     const node = element('figure', 'sprite-figure');
     const view = element('canvas');
-    view.width = def.width * repeat * scale + pad * 2;
-    view.height = def.height * repeat * scale + pad * 2;
+    view.width = (box.right - box.left) * scale + pad * 2;
+    view.height = (box.bottom - box.top) * scale + pad * 2;
     const ctx = view.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
     // Checker cells are one sprite pixel at ×4 and more, never smaller than 4 screen pixels.
@@ -175,13 +189,22 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
       draw(timeMs) {
         ctx.fillStyle = pattern;
         ctx.fillRect(0, 0, view.width, view.height);
+        sheet.drawShadow(
+          ctx,
+          def.name,
+          originX + def.anchor.x * scale,
+          originY + def.anchor.y * scale,
+          {
+            scale,
+          },
+        );
         for (let row = 0; row < repeat; row++) {
           for (let col = 0; col < repeat; col++) {
             sheet.draw(
               ctx,
               def.name,
-              pad + (col * def.width + def.anchor.x) * scale,
-              pad + (row * def.height + def.anchor.y) * scale,
+              originX + (col * def.width + def.anchor.x) * scale,
+              originY + (row * def.height + def.anchor.y) * scale,
               {
                 ...(options.animation === undefined ? {} : { animation: options.animation }),
                 ...(options.frame === undefined ? { timeMs } : { frame: options.frame }),
@@ -193,8 +216,8 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
         }
         if (options.anchor) {
           // A thin crosshair on the anchor point, with a dark edge to stand out on any colour.
-          const x = pad + def.anchor.x * scale;
-          const y = pad + def.anchor.y * scale;
+          const x = originX + def.anchor.x * scale;
+          const y = originY + def.anchor.y * scale;
           const arm = Math.max(3, Math.round(scale * 1.5));
           const thick = Math.max(1, Math.floor(scale / 6));
           const half = Math.floor(thick / 2);
@@ -242,8 +265,12 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
         figure(def, { scale: 2, repeat: TILE_REPEAT }, `${TILE_REPEAT}×${TILE_REPEAT}, ×2`),
       );
     }
+    // The other animations (states, directions) — smaller, so the card stays compact.
+    for (const name of Object.keys(def.animations).slice(1)) {
+      row.append(figure(def, { scale: 2, animation: name }, `${escapeHtml(name)}, ×2`));
+    }
     for (const [name, swap] of Object.entries(def.variants ?? {})) {
-      row.append(figure(def, { scale: 4, swap }, `${escapeHtml(name)}, ×4`));
+      row.append(figure(def, { scale: 2, swap }, `${escapeHtml(name)}, ×2`));
     }
     node.append(row, element('p', 'meta', escapeHtml(animationSummary(def))));
     return node;

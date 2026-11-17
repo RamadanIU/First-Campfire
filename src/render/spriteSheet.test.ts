@@ -86,14 +86,17 @@ const TREE: SpriteDef = {
 function recorder() {
   const calls: number[][] = [];
   const sources: unknown[] = [];
+  const alphas: number[] = [];
   const ctx = {
     imageSmoothingEnabled: true,
+    globalAlpha: 1,
     drawImage: (source: unknown, ...args: number[]) => {
       sources.push(source);
       calls.push(args);
+      alphas.push(ctx.globalAlpha);
     },
   };
-  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls, sources, raw: ctx };
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls, sources, alphas, raw: ctx };
 }
 
 describe('лист спрайтов', () => {
@@ -165,5 +168,30 @@ describe('лист спрайтов', () => {
     expect(() => sheet.draw(ctx, 'person', 0, 0, { animation: 'walk' })).toThrow(
       'У спрайта «person» нет анимации «walk»',
     );
+  });
+
+  it('тень: рисуется так, что точка привязки встаёт в (x, y); прозрачность — из палитры', () => {
+    const glass = createPalette([
+      { name: 'red', title: '', colors: ['#400000', '#ff0000'] },
+      { name: 'gray', title: '', colors: ['#202020', '#808080'] },
+      { name: 'shadow', title: '', colors: ['#101020'], alpha: 0.25 },
+    ]);
+    const sheet = createSpriteSheet(
+      [{ ...PERSON, shadow: { width: 4, height: 2, x: 1 } }, TREE],
+      glass,
+    );
+    expect(sheet.shadowOpacity).toBeCloseTo(64 / 255);
+    const { ctx, calls, alphas, sources, raw } = recorder();
+    expect(sheet.drawShadow(ctx, 'person', 100, 50, { scale: 2 })).toBe(true);
+    const { rect } = sheet.entry('person').shadow!;
+    // Origin of the 4×2 ellipse: anchor shifted by (1 − 2, 0 − 1) sprite pixels.
+    expect(calls[0]).toEqual([rect.x, rect.y, 4, 2, 100 - 2, 50 - 2, 8, 4]);
+    expect(sources[0]).toBe(sheet.canvas);
+    expect(alphas[0]).toBeCloseTo(64 / 255);
+    expect(raw.globalAlpha).toBe(1); // restored
+    sheet.drawShadow(ctx, 'person', 0, 0, { opaque: true });
+    expect(alphas[1]).toBe(1);
+    expect(sheet.drawShadow(ctx, 'tree', 0, 0)).toBe(false);
+    expect(calls).toHaveLength(2);
   });
 });
