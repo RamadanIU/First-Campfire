@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { checkDataRefs } from '../src/app/dataRefs.ts';
-import { balanceGroups, resourceGroups, terrainRows } from '../src/app/dataScene.ts';
+import { balanceGroups, objectRows, resourceGroups, terrainRows } from '../src/app/dataScene.ts';
 import { SPRITES } from '../src/art/registry.ts';
 import { TERRAIN_LOOKS } from '../src/art/terrain.ts';
 import { DATA, RAW_TABLES } from '../src/data/index.ts';
@@ -17,8 +17,14 @@ import { loadTables, type RawTables } from '../src/data/tables.ts';
 type Json = Record<string, unknown>;
 
 /** A copy of the real tables with some change. */
-function tablesWith(change: (tables: { resources: Json[]; terrain: Json[] }) => void) {
-  const copy = structuredClone(RAW_TABLES) as { resources: Json[]; terrain: Json[] };
+function tablesWith(
+  change: (tables: { resources: Json[]; terrain: Json[]; objects: Json[] }) => void,
+) {
+  const copy = structuredClone(RAW_TABLES) as {
+    resources: Json[];
+    terrain: Json[];
+    objects: Json[];
+  };
   change(copy);
   return loadTables(copy as unknown as RawTables);
 }
@@ -26,7 +32,39 @@ function tablesWith(change: (tables: { resources: Json[]; terrain: Json[] }) => 
 describe('таблицы данных целиком', () => {
   it('ссылки на спрайты и виды земли существуют', () => {
     expect(checkDataRefs(DATA).map(formatIssue)).toEqual([]);
-    expect(DATA.external.length).toBe(DATA.resources.records.length + DATA.terrain.records.length);
+    expect(DATA.external.length).toBe(
+      DATA.resources.records.length + DATA.terrain.records.length + DATA.objects.records.length,
+    );
+  });
+
+  it('объект карты — спрайт вида «объект»; несколько состояний — анимации спрайта', () => {
+    const sprites = new Map(SPRITES.map((sprite) => [sprite.name, sprite]));
+    for (const def of DATA.objects.records) {
+      const sprite = sprites.get(def.sprite)!;
+      expect(sprite.kind, def.id).toBe('object');
+      // A state is shown by the animation of the same name; one state may use the default one.
+      if (def.states.length > 1) {
+        for (const state of def.states)
+          expect(Object.keys(sprite.animations), def.id).toContain(state);
+      }
+    }
+  });
+
+  it('ссылка объекта на несуществующий спрайт — понятная ошибка', () => {
+    const data = tablesWith((t) => {
+      t.objects.find((r) => r.id === 'oak')!.sprite = 'tre';
+    });
+    expect(checkDataRefs(data).map(formatIssue)).toEqual([
+      'data/objects.json · запись «oak» · поле «sprite»: ссылка на несуществующий спрайт «tre» — может быть, «tree»?',
+    ]);
+  });
+
+  it('у генератора карты есть всё нужное: деревья, кусты, камни, цветы', () => {
+    const places = new Set(DATA.objects.records.map((def) => def.place));
+    expect([...places].sort()).toEqual(['edge', 'forest', 'meadow', 'scatter']);
+    expect(DATA.objects.get('oak')).toMatchObject({ walkable: false, place: 'forest' });
+    expect(DATA.objects.get('berry_bush').states).toEqual(['ripe', 'empty']);
+    expect(DATA.objects.get('flowers').walkable).toBe(true);
   });
 
   it('ссылка на несуществующий спрайт — понятная ошибка', () => {
@@ -136,12 +174,27 @@ describe('сцена data показывает таблицы как есть', 
     ]);
   });
 
+  it('объекты карты: проходимость, состояния, место генератора', () => {
+    const rows = objectRows(DATA);
+    expect(rows.map((r) => r.id)).toEqual(DATA.objects.records.map((d) => d.id));
+    expect(rows.find((r) => r.id === 'berry_bush')).toEqual({
+      id: 'berry_bush',
+      name: 'Малина',
+      sprite: 'berry_bush',
+      walkable: 'нет',
+      states: 'ripe → empty',
+      place: 'опушка · вес 1',
+    });
+    expect(rows.find((r) => r.id === 'flowers')!.walkable).toBe('да');
+  });
+
   it('баланс: каждое число с пояснением из схемы', () => {
     const groups = balanceGroups(DATA);
     expect(groups.map((g) => g.title)).toEqual([
       'Время (GDD §2.1, §13.1)',
       'Движение (GDD §13.1)',
       'Жизнь (GDD §13.1)',
+      'Карта (GDD §2.2, §3.1, §3.3)',
     ]);
     const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.key, r.value]));
     expect(rows.get('time.ticksPerDay')).toBe('400 тиков');
@@ -149,6 +202,11 @@ describe('сцена data показывает таблицы как есть', 
     expect(rows.get('life.fertileAge')).toBe('с 16 лет · по 45 лет');
     expect(rows.get('life.pregnancySeasons')).toBe('3 сезона');
     expect(rows.get('life.minYearsBetweenChildren')).toBe('2 года');
+    expect(rows.get('map.width')).toBe('64 тайла');
+    expect(rows.get('map.bushes')).toBe('от 12 шт. · до 22 шт.');
+    expect(rows.get('map.camp')).toBe(
+      'сторона 5 тайлов · до воды не дальше 12 тайлов · до леса не дальше 10 тайлов',
+    );
     expect(groups.flatMap((g) => g.rows).every((r) => r.doc !== r.key.split('.').at(-1))).toBe(
       true,
     );

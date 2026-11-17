@@ -750,7 +750,7 @@ button.menu-card:focus-visible {
   }
 }
 
-/* Panel of the world scene (step 0.7): how the world is saved, save to file, to the menu. */
+/* Panel of the world scene (steps 0.7, 1.1): the date, how the world is saved, save to file, to the menu. */
 .world-panel {
   position: absolute;
   top: 12px;
@@ -769,6 +769,17 @@ button.menu-card:focus-visible {
   margin-bottom: 4px;
   font-size: 13px;
   color: #ffd27a;
+}
+
+.world-panel-date {
+  font-size: 13px;
+  color: #f1e3c4;
+}
+
+.world-panel-clock {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #9aa6c4;
 }
 
 .world-panel-status {
@@ -817,7 +828,6 @@ button.menu-card:focus-visible {
 
 @media (max-width: 760px) {
   .world-panel {
-    top: 226px;
     right: auto;
     left: 12px;
     width: min(340px, calc(100% - 48px));

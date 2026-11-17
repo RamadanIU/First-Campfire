@@ -14,7 +14,17 @@ interface DebugHook {
   frame: number;
   errors: string[];
   world?: WorldInfo;
+  /**
+   * How long drawing each of the last frames took, ms (live mode only, up to RENDER_SAMPLES):
+   * `npm run shot -- --frame-time` reports it.
+   */
+  renderMs: number[];
+  /** How long the very first live frame took, ms: it pays for setting up. */
+  firstRenderMs: number | null;
 }
+
+/** How many of the last frames keep their drawing time in the hook. */
+const RENDER_SAMPLES = 600;
 
 /** What the scene `world` tells automated checks about its world. */
 export interface WorldInfo {
@@ -48,7 +58,14 @@ function showProblem(ui: HTMLElement, title: string, text: string): void {
 
 async function start() {
   const params = parseParams(window.location.search);
-  const hook: DebugHook = { ready: false, scene: params.scene, frame: 0, errors: [] };
+  const hook: DebugHook = {
+    ready: false,
+    scene: params.scene,
+    frame: 0,
+    errors: [],
+    renderMs: [],
+    firstRenderMs: null,
+  };
   window.__fc = hook;
   window.addEventListener('error', (event) => hook.errors.push(String(event.message)));
   window.addEventListener('unhandledrejection', (event) => hook.errors.push(String(event.reason)));
@@ -104,7 +121,12 @@ async function start() {
     scene.update?.(previous === null ? 0 : now - previous);
     previous = now;
     hook.frame = Math.floor(((now - startedAt) / 1000) * PRESENTATION_FPS);
+    const drawStart = performance.now();
     scene.render(hook.frame);
+    const drawMs = performance.now() - drawStart;
+    if (hook.firstRenderMs === null) hook.firstRenderMs = drawMs;
+    else hook.renderMs.push(drawMs);
+    if (hook.renderMs.length > RENDER_SAMPLES) hook.renderMs.shift();
     hook.ready = true;
     requestAnimationFrame(loop);
   };

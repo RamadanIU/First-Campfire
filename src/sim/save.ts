@@ -36,7 +36,7 @@ export const SAVE_FORMAT = 'first-campfire/world';
  * Version of the save format. Raise it (and add a line to the shape history in ./save.test.ts)
  * whenever the shape of the world changes; from stage 5 also add a migration to MIGRATIONS.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 /** Turns the world of save format version N (the key) into the world of version N + 1. */
 export type Migration = (world: Record<string, unknown>) => Record<string, unknown>;
@@ -184,6 +184,19 @@ function decodeValue(_key: string, value: unknown): unknown {
     throw new Error(`испорчен типизированный массив ${name}: ${buffer.byteLength} байт`);
   }
   return new Type(buffer);
+}
+
+/**
+ * Any plain data as JSON text the way saves write it: typed arrays (the map's layers) as tagged
+ * base64. Plain JSON.stringify would turn a typed array into an object of numbered keys.
+ */
+export function toSaveJson(value: unknown): string {
+  return JSON.stringify(value, encodeValue);
+}
+
+/** Text written by `toSaveJson` back into data, typed arrays restored. */
+export function fromSaveJson(text: string): unknown {
+  return JSON.parse(text, decodeValue);
 }
 
 // --- Saving ----------------------------------------------------------------------------------

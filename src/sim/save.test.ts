@@ -357,11 +357,34 @@ const CURRENT_SHAPE: string[] = [
   'fireflies.swarm[].y: number',
   'fireflies.swarm[]: object',
   'fireflies: object',
+  'map.chunkSize: number',
+  'map.fields: object',
+  'map.ground: Uint8Array',
+  'map.groundTypes: array',
+  'map.groundTypes[]: string',
+  'map.height: number',
+  'map.object: Uint32Array',
+  'map.width: number',
+  'map: object',
+  'objects.list: array',
+  'objects.list[].def: string',
+  'objects.list[].id: number',
+  'objects.list[].state: string',
+  'objects.list[].x: number',
+  'objects.list[].y: number',
+  'objects.list[]: object',
+  'objects.nextId: number',
+  'objects: object',
   'rng.fireflies.a: number',
   'rng.fireflies.b: number',
   'rng.fireflies.c: number',
   'rng.fireflies.d: number',
   'rng.fireflies: object',
+  'rng.map.a: number',
+  'rng.map.b: number',
+  'rng.map.c: number',
+  'rng.map.d: number',
+  'rng.map: object',
   'rng: object',
   'seed: number',
   'tick: number',
@@ -370,6 +393,7 @@ const CURRENT_SHAPE: string[] = [
 /** Fingerprint of the shape of every save format version. Append only: never rewrite a line. */
 const SHAPE_HISTORY: Record<number, string> = {
   1: '87ffb58acdf6e429', // step 0.7: calendar, journal, fireflies
+  2: '98f2ff92c42e9236', // step 1.1: the map (ground and object layers) and its objects
 };
 
 describe('форма мира и версия формата сохранения', () => {

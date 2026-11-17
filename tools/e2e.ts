@@ -166,7 +166,7 @@ try {
     await page.keyboard.press('Space');
     await page.waitForTimeout(200);
     const before = await world(page);
-    const journal = await text(page, '.journal-list');
+    const date = await text(page, '.world-panel-date');
     await page.reload();
     await ready(page);
     const after = await world(page);
@@ -174,7 +174,11 @@ try {
       before.tick > 200 && after.tick === before.tick && after.hash === before.hash,
       `перезагрузка: тот же мир на том же тике (тик ${before.tick}, хэш ${before.hash} → тик ${after.tick}, хэш ${after.hash})`,
     );
-    check((await text(page, '.journal-list')) === journal, 'перезагрузка: журнал тот же');
+    // The panel shows the same date (the world runs on after the reload, so not the same tick).
+    check(
+      (await text(page, '.world-panel-date')) === date,
+      `перезагрузка: на панели та же дата (${date})`,
+    );
 
     // Save to file.
     const [download] = await Promise.all([page.waitForEvent('download'), page.click(PANEL_FILE)]);

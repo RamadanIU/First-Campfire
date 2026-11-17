@@ -5,6 +5,7 @@
  *   data/balance.json    numbers of time and life (GDD §2.1, §13.1)
  *   data/resources.json  resources: food, materials, products (GDD §5.1, §5.2)
  *   data/terrain.json    types of ground: can one walk there, how fast (GDD §13.1, §6.1)
+ *   data/objects.json    objects of the map: trees, bushes, boulders, flowers (GDD §2.2, §3.3)
  *
  * A new table: a schema here, an entry in TABLES, an import in ./index.ts. A new record of an
  * existing table needs no code at all.
@@ -18,6 +19,7 @@ import {
   type Infer,
   id,
   int,
+  list,
   nullable,
   num,
   obj,
@@ -52,6 +54,21 @@ function sharesOf100(what: string) {
 }
 
 const share = (doc: string) => int({ min: 1, max: 100, unit: '%', doc });
+
+/** «From … to …» counts: the generator picks a number in between. */
+function range(doc: string, min: number, max: number) {
+  return obj(
+    {
+      min: int({ min, max, unit: 'шт.', doc: 'от' }),
+      max: int({ min, max, unit: 'шт.', doc: 'до' }),
+    },
+    {
+      doc,
+      check: (value) =>
+        value.min <= value.max ? null : `«от» (${value.min}) больше, чем «до» (${value.max})`,
+    },
+  );
+}
 
 // ── balance.json ───────────────────────────────────────────────────────────────────────────
 
@@ -137,6 +154,50 @@ const balanceSchema = obj({
     },
     { doc: 'Жизнь (GDD §13.1)' },
   ),
+  map: obj(
+    {
+      width: int({ min: 16, max: 1024, unit: 'тайлов', doc: 'Ширина карты' }),
+      height: int({ min: 16, max: 1024, unit: 'тайлов', doc: 'Высота карты' }),
+      chunkSize: int({
+        min: 8,
+        max: 128,
+        unit: 'тайлов',
+        doc: 'Сторона чанка: карта рисуется и кешируется квадратами (GDD §2.2)',
+      }),
+      lakePercent: int({
+        min: 0,
+        max: 100,
+        unit: '%',
+        doc: 'Доля миров с озером вместо реки, пересекающей карту',
+      }),
+      forestPercent: int({ min: 5, max: 80, unit: '%', doc: 'Доля суши под лесом' }),
+      bushes: range('Ягодных кустов на опушках (гарантия — не меньше нижнего числа)', 1, 200),
+      boulders: range('Валунов', 0, 100),
+      meadowDecorPercent: int({
+        min: 0,
+        max: 50,
+        unit: '%',
+        doc: 'Цветы и высокая трава: доля свободных тайлов луга',
+      }),
+      camp: obj(
+        {
+          size: int({ min: 3, max: 15, unit: 'тайлов', doc: 'сторона' }),
+          waterDistance: int({ min: 1, max: 40, unit: 'тайлов', doc: 'до воды не дальше' }),
+          forestDistance: int({ min: 1, max: 40, unit: 'тайлов', doc: 'до леса не дальше' }),
+        },
+        {
+          doc: 'Сухое место под стоянку — квадрат суши без препятствий у воды и леса (GDD §3.1, п. 9)',
+        },
+      ),
+    },
+    {
+      doc: 'Карта (GDD §2.2, §3.1, §3.3)',
+      check: ({ width, height, chunkSize }) =>
+        width % chunkSize === 0 && height % chunkSize === 0
+          ? null
+          : `стороны карты (${width}×${height}) должны делиться на сторону чанка (${chunkSize})`,
+    },
+  ),
 });
 
 export type Balance = Infer<typeof balanceSchema>;
@@ -212,6 +273,55 @@ const terrainSchema = table(
 
 export type Terrain = Infer<typeof terrainSchema>[number];
 
+// ── objects.json ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Where the map generator puts an object (src/sim/mapgen.ts): in the forest, at its edge (berry
+ * bushes), scattered over the land (boulders), on meadows (flowers). Mechanics depend on it.
+ */
+export const OBJECT_PLACES = ['forest', 'edge', 'scatter', 'meadow'] as const;
+export type ObjectPlace = (typeof OBJECT_PLACES)[number];
+
+const objectsSchema = table(
+  {
+    id: id({ doc: 'Идентификатор вида объекта; объекты на карте ссылаются на него' }),
+    name: text({ maxLength: 40, doc: 'Название для игрока' }),
+    sprite: external(EXTERNAL_KINDS.sprite, 'спрайт', {
+      doc: 'Спрайт: как объект выглядит на карте',
+    }),
+    walkable: bool({
+      doc: 'Можно ли пройти через тайл с этим объектом (цветы — да, дерево — нет)',
+    }),
+    states: list(id({ doc: 'Состояние' }), {
+      min: 1,
+      max: 16,
+      doc: 'Состояния объекта, первое — начальное. Состояние рисуется анимацией спрайта с тем же именем (ягодный куст: ripe — с ягодами, empty — пустой), а если такой нет — первой анимацией',
+    }),
+    place: nullable(
+      oneOf(OBJECT_PLACES, {
+        names: { forest: 'лес', edge: 'опушка', scatter: 'россыпь', meadow: 'луг' },
+        doc: 'Где объект появляется при сотворении карты',
+      }),
+      'не появляется при сотворении карты',
+    ),
+    weight: int({
+      min: 0,
+      max: 1000,
+      doc: 'Как часто среди объектов того же места: дубов 56 на 26 берёз. 0 — если место не задано',
+    }),
+  },
+  {
+    check: ({ states, place, weight }) => {
+      if (new Set(states).size !== states.length) return 'состояния повторяются';
+      if (place === null && weight !== 0) return 'вес без места (place) — должен быть 0';
+      if (place !== null && weight === 0) return 'у объекта с местом (place) вес больше 0';
+      return null;
+    },
+  },
+);
+
+export type MapObjectDef = Infer<typeof objectsSchema>[number];
+
 // ── All tables ─────────────────────────────────────────────────────────────────────────────
 
 /** Every table: its file and schema. The scene `data` documents the tables from here. */
@@ -219,6 +329,7 @@ export const TABLES = {
   balance: { file: 'data/balance.json', schema: balanceSchema },
   resources: { file: 'data/resources.json', schema: resourcesSchema },
   terrain: { file: 'data/terrain.json', schema: terrainSchema },
+  objects: { file: 'data/objects.json', schema: objectsSchema },
 } as const satisfies Record<string, TableSchema<unknown>>;
 
 export type TableName = keyof typeof TABLES;
@@ -254,6 +365,7 @@ export interface GameData {
   readonly balance: Balance;
   readonly resources: Table<Resource>;
   readonly terrain: Table<Terrain>;
+  readonly objects: Table<MapObjectDef>;
   /**
    * References to sprites and looks of the ground. src/data cannot check them (it does not
    * import src/art): tests/data.test.ts and the scene `data` do, with `checkExternalRefs`.
@@ -273,6 +385,7 @@ export function loadTables(raw: RawTables): GameData {
     balance: values.balance,
     resources: makeTable(values.resources, TABLES.resources.file),
     terrain: makeTable(values.terrain, TABLES.terrain.file),
+    objects: makeTable(values.objects, TABLES.objects.file),
     external: refs,
   });
 }
