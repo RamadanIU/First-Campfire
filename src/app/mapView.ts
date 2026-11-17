@@ -238,7 +238,8 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     const mark = poses.find((pose) => pose.id === chosen);
     if (mark) {
       // Over the bars of needs, if they are shown.
-      const top = mark.y - sheet.entry(mark.sprite).anchor.y - (needsMode ? NEED_BARS_HEIGHT + 1 : 0);
+      const top =
+        mark.y - sheet.entry(mark.sprite).anchor.y - (needsMode ? NEED_BARS_HEIGHT + 1 : 0);
       drawChosen(ctx, view, mark.x, top);
     }
     if (refused && nowMs < refused.untilMs) drawRefused(ctx, view, refused.tile);
