@@ -19,6 +19,10 @@
  *   --check-crisp <n>  every shot must be crisp pixel art at ×n: each n×n square of one colour
  *                    (use with `ui=0` — text is not pixel art); a blurred shot fails the command.
  *                    n counts pixels of the PNG: with --scale 2 a picture at zoom ×2 is ×4
+ *   --check-half <dir>  every shot is a picture at ×0.5 (`zoom=0.5`): each of its pixels must be
+ *                    every second pixel of the shot of the same name in <dir> — the same place at
+ *                    ×1 (`zoom=1`, the same `cam=`) in a window twice as large; smoothing mixes
+ *                    neighbours and fails the command
  *   --compare <dir>  compare every shot with the shot of the same name in <dir> (the NN- prefix
  *                    is ignored), e.g. the previous step's folder: «pixel for pixel» or where
  *                    they differ. Differences are reported, not failed — judge them by eye
@@ -33,7 +37,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildGame, chromium, hasBuild, ROOT, serveGame } from './browser.ts';
-import { compareImages, crispness } from './imageChecks.ts';
+import { compareImages, crispness, halfOf } from './imageChecks.ts';
 import { decodePng } from './png.ts';
 
 function fail(message: string): never {
@@ -52,6 +56,7 @@ const { values, positionals } = parseArgs({
     wait: { type: 'string', default: '0' },
     'no-build': { type: 'boolean', default: false },
     'check-crisp': { type: 'string' },
+    'check-half': { type: 'string' },
     compare: { type: 'string' },
     'frame-time': { type: 'string' },
   },
@@ -81,6 +86,9 @@ const crispScale = values['check-crisp'] === undefined ? null : Number(values['c
 if (crispScale !== null && !(Number.isInteger(crispScale) && crispScale >= 2))
   fail(`--check-crisp: масштаб — целое число от 2, получено ${values['check-crisp']}`);
 const compareDir = values.compare === undefined ? null : join(ROOT, values.compare);
+const halfDir = values['check-half'] === undefined ? null : join(ROOT, values['check-half']);
+if (halfDir !== null && !existsSync(halfDir))
+  fail(`--check-half: нет папки ${values['check-half']}`);
 const frameTimeMs = values['frame-time'] === undefined ? null : Number(values['frame-time']);
 if (frameTimeMs !== null && !(Number.isInteger(frameTimeMs) && frameTimeMs >= 100))
   fail(
@@ -88,12 +96,10 @@ if (frameTimeMs !== null && !(Number.isInteger(frameTimeMs) && frameTimeMs >= 10
   );
 if (compareDir !== null && !existsSync(compareDir)) fail(`--compare: нет папки ${values.compare}`);
 
-/** The shot named `name` in the folder to compare with: NN-name.png with any NN. */
-function previousShot(name: string): string | null {
-  const file = readdirSync(compareDir!).find(
-    (entry) => entry.replace(/^\d+-/, '') === `${name}.png`,
-  );
-  return file === undefined ? null : join(compareDir!, file);
+/** The shot named `name` in folder `dir`: NN-name.png with any NN. */
+function shotIn(dir: string, name: string): string | null {
+  const file = readdirSync(dir).find((entry) => entry.replace(/^\d+-/, '') === `${name}.png`);
+  return file === undefined ? null : join(dir, file);
 }
 
 const fmt = (value: number) => value.toLocaleString('ru-RU');
@@ -177,8 +183,31 @@ try {
           `  резкий ×${crispScale}: все ${fmt(report.blocks)} квадратов ${crispScale}×${crispScale} одноцветны (сетка от ${report.shiftX}, ${report.shiftY})`,
         );
     }
+    if (halfDir !== null) {
+      const full = shotIn(halfDir, shot.name);
+      if (full === null) {
+        errors.push(`--check-half: в ${values['check-half']} нет кадра «${shot.name}» (×1)`);
+      } else {
+        const small = decodePng(png);
+        const report = halfOf(small, decodePng(readFileSync(full)));
+        const against = relative(ROOT, full);
+        const all = small.width * small.height;
+        if (report.compared < all * 0.9)
+          errors.push(
+            `--check-half: с ${against} удалось сравнить только ${fmt(report.compared)} из ${fmt(all)} пикселей — кадр ×1 должен быть снят в окне вдвое больше (с тем же --scale)`,
+          );
+        else if (report.mismatched > 0)
+          errors.push(
+            `не «каждый второй пиксель» ${against}: не совпали ${fmt(report.mismatched)} из ${fmt(report.compared)} пикселей${report.firstMismatch ? `, первый — у (${report.firstMismatch.x}, ${report.firstMismatch.y})` : ''} (кадр ×1 снят в окне вдвое больше, с тем же cam=?)`,
+          );
+        else
+          notes.push(
+            `  ×0,5 без сглаживания: все ${fmt(report.compared)} пикселей — пиксели ${against} через один (от ${report.shiftX}, ${report.shiftY})`,
+          );
+      }
+    }
     if (compareDir !== null) {
-      const previous = previousShot(shot.name);
+      const previous = shotIn(compareDir, shot.name);
       if (previous === null) {
         comparisons.push(`  ? ${shot.name}: в ${values.compare} нет кадра с таким именем`);
       } else {

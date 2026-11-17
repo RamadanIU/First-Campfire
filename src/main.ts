@@ -1,4 +1,5 @@
 import { checkDataRefs } from './app/dataRefs.ts';
+import type { CameraInfo } from './app/mapView.ts';
 import { parseParams } from './app/params.ts';
 import { PRESENTATION_FPS } from './app/scene.ts';
 import { formatIssue } from './data/schema.ts';
@@ -6,7 +7,8 @@ import { formatIssue } from './data/schema.ts';
 /**
  * Hook for automated checks (tools/screenshot.ts, tools/e2e.ts): `ready` flips to true once the
  * requested frame is on screen, `errors` collects everything that went wrong, `world` — the
- * world the scene `world` runs (so checks need not read it off the screen).
+ * world the scene `world` runs, `camera` — its camera (so checks need not read them off the
+ * screen).
  */
 interface DebugHook {
   ready: boolean;
@@ -14,6 +16,7 @@ interface DebugHook {
   frame: number;
   errors: string[];
   world?: WorldInfo;
+  camera?: CameraInfo;
   /**
    * How long drawing each of the last frames took, ms (live mode only, up to RENDER_SAMPLES):
    * `npm run shot -- --frame-time` reports it.
@@ -102,23 +105,62 @@ async function start() {
   if (brokenRefs.length > 0)
     showProblem(ui, 'Битые ссылки в таблицах данных', brokenRefs.join('\n'));
 
-  const resize = () => scene.resize(window.innerWidth, window.innerHeight);
-  resize();
+  // The canvas is as large as the physical screen (device pixels): with a fractional
+  // devicePixelRatio (Windows 125 %) a canvas of CSS pixels would be stretched by the browser into
+  // pixels of different widths. Scenes get the size in device pixels and pick whole scales of it.
+  let shown = { width: 0, height: 0, pixelRatio: 0 };
+  /** Resize the scene if the screen changed; true if it did (the canvas is cleared then). */
+  const resize = (next: { width: number; height: number; pixelRatio: number }): boolean => {
+    if (
+      next.width === shown.width &&
+      next.height === shown.height &&
+      next.pixelRatio === shown.pixelRatio
+    )
+      return false;
+    shown = next;
+    scene.resize(next.width, next.height, next.pixelRatio);
+    return true;
+  };
+  const measured = () => {
+    const pixelRatio = window.devicePixelRatio || 1;
+    return {
+      width: Math.max(1, Math.round(window.innerWidth * pixelRatio)),
+      height: Math.max(1, Math.round(window.innerHeight * pixelRatio)),
+      pixelRatio,
+    };
+  };
+  resize(measured());
+  // The window size times the ratio may be off by a pixel of rounding: the browser knows the
+  // canvas's exact size in device pixels, and tells when it or the ratio changes (window, browser
+  // zoom, another monitor). Its answer is taken only if it agrees with the rounded one — under
+  // an emulated ratio (Chromium in tests, `npm run shot -- --scale 1.25`) it reports CSS pixels.
+  const observer = new ResizeObserver((entries) => {
+    const rounded = measured();
+    const box = entries[0]?.devicePixelContentBoxSize?.[0];
+    const exact =
+      box !== undefined &&
+      Math.abs(box.inlineSize - rounded.width) <= 2 &&
+      Math.abs(box.blockSize - rounded.height) <= 2;
+    const next = exact
+      ? { width: box.inlineSize, height: box.blockSize, pixelRatio: rounded.pixelRatio }
+      : rounded;
+    // Resizing clears the canvas: draw the frame again at once, before the screen shows it.
+    if (resize(next)) scene.render(hook.frame);
+  });
+  try {
+    observer.observe(canvas, { box: 'device-pixel-content-box' });
+  } catch {
+    observer.observe(canvas);
+  }
 
   if (params.frame !== null) {
     // Frozen mode: one exact frame, for reproducible screenshots.
-    const frozen = params.frame;
-    window.addEventListener('resize', () => {
-      resize();
-      scene.render(frozen);
-    });
-    scene.render(frozen);
-    hook.frame = frozen;
+    hook.frame = params.frame;
+    scene.render(params.frame);
     hook.ready = true;
     return;
   }
 
-  window.addEventListener('resize', resize);
   const startedAt = performance.now();
   let previous: number | null = null;
   const loop = (now: number) => {

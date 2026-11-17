@@ -17,6 +17,7 @@ describe('parseParams', () => {
       speed: 1,
       sprite: null,
       zoom: null,
+      cam: null,
       slot: null,
       worldFromUrl: true,
     });
@@ -42,13 +43,31 @@ describe('parseParams', () => {
     expect(parseParams('?slot=').slot).toBeNull();
   });
 
-  it('reads zoom: only whole scales 1–4, anything else — the scene decides', () => {
+  it('reads zoom: the four camera steps 0.5, 1, 2, 4; anything else — the scene decides', () => {
+    expect(parseParams('?zoom=0.5').zoom).toBe(0.5);
+    expect(parseParams('?zoom=.5').zoom).toBe(0.5);
+    expect(parseParams('?zoom=1').zoom).toBe(1);
     expect(parseParams('?zoom=2').zoom).toBe(2);
     expect(parseParams('?zoom=4').zoom).toBe(4);
+    expect(parseParams('?zoom=3').zoom).toBeNull();
     expect(parseParams('?zoom=0').zoom).toBeNull();
     expect(parseParams('?zoom=5').zoom).toBeNull();
     expect(parseParams('?zoom=1.5').zoom).toBeNull();
+    expect(parseParams('?zoom=0,5').zoom).toBeNull();
     expect(parseParams('?zoom=x').zoom).toBeNull();
+    expect(parseParams('?zoom=').zoom).toBeNull();
+  });
+
+  it('reads cam: x,y in tiles (fractional too); malformed — the scene decides', () => {
+    expect(parseParams('?cam=20,31').cam).toEqual({ x: 20, y: 31 });
+    expect(parseParams('?cam=20.5,%2031.25').cam).toEqual({ x: 20.5, y: 31.25 });
+    expect(parseParams('?cam=-3,70').cam).toEqual({ x: -3, y: 70 });
+    expect(parseParams('?cam=20').cam).toBeNull();
+    expect(parseParams('?cam=20,31,4').cam).toBeNull();
+    expect(parseParams('?cam=a,b').cam).toBeNull();
+    expect(parseParams('?cam=,').cam).toBeNull();
+    expect(parseParams('?cam=1e3,2').cam).toBeNull();
+    expect(parseParams('').cam).toBeNull();
   });
 
   it('reads the gallery sprite name', () => {

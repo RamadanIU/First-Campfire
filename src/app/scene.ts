@@ -22,8 +22,12 @@ export interface Scene {
    * their game loop here. Not called in frozen mode (`frame=`).
    */
   update?(elapsedMs: number): void;
-  /** Called when the window size changes. */
-  resize(width: number, height: number): void;
+  /**
+   * Called when the window size changes. `width` × `height` — the canvas in device pixels (the
+   * physical screen: a fractional devicePixelRatio, Windows 125 %, would otherwise stretch the
+   * canvas into pixels of different widths); `pixelRatio` — device pixels per CSS pixel.
+   */
+  resize(width: number, height: number, pixelRatio: number): void;
 }
 
 export interface SceneContext {

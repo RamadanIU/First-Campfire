@@ -1,3 +1,4 @@
+import { isZoom, type Zoom } from '../render/camera.ts';
 import { isSpeed, type Speed } from './loop.ts';
 
 /**
@@ -13,8 +14,9 @@ export type SlotPreset = (typeof SLOT_PRESETS)[number];
 
 /**
  * Launch parameters read from the page URL (?seed=42&scene=clock&ticks=3000&speed=5&frame=10&ui=0).
- * Scene-specific ones: `sprite=` (the gallery shows one sprite large), `zoom=` (whole-number scale
- * of pictures of the world, e.g. the style sheet), `slot=` (debug: a prepared autosave).
+ * Scene-specific ones: `sprite=` (the gallery shows one sprite large), `zoom=` (zoom step of
+ * pictures of the world: the camera of the world, the style sheet), `cam=` (where the camera of
+ * the world looks), `slot=` (debug: a prepared autosave).
  * They make every screen reproducible: the screenshot tool and bug reports
  * use the same URL to get the same picture.
  */
@@ -35,8 +37,16 @@ export interface LaunchParams {
   speed: Speed;
   /** Gallery: show this one sprite large (by name) instead of all sprites. */
   sprite: string | null;
-  /** Scale of the world on screen: 1, 2, 3 or 4 (GDD §10.1); null — the scene picks one that fits. */
-  zoom: number | null;
+  /**
+   * Zoom step of the world on screen: 0.5, 1, 2 or 4 (GDD §10.1, src/render/camera.ts); null —
+   * the scene picks one that fits.
+   */
+  zoom: Zoom | null;
+  /**
+   * Where the camera of the world looks: the point in the middle of the screen, in tiles (may be
+   * fractional: `cam=20.5,31`); null — the scene's own choice (the camp site).
+   */
+  cam: { x: number; y: number } | null;
   /** Debug: put this prepared save into the autosave slot before the scene starts. */
   slot: SlotPreset | null;
   /**
@@ -56,12 +66,10 @@ export const DEFAULT_PARAMS: LaunchParams = {
   speed: 1,
   sprite: null,
   zoom: null,
+  cam: null,
   slot: null,
   worldFromUrl: false,
 };
-
-/** Whole-number scales of the world picture (GDD §10.1: ×1 city, ×2 street, ×4 portrait). */
-export const ZOOMS = [1, 2, 3, 4] as const;
 
 function parseInteger(raw: string | null, min: number): number | null {
   if (raw === null || !/^-?\d+$/.test(raw.trim())) return null;
@@ -74,9 +82,25 @@ function parseSpeed(raw: string | null): Speed | null {
   return value !== null && isSpeed(value) ? value : null;
 }
 
-function parseZoom(raw: string | null): number | null {
-  const value = parseInteger(raw, 1);
-  return value !== null && (ZOOMS as readonly number[]).includes(value) ? value : null;
+/** A plain decimal number (`12`, `0.5`, `-3.25`), or null. */
+function parseDecimal(raw: string): number | null {
+  const text = raw.trim();
+  if (!/^-?(\d+(\.\d*)?|\.\d+)$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function parseZoom(raw: string | null): Zoom | null {
+  const value = raw === null ? null : parseDecimal(raw);
+  return value !== null && isZoom(value) ? value : null;
+}
+
+/** `x,y` — two numbers (tiles), or null. */
+function parseCam(raw: string | null): { x: number; y: number } | null {
+  const parts = raw?.split(',') ?? [];
+  if (parts.length !== 2) return null;
+  const [x, y] = parts.map(parseDecimal);
+  return x == null || y == null ? null : { x, y };
 }
 
 function parseSlot(raw: string | null): SlotPreset | null {
@@ -101,6 +125,7 @@ export function parseParams(search: string): LaunchParams {
     speed: parseSpeed(query.get('speed')) ?? DEFAULT_PARAMS.speed,
     sprite: sprite ? sprite : DEFAULT_PARAMS.sprite,
     zoom: parseZoom(query.get('zoom')),
+    cam: parseCam(query.get('cam')),
     slot,
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,
   };

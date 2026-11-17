@@ -2,72 +2,56 @@ import { PALETTE, toHex } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { prepareTerrain, TERRAIN_LOOKS } from '../art/terrain.ts';
-import { createMapRenderer, type PixelRect } from '../render/mapRenderer.ts';
+import { drawPicture, pixelScale, screenToWorld, ZOOMS } from '../render/camera.ts';
+import { createMapRenderer } from '../render/mapRenderer.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { TIME } from '../sim/calendar.ts';
 import { findCampSite } from '../sim/mapgen.ts';
 import { stepWorld, type World } from '../sim/world.ts';
+import { bindCameraInput, type CameraControl, createCameraControl } from './cameraControl.ts';
 import { bindSpeedKeys } from './controls.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
-import { ZOOMS } from './params.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 
 /**
- * The view of a running world (step 1.1): its map, drawn by src/render/mapRenderer.ts, still
- * camera (step 1.2 brings panning and zoom). The map is centred in the window at the largest
- * whole scale that fits (`zoom=` sets it: 1–4). A map larger than the window is shown around
- * the camp site (src/sim/mapgen.ts, `findCampSite`) — where life will happen — not its corner.
+ * The view of a running world: its map (src/render/mapRenderer.ts, step 1.1) seen through the
+ * observer's camera (./cameraControl.ts, src/render/camera.ts, step 1.2) — dragged by the mouse
+ * or a finger, zoomed by the wheel, a pinch or +/−, moved by WASD / arrows; four zoom steps
+ * ×0.5…×4, never beyond the edges of the map.
  *
- * The world runs in a fixed-step game loop (./loop.ts); Space — pause, 1–4 — speed.
+ *   `cam=x,y` — where the camera looks (tiles, may be fractional; by default — the camp site,
+ *   src/sim/mapgen.ts `findCampSite`, where life will happen); `zoom=` — the step (by default the
+ *   closest at which the whole map fits, at least ×1).
+ *
+ * Only what is in sight is drawn: the part of the world under the camera, one canvas pixel per
+ * world pixel, then put on the screen at the zoom's scale. The world runs in a fixed-step game
+ * loop (./loop.ts); Space — pause, 1–4 — speed.
  */
 export interface MapView {
   scene: Scene;
   loop: GameLoop;
+  camera: CameraControl;
 }
 
-/** Where the picture of the world lies on the screen. */
-export interface ViewFit {
-  /** Whole-number scale. */
-  scale: number;
-  /** Screen position of the world's top-left corner (may be negative: the world is larger). */
-  offsetX: number;
-  offsetY: number;
-  /** The part of the world that is on screen, world pixels. */
-  view: PixelRect;
-}
-
-/**
- * Fit a world of `worldW`×`worldH` pixels into a screen: centred if it fits at `scale`,
- * otherwise centred on `focus` (world pixels) and pressed to the edges of the world, so no empty
- * strip shows beyond the map. Positions are whole pixels: the picture stays crisp.
- */
-export function fitView(
-  screenW: number,
-  screenH: number,
-  worldW: number,
-  worldH: number,
-  zoom: number | null,
-  focus: { x: number; y: number },
-): ViewFit {
-  const largest = ZOOMS[ZOOMS.length - 1]!;
-  const fits = Math.floor(Math.min(screenW / worldW, screenH / worldH));
-  const scale = zoom ?? Math.max(1, Math.min(largest, fits));
-  const place = (screen: number, world: number, at: number) =>
-    world * scale <= screen
-      ? Math.floor((screen - world * scale) / 2)
-      : Math.round(Math.min(0, Math.max(screen - world * scale, screen / 2 - at * scale)));
-  const offsetX = place(screenW, worldW, focus.x);
-  const offsetY = place(screenH, worldH, focus.y);
-  const left = Math.max(0, Math.floor(-offsetX / scale));
-  const top = Math.max(0, Math.floor(-offsetY / scale));
-  const right = Math.min(worldW, Math.ceil((screenW - offsetX) / scale));
-  const bottom = Math.min(worldH, Math.ceil((screenH - offsetY) / scale));
-  return {
-    scale,
-    offsetX,
-    offsetY,
-    view: { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) },
-  };
+/** What the view tells automated checks about its camera (`window.__fc.camera`). */
+export interface CameraInfo {
+  /** Zoom step and device pixels per world pixel. */
+  readonly zoom: number;
+  readonly scale: number;
+  /** The world point in the middle of the screen, world pixels. */
+  readonly x: number;
+  readonly y: number;
+  /** Size of the canvas, device pixels, and device pixels per CSS pixel. */
+  readonly width: number;
+  readonly height: number;
+  readonly pixelRatio: number;
+  /** Screen position of the world's top-left corner, device pixels. */
+  readonly offsetX: number;
+  readonly offsetY: number;
+  /** The part of the world in sight, world pixels. */
+  readonly view: { x: number; y: number; width: number; height: number };
+  /** The world point (world pixels) under a point of the page (CSS pixels). */
+  worldAt(x: number, y: number): { x: number; y: number };
 }
 
 export function createMapView({ canvas, params }: SceneContext, world: World): MapView {
@@ -82,42 +66,88 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   const art = prepareTerrain(TERRAIN_LOOKS, SPRITES, PALETTE);
   const renderer = createMapRenderer(sheet, art, world);
   renderer.prepare();
+  const size = { width: renderer.width, height: renderer.height };
   const camp = findCampSite(world.map, world.objects);
-  const focus = camp
-    ? { x: (camp.x + 0.5) * TILE_SIZE, y: (camp.y + 0.5) * TILE_SIZE }
-    : { x: renderer.width / 2, y: renderer.height / 2 };
+  const focus = params.cam
+    ? { x: params.cam.x * TILE_SIZE, y: params.cam.y * TILE_SIZE }
+    : camp
+      ? { x: (camp.x + 0.5) * TILE_SIZE, y: (camp.y + 0.5) * TILE_SIZE }
+      : { x: size.width / 2, y: size.height / 2 };
+  const camera = createCameraControl(size, focus, params.zoom);
+  bindCameraInput(canvas, window, camera);
 
+  // The part of the world in sight, drawn 1:1. One pixel larger than the view (src/render/
+  // camera.ts, drawPicture); grows to the largest view of the screen and stays.
   const buffer = document.createElement('canvas');
   const ctx = buffer.getContext('2d')!;
   const background = toHex(PALETTE.ramps.get('ui')![0]!);
-  let fit = fitView(1, 1, renderer.width, renderer.height, params.zoom, focus);
 
-  const scene: Scene = {
-    update(elapsedMs) {
-      loop.advance(elapsedMs);
+  const info: CameraInfo = {
+    get zoom() {
+      return camera.camera.zoom;
     },
-    resize(width, height) {
-      canvas.width = width;
-      canvas.height = height;
-      fit = fitView(width, height, renderer.width, renderer.height, params.zoom, focus);
-      buffer.width = fit.view.width;
-      buffer.height = fit.view.height;
+    get scale() {
+      return camera.layout.scale;
     },
-    render(frame) {
-      const timeMs = (frame * 1000) / PRESENTATION_FPS;
-      renderer.draw(ctx, timeMs, fit.view);
-      const { scale, offsetX, offsetY, view } = fit;
-      screen.imageSmoothingEnabled = false;
-      screen.fillStyle = background;
-      screen.fillRect(0, 0, canvas.width, canvas.height);
-      screen.drawImage(
-        buffer,
-        offsetX + view.x * scale,
-        offsetY + view.y * scale,
-        view.width * scale,
-        view.height * scale,
+    get x() {
+      return camera.camera.x;
+    },
+    get y() {
+      return camera.camera.y;
+    },
+    get width() {
+      return camera.screen.width;
+    },
+    get height() {
+      return camera.screen.height;
+    },
+    get pixelRatio() {
+      return camera.screen.pixelRatio;
+    },
+    get offsetX() {
+      return camera.layout.offsetX;
+    },
+    get offsetY() {
+      return camera.layout.offsetY;
+    },
+    get view() {
+      return { ...camera.layout.view };
+    },
+    worldAt(x, y) {
+      const box = canvas.getBoundingClientRect();
+      return screenToWorld(
+        camera.layout,
+        (x - box.left) * (canvas.width / Math.max(1, box.width)),
+        (y - box.top) * (canvas.height / Math.max(1, box.height)),
       );
     },
   };
-  return { scene, loop };
+  window.__fc.camera = info;
+
+  const scene: Scene = {
+    update(elapsedMs) {
+      camera.update(elapsedMs);
+      loop.advance(elapsedMs);
+    },
+    resize(width, height, pixelRatio) {
+      canvas.width = width;
+      canvas.height = height;
+      camera.resize({ width, height, pixelRatio });
+      // The largest view this screen can have (at the farthest step): no reallocation later.
+      const scale = pixelScale(ZOOMS[0], pixelRatio);
+      const most = (screenSize: number, worldSize: number) =>
+        Math.min(worldSize, Math.ceil(screenSize / scale) + 2) + 1;
+      buffer.width = Math.max(buffer.width, most(width, size.width));
+      buffer.height = Math.max(buffer.height, most(height, size.height));
+    },
+    render(frame) {
+      const timeMs = (frame * 1000) / PRESENTATION_FPS;
+      const { layout } = camera;
+      if (layout.view.width > 0 && layout.view.height > 0) renderer.draw(ctx, timeMs, layout.view);
+      screen.fillStyle = background;
+      screen.fillRect(0, 0, canvas.width, canvas.height);
+      drawPicture(screen, buffer, layout);
+    },
+  };
+  return { scene, loop, camera };
 }
