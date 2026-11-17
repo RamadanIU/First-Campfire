@@ -6,6 +6,7 @@ import { DATA } from '../data/index.ts';
 import { type Field, formatIssue, formatNumber } from '../data/schema.ts';
 import {
   type GameData,
+  type ObjectPlace,
   RESOURCE_CATEGORIES,
   type ResourceCategory,
   TABLES,
@@ -40,6 +41,7 @@ const UNIT_FORMS: Readonly<Record<string, readonly [string, string, string]>> = 
   тиков: ['тик', 'тика', 'тиков'],
   лет: ['год', 'года', 'лет'],
   сезонов: ['сезон', 'сезона', 'сезонов'],
+  тайлов: ['тайл', 'тайла', 'тайлов'],
 };
 
 function plural(value: number, forms: readonly [string, string, string]): string {
@@ -132,6 +134,36 @@ export function terrainRows(data: GameData): TerrainRow[] {
   }));
 }
 
+export interface ObjectRow {
+  readonly id: string;
+  readonly name: string;
+  readonly sprite: string;
+  readonly walkable: string;
+  /** «ripe → empty»: the first one is where the object starts. */
+  readonly states: string;
+  /** «лес · 56» — where the map generator puts it and how often. */
+  readonly place: string;
+}
+
+const PLACE_NAME: Readonly<Record<ObjectPlace, string>> = {
+  forest: 'лес',
+  edge: 'опушка',
+  scatter: 'россыпь',
+  meadow: 'луг',
+};
+
+/** Objects of the map (data/objects.json), in the order of the file. */
+export function objectRows(data: GameData): ObjectRow[] {
+  return data.objects.records.map((def) => ({
+    id: def.id,
+    name: def.name,
+    sprite: def.sprite,
+    walkable: def.walkable ? 'да' : 'нет',
+    states: def.states.join(' → '),
+    place: def.place === null ? '—' : `${PLACE_NAME[def.place]} · вес ${def.weight}`,
+  }));
+}
+
 export interface BalanceRow {
   /** Path of the number in balance.json: `time.ticksPerDay`. */
   readonly key: string;
@@ -206,6 +238,32 @@ function groundTile(sheet: SpriteSheet, look: string): HTMLCanvasElement {
   return canvas;
 }
 
+/** An object of the map standing on grass, at a smaller scale (a tree is two tiles tall). */
+function objectPicture(sheet: SpriteSheet, sprite: string, animation: string): HTMLCanvasElement {
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = 2 * TILE_SIZE * scale;
+  canvas.height = 3 * TILE_SIZE * scale;
+  const ctx = canvas.getContext('2d')!;
+  for (let y = 0; y < 3; y++) {
+    for (let x = 0; x < 2; x++) {
+      sheet.draw(ctx, GROUND, x * TILE_SIZE * scale, y * TILE_SIZE * scale, { scale, frame: 0 });
+    }
+  }
+  if (sheet.has(sprite)) {
+    const entry = sheet.entry(sprite);
+    const x = TILE_SIZE * scale;
+    const y = (3 * TILE_SIZE - 3) * scale;
+    sheet.drawShadow(ctx, sprite, x, y, { scale });
+    sheet.draw(ctx, sprite, x, y, {
+      scale,
+      frame: 0,
+      animation: entry.animations.has(animation) ? animation : entry.defaultAnimation,
+    });
+  }
+  return canvas;
+}
+
 function cell(tag: 'td' | 'th', content: string | Node, className = ''): HTMLElement {
   const element = document.createElement(tag);
   if (className) element.className = className;
@@ -258,9 +316,10 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
 
   const groups = resourceGroups(DATA);
   const terrain = terrainRows(DATA);
+  const objects = objectRows(DATA);
   const balance = balanceGroups(DATA);
   const numbers = balance.reduce((n, group) => n + group.rows.length, 0);
-  root.innerHTML = `<header class="gallery-head"><h1>Таблицы данных</h1><p>Содержание игры живёт в файлах <b>data/*.json</b>, а не в коде: новая строка в таблице — новый ресурс на этой странице. ${Object.keys(TABLES).length} таблицы · ${DATA.resources.records.length} ресурсов · ${terrain.length} типов земли · ${numbers} параметров баланса. Все таблицы проверены при загрузке${refProblems.length === 0 ? ', ссылки на спрайты и виды земли — тоже' : ''}.</p></header>`;
+  root.innerHTML = `<header class="gallery-head"><h1>Таблицы данных</h1><p>Содержание игры живёт в файлах <b>data/*.json</b>, а не в коде: новая строка в таблице — новый ресурс на этой странице. ${Object.keys(TABLES).length} таблицы · ${DATA.resources.records.length} ресурсов · ${terrain.length} типов земли · ${objects.length} видов объектов карты · ${numbers} параметров баланса. Все таблицы проверены при загрузке${refProblems.length === 0 ? ', ссылки на спрайты и виды земли — тоже' : ''}.</p></header>`;
 
   if (refProblems.length > 0) {
     const box = document.createElement('div');
@@ -313,9 +372,28 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
   );
   root.append(ground);
 
+  // Objects of the map.
+  const things = document.createElement('section');
+  things.innerHTML = `<h2>Объекты карты — ${TABLES.objects.file}</h2><p class="meta">Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное).</p>`;
+  things.append(
+    table(
+      ['', 'Название · id', 'Проходим', 'Состояния', 'Место · вес', 'Спрайт'],
+      objects.map((row) => [
+        objectPicture(sheet, row.sprite, row.states.split(' → ')[0]!),
+        named(row.name, row.id),
+        row.walkable,
+        row.states,
+        row.place,
+        row.sprite,
+      ]),
+      ['picture', 'name', '', 'id', '', 'id'],
+    ),
+  );
+  root.append(things);
+
   // Balance.
   const numbersSection = document.createElement('section');
-  numbersSection.innerHTML = `<h2>Баланс — ${TABLES.balance.file}</h2><p class="meta">Числа GDD §2.1 и §13.1. Ядро симуляции берёт время отсюда: сезон — ${withUnit(TICKS_PER_SEASON, 'тиков')}, год — ${withUnit(TICKS_PER_YEAR, 'тиков')} (${DAYS_PER_YEAR} сут, ${formatNumber(TICKS_PER_YEAR / DATA.balance.time.ticksPerSecond / 60)} мин на ×1).</p>`;
+  numbersSection.innerHTML = `<h2>Баланс — ${TABLES.balance.file}</h2><p class="meta">Числа GDD §2.1 и §13.1; карта — §2.2 и §3.1. Ядро симуляции берёт время отсюда: сезон — ${withUnit(TICKS_PER_SEASON, 'тиков')}, год — ${withUnit(TICKS_PER_YEAR, 'тиков')} (${DAYS_PER_YEAR} сут, ${formatNumber(TICKS_PER_YEAR / DATA.balance.time.ticksPerSecond / 60)} мин на ×1).</p>`;
   const balanceColumns = document.createElement('div');
   balanceColumns.className = 'data-columns';
   for (const group of balance) {

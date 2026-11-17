@@ -270,6 +270,11 @@ function lookOf(art: TerrainArt, id: string): PreparedLook {
   return look;
 }
 
+/** Does this ground move (several frames, like the water's ripple)? */
+export function isAnimatedLook(art: TerrainArt, id: string): boolean {
+  return lookOf(art, id).frames > 1;
+}
+
 /** Which variation of its ground a tile shows (index into `tiles`). */
 export function variationAt(art: TerrainArt, id: string, x: number, y: number): number {
   const look = lookOf(art, id);

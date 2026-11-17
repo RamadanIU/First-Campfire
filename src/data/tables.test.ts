@@ -11,10 +11,10 @@ import { DAY_PHASES, loadTables, type RawTables, TABLES } from './tables.ts';
 type Json = Record<string, unknown>;
 
 /** Load a corrupted copy of the real tables and return the messages of the error. */
-function problemsWith(
-  corrupt: (tables: { balance: Json; resources: Json[]; terrain: Json[] }) => void,
-) {
-  const copy = structuredClone(RAW_TABLES) as { balance: Json; resources: Json[]; terrain: Json[] };
+type Tables = { balance: Json; resources: Json[]; terrain: Json[]; objects: Json[] };
+
+function problemsWith(corrupt: (tables: Tables) => void) {
+  const copy = structuredClone(RAW_TABLES) as Tables;
   corrupt(copy);
   try {
     loadTables(copy as RawTables);
@@ -31,7 +31,7 @@ const berries = (tables: { resources: Json[] }) =>
 describe('таблицы игры', () => {
   it('все таблицы загружаются без ошибок', () => {
     expect(() => loadTables(RAW_TABLES)).not.toThrow();
-    expect(Object.keys(TABLES)).toEqual(['balance', 'resources', 'terrain']);
+    expect(Object.keys(TABLES)).toEqual(['balance', 'resources', 'terrain', 'objects']);
   });
 
   it('время — из GDD §2.1 и §13.1', () => {
@@ -165,6 +165,49 @@ describe('испорченная запись даёт понятную ошиб
     ).toEqual([
       'data/balance.json · поле «life.fertileAge»: начало (50) должно быть раньше конца (45)',
     ]);
+  });
+
+  it('объект карты: неизвестное место, повтор состояний, вес без места', () => {
+    const oak = (t: Tables) => t.objects.find((r) => r.id === 'oak')!;
+    expect(
+      problemsWith((t) => {
+        oak(t).place = 'forst';
+      }),
+    ).toEqual([
+      'data/objects.json · запись «oak» · поле «place»: ожидается одно из: forest (лес), edge (опушка), scatter (россыпь), meadow (луг) или null (не появляется при сотворении карты), получено "forst"',
+    ]);
+    expect(
+      problemsWith((t) => {
+        oak(t).states = ['grown', 'grown'];
+      }),
+    ).toEqual(['data/objects.json · запись «oak»: состояния повторяются']);
+    expect(
+      problemsWith((t) => {
+        oak(t).place = null;
+      }),
+    ).toEqual(['data/objects.json · запись «oak»: вес без места (place) — должен быть 0']);
+    expect(
+      problemsWith((t) => {
+        oak(t).states = [];
+      }),
+    ).toEqual([
+      'data/objects.json · запись «oak» · поле «states»: в списке 0 элементов, а нужно от 1 до 16',
+    ]);
+  });
+
+  it('карта: стороны делятся на чанки, «от» не больше «до»', () => {
+    expect(
+      problemsWith((t) => {
+        (t.balance.map as Json).width = 70;
+      }),
+    ).toEqual([
+      'data/balance.json · поле «map»: стороны карты (70×64) должны делиться на сторону чанка (32)',
+    ]);
+    expect(
+      problemsWith((t) => {
+        ((t.balance.map as Json).bushes as Json).min = 30;
+      }),
+    ).toEqual(['data/balance.json · поле «map.bushes»: «от» (30) больше, чем «до» (22)']);
   });
 
   it('проходимость и скорость земли согласованы', () => {

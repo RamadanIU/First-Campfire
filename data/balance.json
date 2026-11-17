@@ -14,5 +14,16 @@
     "fertileAge": { "from": 16, "to": 45 },
     "pregnancySeasons": 3,
     "minYearsBetweenChildren": 2
+  },
+  "map": {
+    "width": 64,
+    "height": 64,
+    "chunkSize": 32,
+    "lakePercent": 35,
+    "forestPercent": 40,
+    "bushes": { "min": 12, "max": 22 },
+    "boulders": { "min": 5, "max": 10 },
+    "meadowDecorPercent": 7,
+    "camp": { "size": 5, "waterDistance": 12, "forestDistance": 10 }
   }
 }

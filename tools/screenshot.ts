@@ -22,6 +22,9 @@
  *   --compare <dir>  compare every shot with the shot of the same name in <dir> (the NN- prefix
  *                    is ignored), e.g. the previous step's folder: «pixel for pixel» or where
  *                    they differ. Differences are reported, not failed — judge them by eye
+ *   --frame-time <ms>  let the live page (no `frame=` in the query) run for <ms> before the shot
+ *                    and report how long drawing a frame took: average, 99 % of frames, the worst
+ *                    and, apart, the first one (`window.__fc.renderMs`, filled by src/main.ts)
  *
  * Playwright and Chromium are preinstalled in Claude Code cloud sessions and are
  * deliberately NOT in package.json (a second copy would not find the browser).
@@ -50,6 +53,7 @@ const { values, positionals } = parseArgs({
     'no-build': { type: 'boolean', default: false },
     'check-crisp': { type: 'string' },
     compare: { type: 'string' },
+    'frame-time': { type: 'string' },
   },
 });
 
@@ -77,6 +81,11 @@ const crispScale = values['check-crisp'] === undefined ? null : Number(values['c
 if (crispScale !== null && !(Number.isInteger(crispScale) && crispScale >= 2))
   fail(`--check-crisp: масштаб — целое число от 2, получено ${values['check-crisp']}`);
 const compareDir = values.compare === undefined ? null : join(ROOT, values.compare);
+const frameTimeMs = values['frame-time'] === undefined ? null : Number(values['frame-time']);
+if (frameTimeMs !== null && !(Number.isInteger(frameTimeMs) && frameTimeMs >= 100))
+  fail(
+    `--frame-time: сколько миллисекунд смотреть — целое от 100, получено ${values['frame-time']}`,
+  );
 if (compareDir !== null && !existsSync(compareDir)) fail(`--compare: нет папки ${values.compare}`);
 
 /** The shot named `name` in the folder to compare with: NN-name.png with any NN. */
@@ -131,12 +140,31 @@ try {
       errors.push('страница не сообщила о готовности за 60 с (window.__fc.ready)');
     }
     if (Number(values.wait) > 0) await page.waitForTimeout(Number(values.wait));
+    const timing: string[] = [];
+    if (frameTimeMs !== null) {
+      await page.waitForTimeout(frameTimeMs);
+      const { drawn, first } = (await page.evaluate(
+        '({ drawn: window.__fc ? window.__fc.renderMs : [], first: window.__fc ? window.__fc.firstRenderMs : null })',
+      )) as { drawn: number[]; first: number | null };
+      if (drawn.length === 0 || first === null) {
+        errors.push('--frame-time: живых кадров нет (в адресе есть frame=?)');
+      } else {
+        // The first frame pays for setting up (canvases reach the graphics card): apart.
+        const times = drawn.slice().sort((a, b) => a - b);
+        const mean = times.reduce((sum, t) => sum + t, 0) / times.length;
+        const p99 = times[Math.min(times.length - 1, Math.floor(times.length * 0.99))]!;
+        const ms = (value: number) => value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+        timing.push(
+          `  кадр рисуется: в среднем ${ms(mean)} мс, 99 % — не дольше ${ms(p99)} мс, худший ${ms(times.at(-1)!)} мс (${times.length} кадров; первый — ${ms(first)} мс)`,
+        );
+      }
+    }
     errors.push(...((await page.evaluate('window.__fc ? window.__fc.errors : []')) as string[]));
 
     const file = join(outDir, `${String(index + 1).padStart(2, '0')}-${shot.name}.png`);
     const png: Buffer = await page.screenshot({ path: file });
     await context.close();
-    const notes: string[] = [];
+    const notes: string[] = [...timing];
 
     if (crispScale !== null) {
       const report = crispness(decodePng(png), crispScale);

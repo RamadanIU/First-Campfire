@@ -14,6 +14,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { saveWorld } from '../src/sim/save.ts';
+import { createWorld, runTicks } from '../src/sim/world.ts';
 import { buildGame, chromium, hasBuild, serveGame } from './browser.ts';
 
 /** The part of Playwright's Page the checks use. */
@@ -52,6 +54,8 @@ interface World {
   hash: string;
   origin: string;
   savedTick: number | null;
+  /** The world when the scene opened it (it runs on at once). */
+  opened: { tick: number; hash: string };
 }
 
 const { values } = parseArgs({ options: { 'no-build': { type: 'boolean', default: false } } });
@@ -80,18 +84,19 @@ async function text(page: Page, selector: string): Promise<string> {
     .join(' · ');
 }
 
-/** A fresh browser (empty storage); `init` runs in every page before the game. */
-async function scenario(
+/** A fresh browser (empty storage); `init(initArg)` runs in every page before the game. */
+async function scenario<A>(
   title: string,
   run: (page: Page) => Promise<void>,
-  init?: () => void,
+  init?: (arg: A) => void,
+  initArg?: A,
 ): Promise<void> {
   console.log(`\n${title}`);
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
     acceptDownloads: true,
   });
-  if (init) await context.addInitScript(init);
+  if (init) await context.addInitScript(init, initArg);
   const page: Page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -122,7 +127,7 @@ async function ready(page: Page): Promise<void> {
 /** The world of the scene `world` (src/main.ts, WorldInfo). */
 function world(page: Page): Promise<World> {
   return page.evaluate<World>(
-    '(({ seed, tick, hash, origin, savedTick }) => ({ seed, tick, hash: hash(), origin, savedTick }))(window.__fc.world)',
+    '(({ seed, tick, hash, origin, savedTick, opened }) => ({ seed, tick, hash: hash(), origin, savedTick, opened }))(window.__fc.world)',
   );
 }
 
@@ -166,15 +171,21 @@ try {
     await page.keyboard.press('Space');
     await page.waitForTimeout(200);
     const before = await world(page);
-    const journal = await text(page, '.journal-list');
+    const date = await text(page, '.world-panel-date');
     await page.reload();
     await ready(page);
-    const after = await world(page);
+    // After the reload the world runs on at ×1 (the pause is not saved): compare the world as
+    // the scene opened it.
+    const { opened } = await world(page);
     check(
-      before.tick > 200 && after.tick === before.tick && after.hash === before.hash,
-      `перезагрузка: тот же мир на том же тике (тик ${before.tick}, хэш ${before.hash} → тик ${after.tick}, хэш ${after.hash})`,
+      before.tick > 200 && opened.tick === before.tick && opened.hash === before.hash,
+      `перезагрузка: тот же мир на том же тике (тик ${before.tick}, хэш ${before.hash} → тик ${opened.tick}, хэш ${opened.hash})`,
     );
-    check((await text(page, '.journal-list')) === journal, 'перезагрузка: журнал тот же');
+    // The panel shows the same date (the world runs on after the reload, so not the same tick).
+    check(
+      (await text(page, '.world-panel-date')) === date,
+      `перезагрузка: на панели та же дата (${date})`,
+    );
 
     // Save to file.
     const [download] = await Promise.all([page.waitForEvent('download'), page.click(PANEL_FILE)]);
@@ -235,8 +246,8 @@ try {
     await goes(page, '**/?scene=world', () => page.click(ASK_YES));
     const loaded = await world(page);
     check(
-      loaded.seed === 12345 && loaded.tick === fileTick,
-      `из файла: мир 12345 на тике ${loaded.tick} (в файле ${fileTick})`,
+      loaded.seed === 12345 && loaded.opened.tick === fileTick,
+      `из файла: мир 12345 на тике ${loaded.opened.tick} (в файле ${fileTick})`,
     );
   });
 
@@ -278,11 +289,16 @@ try {
     },
   );
 
+  // A world near the end of its first year fits into the storage; the save at the new year
+  // (the journal grew) does not. The limit lies between the two sizes.
+  const fullWorld = createWorld(8);
+  runTicks(fullWorld, 4000);
+  const fits = saveWorld(fullWorld).length;
+  runTicks(fullWorld, 801);
+  const limit = Math.floor((fits + saveWorld(fullWorld).length) / 2);
   await scenario(
     'Хранилище переполнено',
     async (page) => {
-      // A world near the end of its first year (save ≈ 7 000 characters); the save at the new
-      // year (≈ 8 400) does not fit into a storage of 7 500.
       await open(page, '?scene=world&slot=world&seed=8&ticks=4000&speed=20');
       await page.waitForFunction('window.__fc.world.tick > 4850', null, { timeout: 30_000 });
       await page.keyboard.press('Space');
@@ -293,13 +309,14 @@ try {
         `мир идёт дальше (тик ${info.tick}), панель: ${status}`,
       );
     },
-    () => {
+    (most: number) => {
       const setItem = Storage.prototype.setItem;
       Storage.prototype.setItem = function (key: string, value: string) {
-        if (value.length > 7_500) throw new DOMException('full', 'QuotaExceededError');
+        if (value.length > most) throw new DOMException('full', 'QuotaExceededError');
         setItem.call(this, key, value);
       };
     },
+    limit,
   );
 } finally {
   await browser.close();

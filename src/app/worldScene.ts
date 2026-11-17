@@ -6,17 +6,17 @@
  *   ?scene=world&seed=5&ticks=3000             a world of the address: shown, never saved by itself
  *   ?scene=world&slot=world&seed=7&ticks=9000  debug: this world put into the slot first
  *
- * The world is drawn by the view of the core (./clockScene.ts: sky, fireflies, HUD, journal)
- * until the map of stage 1 takes its place. In the corner — the panel of the world: how it is
- * saved, «Save to file», «To the menu». A save that cannot be opened shows the title screen
- * with the reason and the offer of a new world.
+ * The world is drawn as its map (./mapView.ts, step 1.1). In the corner — the panel of the world:
+ * the date, how it is saved, «Save to file», «To the menu». A save that cannot be opened shows
+ * the title screen with the reason and the offer of a new world.
  */
 import { hashState } from '../sim/hash.ts';
 import type { LoadWarning } from '../sim/save.ts';
 import { saveWorld } from '../sim/save.ts';
 import type { World } from '../sim/world.ts';
-import { createClockView } from './clockScene.ts';
 import { dateOf, formatCount } from './dates.ts';
+import type { GameLoop } from './loop.ts';
+import { createMapView } from './mapView.ts';
 import {
   type Autosave,
   createAutosave,
@@ -47,8 +47,11 @@ export function createWorldScene(context: SceneContext): Scene {
   });
   saveOnLeave(autosave, window, document);
 
-  const view = createClockView(context, world);
-  const panel = params.ui ? createWorldPanel(ui, world, autosave, origin, warnings) : null;
+  const start = { tick: world.tick, hash: hashState(world) };
+  const view = createMapView(context, world);
+  const panel = params.ui
+    ? createWorldPanel(ui, world, view.loop, autosave, origin, warnings)
+    : null;
   // For automated checks (tools/e2e.ts): the world without reading it off the screen.
   window.__fc.world = {
     get seed() {
@@ -62,6 +65,7 @@ export function createWorldScene(context: SceneContext): Scene {
     get savedTick() {
       return autosave.savedTick;
     },
+    opened: start,
   };
 
   return {
@@ -79,10 +83,11 @@ export function createWorldScene(context: SceneContext): Scene {
   };
 }
 
-/** Panel of the world: how it is saved, «Save to file», «To the menu». */
+/** Panel of the world: the date, how it is saved, «Save to file», «To the menu». */
 function createWorldPanel(
   ui: HTMLElement,
   world: World,
+  loop: GameLoop,
   autosave: Autosave,
   origin: 'url' | 'saved' | 'new',
   warnings: LoadWarning[],
@@ -92,6 +97,10 @@ function createWorldPanel(
   const title = document.createElement('div');
   title.className = 'world-panel-title';
   title.textContent = 'Мир';
+  const date = document.createElement('div');
+  date.className = 'world-panel-date';
+  const clock = document.createElement('div');
+  clock.className = 'world-panel-clock';
   const status = document.createElement('div');
   status.className = 'world-panel-status';
   const hint = document.createElement('div');
@@ -117,7 +126,7 @@ function createWorldPanel(
   toMenu.type = 'button';
   toMenu.textContent = 'В меню';
   buttons.append(toFile, toMenu);
-  panel.append(title, status, hint, notes, buttons);
+  panel.append(title, date, clock, status, hint, notes, buttons);
   ui.append(panel);
 
   const note = (text: string, kind: 'ok' | 'warn') => {
@@ -145,8 +154,23 @@ function createWorldPanel(
   });
 
   let shown = '';
+  let shownDate = '';
+  let shownClock = '';
   return {
     update() {
+      const today = dateOf(world.tick);
+      const dateText = today.charAt(0).toUpperCase() + today.slice(1);
+      if (dateText !== shownDate) {
+        shownDate = dateText;
+        date.textContent = dateText;
+      }
+      const speed =
+        loop.speed === 0 ? 'пауза' : `×${loop.speed}${loop.lagging ? ' (не успевает)' : ''}`;
+      const clockText = `тик\u00a0${formatCount(world.tick)} · ${speed} · пробел — пауза, 1–4 — скорость`;
+      if (clockText !== shownClock) {
+        shownClock = clockText;
+        clock.textContent = clockText;
+      }
       let text: string;
       if (origin === 'url') {
         text = `Зерно ${world.seed}, из адреса`;

@@ -36,7 +36,7 @@ export const SAVE_FORMAT = 'first-campfire/world';
  * Version of the save format. Raise it (and add a line to the shape history in ./save.test.ts)
  * whenever the shape of the world changes; from stage 5 also add a migration to MIGRATIONS.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 /** Turns the world of save format version N (the key) into the world of version N + 1. */
 export type Migration = (world: Record<string, unknown>) => Record<string, unknown>;
@@ -162,8 +162,8 @@ function encodeValue(key: string, value: unknown): unknown {
   return value;
 }
 
-/** JSON.parse reviver: restores typed arrays. Throws on a malformed one. */
-function decodeValue(_key: string, value: unknown): unknown {
+/** A tagged typed array → the typed array; anything else as is. Throws on a malformed one. */
+function decodeValue(value: unknown): unknown {
   if (typeof value !== 'object' || value === null || !Object.hasOwn(value, TYPED_KEY)) {
     return value;
   }
@@ -184,6 +184,41 @@ function decodeValue(_key: string, value: unknown): unknown {
     throw new Error(`испорчен типизированный массив ${name}: ${buffer.byteLength} байт`);
   }
   return new Type(buffer);
+}
+
+/**
+ * Restore the typed arrays in parsed JSON, in place. A walk over the parsed data is several times
+ * cheaper than a JSON.parse reviver, which is called for every value of a long journal.
+ */
+function restoreTyped(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      if (typeof item === 'object' && item !== null) value[i] = restoreTyped(item);
+    }
+    return value;
+  }
+  if (Object.hasOwn(value, TYPED_KEY)) return decodeValue(value);
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    const item = record[key];
+    if (typeof item === 'object' && item !== null) record[key] = restoreTyped(item);
+  }
+  return record;
+}
+
+/**
+ * Any plain data as JSON text the way saves write it: typed arrays (the map's layers) as tagged
+ * base64. Plain JSON.stringify would turn a typed array into an object of numbered keys.
+ */
+export function toSaveJson(value: unknown): string {
+  return JSON.stringify(value, encodeValue);
+}
+
+/** Text written by `toSaveJson` back into data, typed arrays restored. */
+export function fromSaveJson(text: string): unknown {
+  return restoreTyped(JSON.parse(text));
 }
 
 // --- Saving ----------------------------------------------------------------------------------
@@ -264,8 +299,7 @@ function readSave(text: string, rules: SaveRules): LoadResult {
 
   let parsed: unknown;
   try {
-    // The reviver costs about as much as the parsing itself: skip it when there is nothing to revive.
-    parsed = text.includes(`"${TYPED_KEY}"`) ? JSON.parse(text, decodeValue) : JSON.parse(text);
+    parsed = restoreTyped(JSON.parse(text));
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return looksLikeSave(text)

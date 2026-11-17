@@ -8,6 +8,9 @@
  * every system in the fixed order of SYSTEMS; systems see the new tick.
  */
 import { createJournal, type EventJournal, emit } from './events.ts';
+import type { WorldMap } from './map.ts';
+import { generateMap } from './mapgen.ts';
+import type { MapObjects } from './objects.ts';
 import { createRng, type Rng } from './rng.ts';
 import { calendarEventsSystem } from './systems/calendarEvents.ts';
 import { createFireflies, type Fireflies, firefliesSystem } from './systems/fireflies.ts';
@@ -16,7 +19,7 @@ import { createFireflies, type Fireflies, firefliesSystem } from './systems/fire
  * Named random streams, one per system. A new system adds its name to the end; streams are
  * derived from (seed, name), so adding one does not change the numbers of the others.
  */
-export const RNG_STREAMS = ['fireflies'] as const;
+export const RNG_STREAMS = ['fireflies', 'map'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 export interface World {
@@ -28,6 +31,10 @@ export interface World {
   events: EventJournal;
   /** The night swarm of fireflies (ADR-018); see ./systems/fireflies.ts. */
   fireflies: Fireflies;
+  /** The map: ground and object layers (./map.ts), made from the seed by ./mapgen.ts. */
+  map: WorldMap;
+  /** Trees, bushes, boulders… standing on the map (./objects.ts). */
+  objects: MapObjects;
 }
 
 /** A system updates one aspect of the world once per tick. */
@@ -42,12 +49,15 @@ export const SYSTEMS: readonly System[] = [calendarEventsSystem, firefliesSystem
 export function createWorld(seed: number): World {
   const rng = {} as Record<RngStream, Rng>;
   for (const stream of RNG_STREAMS) rng[stream] = createRng(seed, stream);
+  const { map, objects } = generateMap(rng.map);
   const world: World = {
     seed,
     tick: 0,
     rng,
     events: createJournal(),
     fireflies: createFireflies(),
+    map,
+    objects,
   };
   emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
   return world;

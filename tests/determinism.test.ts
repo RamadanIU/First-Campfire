@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { hashState } from '../src/sim/hash.ts';
-import { loadWorld, saveWorld } from '../src/sim/save.ts';
+import { fromSaveJson, loadWorld, saveWorld, toSaveJson } from '../src/sim/save.ts';
 import { createWorld, runTicks, type World } from '../src/sim/world.ts';
 
 function hashAfter(seed: number, ticks: number): string {
@@ -41,17 +41,19 @@ describe('детерминизм', () => {
     expect(hashState(world)).toBe(hashAfter(42, 10_000));
   });
 
-  it('состояние мира — простые данные: после JSON хэш тот же', () => {
+  // JSON as saves write it: the map's typed arrays go as tagged base64 (ADR-016); plain
+  // JSON.stringify would turn them into objects of numbered keys.
+  it('состояние мира — простые данные: после JSON (как в сохранении) хэш тот же', () => {
     const world = createWorld(42);
     runTicks(world, 10_000);
-    const copy = JSON.parse(JSON.stringify(world));
+    const copy = fromSaveJson(toSaveJson(world));
     expect(hashState(copy)).toBe(hashState(world));
   });
 
-  it('копия мира, пропущенная через JSON, продолжает ту же историю', () => {
+  it('копия мира, пропущенная через JSON (как в сохранении), продолжает ту же историю', () => {
     const world = createWorld(42);
     runTicks(world, 3_333);
-    const copy = JSON.parse(JSON.stringify(world));
+    const copy = fromSaveJson(toSaveJson(world)) as World;
     runTicks(world, 6_667);
     runTicks(copy, 6_667);
     expect(hashState(copy)).toBe(hashState(world));
