@@ -178,7 +178,7 @@ function createWorldPanel(
         clock.textContent = clockText;
       }
       const zoom = String(camera.camera.zoom).replace('.', ',');
-      const viewText = `масштаб ×${zoom} · тащите карту мышью или пальцем, WASD/стрелки · колесо, щипок, +/− — масштаб`;
+      const viewText = `масштаб ×${zoom} (колесо, щипок, +/−) · карту двигать мышью, пальцем, WASD/стрелками`;
       if (viewText !== shownView) {
         shownView = viewText;
         view.textContent = viewText;
