@@ -16,7 +16,29 @@ describe('parseParams', () => {
       speed: 1,
       sprite: null,
       zoom: null,
+      slot: null,
+      worldFromUrl: true,
     });
+  });
+
+  it('a world given by seed= or ticks= comes from the address, unless slot= prepares a save', () => {
+    expect(parseParams('?scene=world').worldFromUrl).toBe(false);
+    expect(parseParams('?scene=world&seed=7').worldFromUrl).toBe(true);
+    expect(parseParams('?scene=world&ticks=100').worldFromUrl).toBe(true);
+    expect(parseParams('?scene=world&seed=bad').worldFromUrl).toBe(false);
+    expect(parseParams('?scene=world&slot=world&seed=7&ticks=9000')).toMatchObject({
+      slot: 'world',
+      seed: 7,
+      ticks: 9000,
+      worldFromUrl: false,
+    });
+  });
+
+  it('reads the debug slot preset; unknown ones are ignored', () => {
+    for (const preset of ['world', 'broken', 'alien', 'newer', 'empty'])
+      expect(parseParams(`?slot=${preset}`).slot).toBe(preset);
+    expect(parseParams('?slot=nonsense').slot).toBeNull();
+    expect(parseParams('?slot=').slot).toBeNull();
   });
 
   it('reads zoom: only whole scales 1–4, anything else — the scene decides', () => {
