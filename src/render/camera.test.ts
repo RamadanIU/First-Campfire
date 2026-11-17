@@ -3,7 +3,8 @@ import {
   type Camera,
   cameraLayout,
   clampCamera,
-  fitZoom,
+  DEFAULT_ZOOM,
+  layoutAt,
   moveCamera,
   pixelScale,
   type ScreenSize,
@@ -58,47 +59,62 @@ describe('ступени зума', () => {
   });
 });
 
-describe('вид при открытии (как прежний неподвижный вид шага 1.1)', () => {
-  it('карта помещается — по центру в наибольшем целом масштабе, видна целиком', () => {
-    const window = screen(1088, 1088);
-    const zoom = fitZoom(window, MAP);
-    expect(zoom).toBe(1);
-    expect(cameraLayout({ ...FOCUS, zoom }, window, MAP)).toEqual({
+describe('вид при открытии', () => {
+  it('без zoom= — ×2 «улица», основной вид GDD §10.1 (выбор владельца, ADR-022)', () => {
+    expect(DEFAULT_ZOOM).toBe(2);
+    expect(cameraLayout({ ...FOCUS, zoom: DEFAULT_ZOOM }, HD, MAP).scale).toBe(2);
+    // On a retina screen ×2 is 4 device pixels per world pixel.
+    expect(pixelScale(DEFAULT_ZOOM, 2)).toBe(4);
+  });
+
+  it('карта помещается — по центру, видна целиком (×1 в окне 1088×1088)', () => {
+    expect(cameraLayout({ ...FOCUS, zoom: 1 }, screen(1088, 1088), MAP)).toEqual({
       scale: 1,
       offsetX: 32,
       offsetY: 32,
       view: { x: 0, y: 0, width: 1024, height: 1024 },
     });
-    expect(fitZoom(screen(2200, 2100), MAP)).toBe(2);
-    expect(fitZoom(screen(9000, 9000), MAP)).toBe(4);
-    // Nothing fits: ×1 (a part is seen), not ×0.5.
-    expect(fitZoom(HD, MAP)).toBe(1);
     // In device pixels: a retina window of 1088 CSS px is 2176 device px — ×1 is 2 pixels each.
-    expect(fitZoom(screen(2176, 2176, 2), MAP)).toBe(1);
     expect(cameraLayout({ ...FOCUS, zoom: 1 }, screen(2176, 2176, 2), MAP).scale).toBe(2);
   });
+});
 
-  it('не помещается — центр на точке внимания, без пустых полос за краем карты', () => {
-    const fit = cameraLayout({ ...FOCUS, zoom: 1 }, HD, MAP);
-    expect(fit.scale).toBe(1);
-    expect(fit.offsetX).toBe(128); // the width fits: centred
-    expect(fit.offsetY).toBe(360 - 520);
-    expect(fit.view).toEqual({ x: 0, y: 160, width: 1024, height: 720 });
-
-    const corner = cameraLayout({ x: 10, y: 1000, zoom: 2 }, HD, MAP);
-    expect([corner.offsetX, corner.offsetY]).toEqual([0, 720 - 2048]);
-    expect(corner.view).toEqual({ x: 0, y: 664, width: 640, height: 360 });
+describe('кадры между ступенями (плавный зум)', () => {
+  it('на масштабе ступени — тот же вид, что у ступени', () => {
+    for (const zoom of ZOOMS) {
+      for (const ratio of [1, 1.25, 2]) {
+        const window = screen(1280 * ratio, 720 * ratio, ratio);
+        const camera = { x: 700.3, y: 433.7, zoom };
+        expect(layoutAt(camera, pixelScale(zoom, ratio), window, MAP)).toEqual(
+          cameraLayout(camera, window, MAP),
+        );
+      }
+    }
   });
 
-  it('zoom= задаёт ступень; положение — целые пиксели, окно закрыто картой', () => {
-    const fit = cameraLayout({ x: 333.3, y: 517.7, zoom: 4 }, screen(1281, 721), MAP);
-    expect(fit.scale).toBe(4);
-    for (const value of [fit.offsetX, fit.offsetY, fit.view.x, fit.view.y]) {
-      expect(Number.isInteger(value)).toBe(true);
-    }
-    expect(fit.offsetX + (fit.view.x + fit.view.width) * 4).toBeGreaterThanOrEqual(1281);
-    expect(fit.offsetY + (fit.view.y + fit.view.height) * 4).toBeGreaterThanOrEqual(721);
-    expect(fit.offsetX + fit.view.x * 4).toBeLessThanOrEqual(0);
+  it('дробный масштаб: точка в центре — та, что просили; видимая часть покрывает экран', () => {
+    const scale = 2 ** 1.5; // halfway from ×2 to ×4
+    const layout = layoutAt({ x: 8000, y: 8000 }, scale, HD, BIG);
+    expect(layout.scale).toBe(scale);
+    const middle = screenToWorld(layout, 640, 360);
+    expect(Math.abs(middle.x - 8000) * scale).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(middle.y - 8000) * scale).toBeLessThanOrEqual(0.5);
+    // The view covers the whole screen: its corners are on or beyond the screen's.
+    const { view } = layout;
+    expect(worldToScreen(layout, view.x, view.y).x).toBeLessThanOrEqual(0);
+    expect(worldToScreen(layout, view.x, view.y).y).toBeLessThanOrEqual(0);
+    expect(worldToScreen(layout, view.x + view.width, view.y).x).toBeGreaterThanOrEqual(1280);
+    expect(worldToScreen(layout, view.x, view.y + view.height).y).toBeGreaterThanOrEqual(720);
+  });
+
+  it('дробный масштаб у края: за край карты не выходит', () => {
+    const scale = 1.4;
+    const layout = layoutAt({ x: -500, y: 99999 }, scale, HD, MAP);
+    expect(layout.offsetX).toBe(0);
+    expect(layout.view.x).toBe(0);
+    // The bottom edge of the map is at the bottom edge of the screen (to a pixel).
+    expect(Math.abs(layout.offsetY + MAP.height * scale - 720)).toBeLessThanOrEqual(1);
+    expect(layout.view.y + layout.view.height).toBe(MAP.height);
   });
 });
 
@@ -216,7 +232,10 @@ describe('перемещение', () => {
     for (const zoom of [1, 2, 4] as const) {
       let camera: Camera = { x: 5000, y: 5000, zoom };
       for (let i = 0; i < 100; i++) {
-        const from = { x: random.next().value! * 1280, y: random.next().value! * 720 };
+        const from = {
+          x: random.next().value! * 1280,
+          y: random.next().value! * 720,
+        };
         const dx = Math.round((random.next().value! - 0.5) * 200);
         const dy = Math.round((random.next().value! - 0.5) * 200);
         const grabbed = screenToWorld(cameraLayout(camera, HD, BIG), from.x, from.y);

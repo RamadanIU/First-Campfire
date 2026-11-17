@@ -6,8 +6,10 @@
  *     under it. Let go while moving — the picture glides on and slows down.
  *   - Held keys speed the view up to a steady pace and let it slow down when released: the
  *     movement is smooth and does not depend on the frame rate.
- *   - Zoom switches steps at once (src/render/camera.ts): the point under the cursor (under the
- *     fingers; the middle of the screen for keys) stays where it was.
+ *   - Zoom glides to the next step in `ZOOM_MS` (the owner's wish after step 1.3, ADR-022): the
+ *     point under the cursor (under the fingers; the middle of the screen for keys) stays where
+ *     it was in every frame; the step it comes to is crisp (src/render/camera.ts). Dragging,
+ *     keys and another zoom go on while it glides.
  *   - The view never leaves the map.
  *   - A tap — a press and release that moved less than `TAP_SLOP` — does not move the map: it is a
  *     click on the world (step 1.3: the debug order «go there»; step 1.6 — choosing a villager).
@@ -18,14 +20,17 @@
 import {
   type Camera,
   type CameraLayout,
+  cameraHolding,
   cameraLayout,
   clampCamera,
-  fitZoom,
+  DEFAULT_ZOOM,
+  layoutAt,
   moveCamera,
+  pixelScale,
   type ScreenSize,
+  screenToWorld,
   type WorldSize,
   type Zoom,
-  zoomCameraAt,
   zoomStep,
 } from '../render/camera.ts';
 
@@ -41,6 +46,8 @@ const STOP_SPEED = 8;
 const MAX_GLIDE_SPEED = 4000;
 /** Longest frame the motion accounts for, ms: a background tab must not throw the view away. */
 const MAX_STEP_MS = 100;
+/** How long a zoom glides from one step to the next, ms. */
+export const ZOOM_MS = 250;
 
 /** Wheel: how much scrolling (CSS px) makes one zoom step. */
 export const WHEEL_STEP_PX = 40;
@@ -65,14 +72,16 @@ const RELEASE_WINDOW_MS = 100;
 const RELEASE_STILL_MS = 60;
 
 export interface CameraControl {
-  /** The camera now (inside the edges of the map). */
+  /** The camera (inside the edges of the map); while a zoom glides — where it comes to rest. */
   readonly camera: Camera;
-  /** Where the world is drawn now. */
+  /** Where the world is drawn now (while a zoom glides — at a fractional scale). */
   readonly layout: CameraLayout;
   readonly screen: ScreenSize;
-  /** The screen changed (device pixels). The first call picks the zoom if none was asked for. */
+  /** Is a zoom gliding between steps now? */
+  readonly zooming: boolean;
+  /** The screen changed (device pixels). A zoom gliding then comes to its step at once. */
   resize(screen: ScreenSize): void;
-  /** Smooth motion for `elapsedMs` of real time: held keys, a glide after a drag. */
+  /** Smooth motion for `elapsedMs` of real time: held keys, a glide after a drag, a zoom. */
   update(elapsedMs: number): void;
   /** The picture follows the pointer by (`dx`, `dy`) device pixels; a glide stops. */
   drag(dx: number, dy: number): void;
@@ -87,9 +96,25 @@ export interface CameraControl {
   hold(direction: { x: number; y: number }): void;
 }
 
+/** A zoom gliding from one step to the next. */
+interface ZoomGlide {
+  /** Device pixels per world pixel when it began (the picture as it was drawn then). */
+  fromScale: number;
+  /** The world point under `anchor` when it began (world pixels). */
+  fromPoint: { x: number; y: number };
+  /** The screen point (device pixels) whose world point stays under it. */
+  anchor: { x: number; y: number };
+  elapsedMs: number;
+}
+
+/** Fast at first, gentle at the end: the zoom answers at once and settles softly. */
+function easeOut(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
+
 /**
  * A camera for a world of `world` pixels, looking at `focus` (world pixels) at `zoom` (null — the
- * closest step at which the whole world fits, chosen at the first `resize`).
+ * main step, ×2).
  */
 export function createCameraControl(
   world: WorldSize,
@@ -97,17 +122,77 @@ export function createCameraControl(
   zoom: Zoom | null,
 ): CameraControl {
   let screen: ScreenSize = { width: 1, height: 1, pixelRatio: 1 };
-  let camera: Camera = { x: focus.x, y: focus.y, zoom: zoom ?? 1 };
-  let sized = false;
+  /** Where the camera stands; while a zoom glides — where it comes to rest. */
+  let camera: Camera = { x: focus.x, y: focus.y, zoom: zoom ?? DEFAULT_ZOOM };
+  let glide: ZoomGlide | null = null;
   let layout = cameraLayout(camera, screen, world);
   /** Velocity of the view, device px of the screen per second. */
   let vx = 0;
   let vy = 0;
   let held = { x: 0, y: 0 };
 
+  /**
+   * The picture now. While a zoom glides, the scale goes from the old step's to the new one's
+   * evenly in proportion (×2 → ×4 passes ×2.83 halfway), and the world point under the anchor
+   * goes from where it was to where it is at the end — the same point unless an edge holds the
+   * camera back, so the picture never jumps.
+   */
+  const compose = () => {
+    if (!glide) {
+      layout = cameraLayout(camera, screen, world);
+      return;
+    }
+    const t = easeOut(glide.elapsedMs / ZOOM_MS);
+    if (t >= 1) {
+      // The step it comes to is drawn exactly as a step, not as the end of a curve.
+      glide = null;
+      layout = cameraLayout(camera, screen, world);
+      return;
+    }
+    const toScale = pixelScale(camera.zoom, screen.pixelRatio);
+    const scale = glide.fromScale * (toScale / glide.fromScale) ** t;
+    const { anchor, fromPoint } = glide;
+    const halfX = screen.width / 2;
+    const halfY = screen.height / 2;
+    const endX = camera.x + (anchor.x - halfX) / toScale;
+    const endY = camera.y + (anchor.y - halfY) / toScale;
+    const pointX = fromPoint.x + (endX - fromPoint.x) * t;
+    const pointY = fromPoint.y + (endY - fromPoint.y) * t;
+    layout = layoutAt(
+      {
+        x: pointX - (anchor.x - halfX) / scale,
+        y: pointY - (anchor.y - halfY) / scale,
+      },
+      scale,
+      screen,
+      world,
+    );
+  };
   const place = (next: Camera) => {
     camera = clampCamera(next, screen, world);
-    layout = cameraLayout(camera, screen, world);
+    compose();
+  };
+  /**
+   * The view moves by (`dx`, `dy`) device pixels of the screen as it is drawn now. While a zoom
+   * glides, the picture moves with it and so does the place where the zoom comes to rest.
+   * Returns the scale the move was counted in.
+   */
+  const shift = (dx: number, dy: number): number => {
+    if (!glide) {
+      place(moveCamera(camera, dx, dy, screen, world));
+      return layout.scale;
+    }
+    const scale = layout.scale;
+    glide.fromPoint = {
+      x: glide.fromPoint.x + dx / scale,
+      y: glide.fromPoint.y + dy / scale,
+    };
+    place({
+      x: camera.x + dx / scale,
+      y: camera.y + dy / scale,
+      zoom: camera.zoom,
+    });
+    return scale;
   };
 
   return {
@@ -120,15 +205,21 @@ export function createCameraControl(
     get screen() {
       return screen;
     },
+    get zooming() {
+      return glide !== null;
+    },
     resize(next) {
       screen = next;
-      if (!sized && zoom === null) camera = { ...camera, zoom: fitZoom(screen, world) };
-      sized = true;
+      glide = null;
       place(camera);
     },
     update(elapsedMs) {
       const ms = Math.min(Math.max(elapsedMs, 0), MAX_STEP_MS);
       if (ms === 0) return;
+      if (glide) {
+        glide.elapsedMs += ms;
+        compose();
+      }
       const holding = held.x !== 0 || held.y !== 0;
       if (!holding && vx === 0 && vy === 0) return;
       const ratio = screen.pixelRatio;
@@ -150,16 +241,15 @@ export function createCameraControl(
       const dx = (vx * ms) / 1000;
       const dy = (vy * ms) / 1000;
       const before = camera;
-      place(moveCamera(camera, dx, dy, screen, world));
+      const scale = shift(dx, dy);
       // An edge stops the movement along it (no speed piles up against the edge).
-      const scale = layout.scale;
       if (Math.abs(camera.x - before.x - dx / scale) > 1e-6) vx = 0;
       if (Math.abs(camera.y - before.y - dy / scale) > 1e-6) vy = 0;
     },
     drag(dx, dy) {
       vx = 0;
       vy = 0;
-      if (dx !== 0 || dy !== 0) place(moveCamera(camera, -dx, -dy, screen, world));
+      if (dx !== 0 || dy !== 0) shift(-dx, -dy);
     },
     release(pointerVx, pointerVy) {
       const most = MAX_GLIDE_SPEED * screen.pixelRatio;
@@ -171,8 +261,12 @@ export function createCameraControl(
     zoomBy(by, at) {
       const next = zoomStep(camera.zoom, by);
       if (next === camera.zoom) return;
-      const point = at ?? { x: screen.width / 2, y: screen.height / 2 };
-      place(zoomCameraAt(camera, next, point, screen, world));
+      const anchor = at ?? { x: screen.width / 2, y: screen.height / 2 };
+      // From the picture as it is drawn now — also halfway through another zoom.
+      const fromPoint = screenToWorld(layout, anchor.x, anchor.y);
+      glide = { fromScale: layout.scale, fromPoint, anchor, elapsedMs: 0 };
+      camera = cameraHolding(fromPoint, anchor, next, screen, world);
+      compose();
     },
     hold(direction) {
       held = { x: Math.sign(direction.x), y: Math.sign(direction.y) };
@@ -213,7 +307,10 @@ export function cameraKey(code: string, key = ''): CameraKey | null {
 }
 
 /** Direction of the view from the keys held (codes): −1…1 on each axis; opposite keys cancel. */
-export function heldDirection(codes: Iterable<string>): { x: number; y: number } {
+export function heldDirection(codes: Iterable<string>): {
+  x: number;
+  y: number;
+} {
   let x = 0;
   let y = 0;
   for (const code of new Set(codes)) {
@@ -351,7 +448,11 @@ export function createGestures(options: { slop?: () => number } = {}): Gestures 
       const after = pair();
       const commands: GestureCommand[] = [];
       if (after.x !== before.x || after.y !== before.y)
-        commands.push({ kind: 'drag', dx: after.x - before.x, dy: after.y - before.y });
+        commands.push({
+          kind: 'drag',
+          dx: after.x - before.x,
+          dy: after.y - before.y,
+        });
       if (pinchFrom > 0) {
         const ratio = after.distance / pinchFrom;
         const by = ratio >= PINCH_STEP ? 1 : ratio <= 1 / PINCH_STEP ? -1 : 0;
@@ -389,7 +490,11 @@ export function createGestures(options: { slop?: () => number } = {}): Gestures 
         return [{ kind: 'release', vx: 0, vy: 0 }];
       const seconds = (last.t - first.t) / 1000;
       return [
-        { kind: 'release', vx: (last.x - first.x) / seconds, vy: (last.y - first.y) / seconds },
+        {
+          kind: 'release',
+          vx: (last.x - first.x) / seconds,
+          vy: (last.y - first.y) / seconds,
+        },
       ];
     },
   };
@@ -416,7 +521,9 @@ export function bindCameraInput(
 ): () => void {
   canvas.style.touchAction = 'none';
   canvas.style.cursor = 'grab';
-  const gestures = createGestures({ slop: () => TAP_SLOP * control.screen.pixelRatio });
+  const gestures = createGestures({
+    slop: () => TAP_SLOP * control.screen.pixelRatio,
+  });
   const wheel = createWheelZoom();
   const keys = new Set<string>();
 

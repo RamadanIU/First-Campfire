@@ -20,12 +20,12 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 /**
  * The view of a running world: its map (src/render/mapRenderer.ts, step 1.1) seen through the
  * observer's camera (./cameraControl.ts, src/render/camera.ts, step 1.2) — dragged by the mouse
- * or a finger, zoomed by the wheel, a pinch or +/−, moved by WASD / arrows; four zoom steps
- * ×0.5…×4, never beyond the edges of the map.
+ * or a finger, zoomed by the wheel, a pinch or +/− (the zoom glides between the steps), moved by
+ * WASD / arrows; four zoom steps ×0.5…×4, never beyond the edges of the map.
  *
  *   `cam=x,y` — where the camera looks (tiles, may be fractional; by default — the camp site,
- *   src/sim/mapgen.ts `findCampSite`, where life will happen); `zoom=` — the step (by default the
- *   closest at which the whole map fits, at least ×1).
+ *   src/sim/mapgen.ts `findCampSite`, where life will happen); `zoom=` — the step (by default
+ *   ×2 «улица», ADR-022).
  *
  * Only what is in sight is drawn: the part of the world under the camera, one canvas pixel per
  * world pixel, then put on the screen at the zoom's scale. The world runs in a fixed-step game
@@ -56,10 +56,13 @@ const WHY: Record<PathFailure, string> = {
 
 /** What the view tells automated checks about its camera (`window.__fc.camera`). */
 export interface CameraInfo {
-  /** Zoom step and device pixels per world pixel. */
+  /** Zoom step (while a zoom glides — the step it comes to). */
   readonly zoom: number;
+  /** Device pixels per world pixel as drawn now (fractional while a zoom glides). */
   readonly scale: number;
-  /** The world point in the middle of the screen, world pixels. */
+  /** Is a zoom gliding between steps now? */
+  readonly zooming: boolean;
+  /** Where the camera stands (the world point in the middle of the screen at rest), world px. */
   readonly x: number;
   readonly y: number;
   /** Size of the canvas, device pixels, and device pixels per CSS pixel. */
@@ -202,6 +205,9 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     },
     get scale() {
       return camera.layout.scale;
+    },
+    get zooming() {
+      return camera.zooming;
     },
     get x() {
       return camera.camera.x;

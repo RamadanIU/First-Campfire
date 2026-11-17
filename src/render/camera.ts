@@ -9,7 +9,9 @@
  *
  * Zoom steps (GDD §10.1): ×0.5 «край», ×1 «город», ×2 «улица», ×4 «портрет». A step becomes a
  * whole number of device pixels per world pixel or, at ×0.5, every second world pixel — so the
- * picture stays crisp at every step. Steps switch at once; only movement is smooth.
+ * picture stays crisp at every step. Between steps the picture glides (the owner's wish after
+ * step 1.3, ADR-022): for a moment it is drawn at a fractional scale (`layoutAt`), and the step
+ * it comes to is crisp again (src/app/cameraControl.ts).
  *
  * The camera is a state of the drawing, never of the world: it is not saved and does not change
  * history (docs/ARCHITECTURE.md, rule 1).
@@ -19,6 +21,12 @@ import type { PixelRect } from './mapRenderer.ts';
 /** Zoom steps, from the farthest to the closest (GDD §10.1). */
 export const ZOOMS = [0.5, 1, 2, 4] as const;
 export type Zoom = (typeof ZOOMS)[number];
+
+/**
+ * The step a view opens with when none is asked for: ×2 «улица», the main view of GDD §10.1
+ * (the owner's choice after step 1.3, ADR-022).
+ */
+export const DEFAULT_ZOOM: Zoom = 2;
 
 export interface Camera {
   /** The world point in the middle of the screen, world pixels (fractional while moving). */
@@ -42,7 +50,10 @@ export interface WorldSize {
 
 /** Where the picture of the world lies on the screen. */
 export interface CameraLayout {
-  /** Device pixels per world pixel: 0.5 (every second world pixel) or a whole number. */
+  /**
+   * Device pixels per world pixel: 0.5 (every second world pixel) or a whole number at a step;
+   * fractional only for the moment a zoom glides between steps.
+   */
   scale: number;
   /** Screen position of the world's top-left corner, whole device pixels (often negative). */
   offsetX: number;
@@ -73,21 +84,6 @@ export function zoomStep(zoom: Zoom, by: number): Zoom {
   return ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, index))]!;
 }
 
-/**
- * The zoom a view opens with when none is asked for: the closest of ×1, ×2, ×4 at which the
- * whole world fits on the screen; ×1 if even it does not fit (then a part is seen — ×0.5 is the
- * observer's choice, too far to see people).
- */
-export function fitZoom(screen: ScreenSize, world: WorldSize): Zoom {
-  let best: Zoom = 1;
-  for (const zoom of ZOOMS) {
-    if (zoom < 1) continue;
-    const scale = pixelScale(zoom, screen.pixelRatio);
-    if (world.width * scale <= screen.width && world.height * scale <= screen.height) best = zoom;
-  }
-  return best;
-}
-
 /** One axis of `clampCamera`: centred if the world fits, otherwise no strip beyond its edges. */
 function clampAxis(at: number, screen: number, world: number, scale: number): number {
   const half = screen / 2 / scale;
@@ -110,8 +106,22 @@ export function clampCamera(camera: Camera, screen: ScreenSize, world: WorldSize
 
 /** Where the world is drawn for `camera` (kept inside the edges first). */
 export function cameraLayout(camera: Camera, screen: ScreenSize, world: WorldSize): CameraLayout {
-  const { x, y, zoom } = clampCamera(camera, screen, world);
-  const scale = pixelScale(zoom, screen.pixelRatio);
+  return layoutAt(camera, pixelScale(camera.zoom, screen.pixelRatio), screen, world);
+}
+
+/**
+ * Where the world is drawn with world point `centre` in the middle of the screen at `scale`
+ * device pixels per world pixel, kept inside the edges at that scale. A step's scale gives the
+ * crisp picture of `cameraLayout`; a fractional one — a frame of a zoom gliding between steps.
+ */
+export function layoutAt(
+  centre: { x: number; y: number },
+  scale: number,
+  screen: ScreenSize,
+  world: WorldSize,
+): CameraLayout {
+  const x = clampAxis(centre.x, screen.width, world.width, scale);
+  const y = clampAxis(centre.y, screen.height, world.height, scale);
   // Whole device pixels: at scale ≥ 1 every world pixel lands on whole pixels; at 0.5 the
   // corner of the view is an even world pixel (below), so the same world pixels are shown
   // wherever the camera stands — the picture does not shimmer while it moves.
@@ -136,12 +146,18 @@ export function cameraLayout(camera: Camera, screen: ScreenSize, world: WorldSiz
 
 /** The world point (world pixels) under screen point (`x`, `y`) (device pixels). */
 export function screenToWorld(layout: CameraLayout, x: number, y: number) {
-  return { x: (x - layout.offsetX) / layout.scale, y: (y - layout.offsetY) / layout.scale };
+  return {
+    x: (x - layout.offsetX) / layout.scale,
+    y: (y - layout.offsetY) / layout.scale,
+  };
 }
 
 /** The screen point (device pixels) of world point (`x`, `y`) (world pixels). */
 export function worldToScreen(layout: CameraLayout, x: number, y: number) {
-  return { x: layout.offsetX + x * layout.scale, y: layout.offsetY + y * layout.scale };
+  return {
+    x: layout.offsetX + x * layout.scale,
+    y: layout.offsetY + y * layout.scale,
+  };
 }
 
 /**
@@ -179,6 +195,20 @@ export function zoomCameraAt(
 ): Camera {
   // The point as it is drawn now (after rounding), not as the fractional centre says.
   const point = screenToWorld(cameraLayout(camera, screen, world), at.x, at.y);
+  return cameraHolding(point, at, zoom, screen, world);
+}
+
+/**
+ * The camera at zoom `zoom` that shows world point `point` (world pixels) at screen point `at`
+ * (device pixels), kept inside the edges of the world.
+ */
+export function cameraHolding(
+  point: { x: number; y: number },
+  at: { x: number; y: number },
+  zoom: Zoom,
+  screen: ScreenSize,
+  world: WorldSize,
+): Camera {
   const scale = pixelScale(zoom, screen.pixelRatio);
   return clampCamera(
     {
@@ -196,7 +226,9 @@ export function zoomCameraAt(
  * corner is world point (view.x, view.y)) on the screen at the layout's scale, without
  * smoothing. At scale 0.5 the source is shifted by half a pixel, so each screen pixel takes the
  * middle of one world pixel: an exact 2:1 shrink samples on the border between two, and a
- * browser may take either. So the buffer must be one pixel larger than the view.
+ * browser may take either. So the buffer must be one pixel larger than the view. A fractional
+ * scale (a zoom gliding between steps) is drawn as it is: pixels of a little different widths
+ * for that moment.
  */
 export function drawPicture(
   ctx: CanvasRenderingContext2D,
@@ -205,7 +237,7 @@ export function drawPicture(
 ): void {
   const { scale, offsetX, offsetY, view } = layout;
   if (view.width === 0 || view.height === 0) return;
-  const shift = scale < 1 ? 0.5 : 0;
+  const shift = scale === 0.5 ? 0.5 : 0;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(
     buffer,

@@ -82,6 +82,7 @@ interface Point {
 interface CameraState {
   zoom: number;
   scale: number;
+  zooming: boolean;
   x: number;
   y: number;
   width: number;
@@ -217,8 +218,43 @@ function world(page: Page): Promise<World> {
 /** The camera of the world scene now. */
 function camera(page: Page): Promise<CameraState> {
   return page.evaluate<CameraState>(
-    '(({ zoom, scale, x, y, width, height, pixelRatio, offsetX, offsetY, view }) => ({ zoom, scale, x, y, width, height, pixelRatio, offsetX, offsetY, view }))(window.__fc.camera)',
+    '(({ zoom, scale, zooming, x, y, width, height, pixelRatio, offsetX, offsetY, view }) => ({ zoom, scale, zooming, x, y, width, height, pixelRatio, offsetX, offsetY, view }))(window.__fc.camera)',
   );
+}
+
+/** Wait until a zoom gliding between steps comes to its step (ADR-022). */
+async function settled(page: Page): Promise<void> {
+  await page.waitForFunction('window.__fc.camera.zooming === false');
+}
+
+/**
+ * Do `act` and record the camera every frame until the zoom it starts comes to rest: the scale
+ * and the world point under page point `at` (CSS px) in each frame.
+ */
+async function recordZoom(
+  page: Page,
+  at: Point,
+  act: () => Promise<void>,
+): Promise<{ scale: number; point: Point }[]> {
+  await page.evaluate(`(() => {
+    const frames = (window.__zoomFrames = []);
+    const camera = window.__fc.camera;
+    let seen = false;
+    const tick = () => {
+      frames.push({ scale: camera.scale, point: camera.worldAt(${at.x}, ${at.y}) });
+      seen = seen || camera.zooming;
+      // Until the zoom has begun and come to rest (at most some 10 s of frames).
+      if ((!seen || camera.zooming) && frames.length < 600) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })()`);
+  await act();
+  await page.waitForFunction(
+    'window.__fc.camera.zooming === true || window.__zoomFrames.length >= 600',
+  );
+  await settled(page);
+  await page.waitForTimeout(100);
+  return page.evaluate('window.__zoomFrames');
 }
 
 /** The world point (world pixels) under a point of the page (CSS pixels). */
@@ -458,6 +494,13 @@ try {
   const CAMERA_WORLD = '?scene=world&seed=7&speed=0&zoom=2&cam=32,32';
 
   await scenario('Камера: мышь, колесо, клавиши', async (page) => {
+    // Without zoom= the world opens at ×2 «улица», the main view (the owner's choice, ADR-022).
+    await open(page, '?scene=world&seed=7&speed=0');
+    const opening = await camera(page);
+    check(
+      opening.zoom === 2 && opening.scale === 2,
+      `без zoom= мир открывается на ×${opening.zoom} (${opening.scale} пикселя экрана на пиксель мира)`,
+    );
     await open(page, CAMERA_WORLD);
     const start = await camera(page);
     check(
@@ -475,22 +518,37 @@ try {
       `мышь: тащу на (−100, −60) — камера (${dragged.x}, ${dragged.y}), под курсором та же точка мира ${at(grabbed)} → ${at(under)}`,
     );
 
-    // The wheel: a step closer, the point under the cursor stays under it.
+    // The wheel: a step closer, gliding (ADR-022); the point under the cursor stays under it in
+    // every frame, and the step it comes to is crisp.
     await page.mouse.move(300, 500);
     const point = await worldAt(page, 300, 500);
-    await page.mouse.wheel(0, -100);
-    await page.waitForTimeout(200);
+    const frames = await recordZoom(page, { x: 300, y: 500 }, () => page.mouse.wheel(0, -100));
     const closer = await camera(page);
     const kept = await worldAt(page, 300, 500);
+    const between = frames.filter((frame) => frame.scale > 2 && frame.scale < 4);
+    const growing = frames.every((frame, i) => i === 0 || frame.scale >= frames[i - 1]!.scale);
+    const drift = Math.max(
+      ...frames.map((frame) => Math.hypot(frame.point.x - point.x, frame.point.y - point.y)),
+    );
     check(
-      closer.zoom === 4 && near(kept, point, 0.5),
-      `колесо вверх: ×2 → ×${closer.zoom}, под курсором та же точка мира ${at(point)} → ${at(kept)}`,
+      between.length >= 5 && growing && closer.scale === 4 && !closer.zooming,
+      `колесо вверх — плавно: ×2 → ×4 через ${between.length} промежуточных кадров (${between
+        .slice(0, 4)
+        .map((frame) => frame.scale.toFixed(2))
+        .join(', ')}…), в конце ровно ×4`,
+    );
+    check(
+      closer.zoom === 4 && near(kept, point, 0.5) && drift <= 0.5,
+      `колесо вверх: ×2 → ×${closer.zoom}, под курсором та же точка мира ${at(point)} → ${at(kept)}, в каждом кадре зума — не дальше ${drift.toFixed(2)} пикселя мира`,
     );
     const panel = await text(page, '.world-panel-camera');
     check(panel.startsWith('масштаб ×4'), `панель «Мир»: ${panel}`);
     await page.mouse.wheel(0, -100);
     await page.waitForTimeout(200);
-    check((await camera(page)).zoom === 4, 'колесо вверх на ×4 — ближе некуда, остаётся ×4');
+    check(
+      (await camera(page)).zoom === 4 && !(await camera(page)).zooming,
+      'колесо вверх на ×4 — ближе некуда, остаётся ×4',
+    );
     // A throw (at ×4, far from the edges): let go while moving — the picture glides on, slows
     // down and stops by itself.
     await page.mouse.move(560, 400);
@@ -511,7 +569,8 @@ try {
     const zooms: number[] = [];
     for (let i = 0; i < 4; i++) {
       await page.mouse.wheel(0, 100);
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(150);
+      await settled(page);
       zooms.push((await camera(page)).zoom);
     }
     const far = await camera(page);
@@ -553,6 +612,7 @@ try {
     const middles: Point[] = [];
     for (const key of ['Equal', 'NumpadSubtract', 'Minus', 'Minus', 'NumpadAdd', 'Equal']) {
       await page.keyboard.press(key);
+      await settled(page);
       keyZooms.push((await camera(page)).zoom);
       middles.push(await worldAt(page, 640, 360));
     }
@@ -612,6 +672,7 @@ try {
         ],
         4,
       );
+      await settled(page);
       const spread = await camera(page);
       const kept = await worldAt(page, 640, 400);
       check(
@@ -631,6 +692,7 @@ try {
         ],
         4,
       );
+      await settled(page);
       check((await camera(page)).zoom === 2, 'щипок внутрь (120 → 64): ×4 → ×2');
     },
     { touch: true },
