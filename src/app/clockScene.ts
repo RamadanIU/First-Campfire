@@ -16,8 +16,8 @@ import type { Scene, SceneContext } from './scene.ts';
 
 /**
  * Debug scene `clock` (step 0.2): shows the simulation core at work.
- * The sky follows the time of day, the HUD shows date, time, tick and speed, fireflies (the
- * temporary test system) fly at night, and the last journal entries show events with causes.
+ * The sky follows the time of day, the HUD shows date, time, tick and speed, fireflies (the night
+ * swarm, ADR-018) fly at night, and the last journal entries show events with causes.
  *
  *   ?scene=clock&seed=1&ticks=3130&speed=5   Space — pause, 1–4 — ×1 ×2 ×5 ×20
  *

@@ -26,7 +26,7 @@ export interface World {
   tick: number;
   rng: Record<RngStream, Rng>;
   events: EventJournal;
-  /** Temporary test system with randomness (step 0.2); see ./systems/fireflies.ts. */
+  /** The night swarm of fireflies (ADR-018); see ./systems/fireflies.ts. */
   fireflies: Fireflies;
 }
 

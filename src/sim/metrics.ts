@@ -18,7 +18,7 @@ export const METRICS: readonly Metric[] = [
   count('events', 'Событий', 'any'),
   gauge('journal', 'Записей в журнале (на конец)', (world) => world.events.list.length),
   count('nights', 'Ночей', 'phase_started', (e) => e.phase === 'night'),
-  // Fireflies are the temporary test system of step 0.2: the only randomness in the world so far.
+  // Fireflies — the night swarm (ADR-018); so far the only randomness in the world.
   count('swarms', 'Роёв светлячков', 'fireflies_rose'),
   sum('fireflies', 'Светлячков всего', 'fireflies_rose', (e) => e.count),
   mean('swarm_mean', 'Светлячков в рое: среднее', 'fireflies_rose', (e) => e.count),
