@@ -47,6 +47,7 @@ export function createWorldScene(context: SceneContext): Scene {
   });
   saveOnLeave(autosave, window, document);
 
+  const start = { tick: world.tick, hash: hashState(world) };
   const view = createMapView(context, world);
   const panel = params.ui
     ? createWorldPanel(ui, world, view.loop, autosave, origin, warnings)
@@ -64,6 +65,7 @@ export function createWorldScene(context: SceneContext): Scene {
     get savedTick() {
       return autosave.savedTick;
     },
+    opened: start,
   };
 
   return {

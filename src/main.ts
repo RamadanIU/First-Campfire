@@ -36,6 +36,11 @@ export interface WorldInfo {
   origin: 'saved' | 'url' | 'new';
   /** Tick of the last autosave; null — none. */
   savedTick: number | null;
+  /**
+   * The world as the scene opened it, before any tick ran: the world goes on at once, so a check
+   * of «the same world after a reload» compares with this, not with the running one.
+   */
+  opened: { tick: number; hash: string };
 }
 
 declare global {
