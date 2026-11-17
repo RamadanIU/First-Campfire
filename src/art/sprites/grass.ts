@@ -1,9 +1,9 @@
 import { defineSprite } from '../sprite.ts';
 
-/**
- * Meadow grass, the basic map tile. No outline (GDD §10.1). Low-contrast tufts — light tips,
- * dark bases — are spread unevenly so that repeating the tile does not form a visible grid;
- * tufts crossing an edge continue on the opposite side, so the tile is seamless.
+/*
+ * Meadow grass, variation 1 of 3 (the most common). No outline (GDD §10.1): low-contrast blades —
+ * a light tip over its shade, lit from above. Multi-pixel details stay one pixel away from the
+ * edges, so any two grass variations can lie side by side without a seam (docs/ART.md, «Земля»).
  */
 export default defineSprite({
   name: 'grass',
@@ -13,7 +13,6 @@ export default defineSprite({
   height: 16,
   anchor: { x: 0, y: 0 },
   legend: {
-    d: 'grass.0',
     s: 'grass.1',
     m: 'grass.2',
     l: 'grass.3',
@@ -22,22 +21,22 @@ export default defineSprite({
     idle: {
       frames: [
         `
+        mmmmmmmmmlmmmmmm
         mmmmmmmmmmmmmmmm
-        mmmmmmmmmmlmsmmm
-        mmlmlmmmmmmsmsmm
-        mmmsmmmmmmmmmmmm
-        mmmdmmmmmmmmmmmm
-        mmmmsmmmmmmmmmml
-        mmmmmmmmmmmlmmsm
-        mmmmmmsmsmmmmmmm
-        smmmmmmdmmmmmmmm
+        mmmmmmmmmmsmmmmm
+        mmmmmmmmmmmmlmlm
+        mmmmmmmmmmmmsmsm
+        mlmlmmlmlmsmmmmm
+        msmsmmsmsmmmmmmm
         mmmmmmmmmmmmmmmm
-        mmmmmmmmmmmmlmsm
-        mmmmmmmlmmmmmsmm
-        mmmmlmmmmmmmmmmm
-        mmmsmmmmsmsmmmmm
-        mmmmmmmmmdmmmmms
-        mlmmmmmmmmmmmmmm
+        mmmmmmmmmmmmmmmm
+        mmmmmmmmmmmsmmmm
+        mmmlmmmmmmmmmmmm
+        mmlslmmmlmlmmmmm
+        mmmmmmmmmsmmmmmm
+        mmmmmmllmmmmmmmm
+        mmmmmmssmmmmmmmm
+        mmmmmmmmmmmmmmmm
         `,
       ],
     },

@@ -45,53 +45,147 @@ describe('спрайты игры', () => {
   });
 });
 
-describe('пробные спрайты шага 0.3', () => {
+describe('набор графики эпохи 0 (шаг 0.4)', () => {
   const byName = new Map(SPRITES.map((sprite) => [sprite.name, sprite]));
+  const get = (name: string) => {
+    const sprite = byName.get(name);
+    if (!sprite) throw new Error(`нет спрайта «${name}»`);
+    return sprite;
+  };
+  const ramps = (name: string) =>
+    new Set(Object.values(get(name).legend).map((c) => parseColorName(c)!.ramp));
 
-  it('трава — тайл 16×16, дерево — объект, житель — персонаж 12×18 (GDD §10.1)', () => {
-    expect(byName.get('grass')).toMatchObject({
-      kind: 'tile',
-      width: TILE_SIZE,
-      height: TILE_SIZE,
-    });
-    expect(byName.get('tree')).toMatchObject({ kind: 'object' });
-    expect(byName.get('villager')).toMatchObject({ kind: 'character', width: 12, height: 18 });
+  const TILES = ['grass', 'grass_2', 'grass_3', 'dirt', 'sand', 'water_shallow', 'water_deep'];
+  const NATURE = [
+    'tree',
+    'tree_young',
+    'birch',
+    'stump',
+    'berry_bush',
+    'stone',
+    'branches',
+    'flowers',
+    'grass_tuft',
+  ];
+  const CAMP = ['campfire', 'lean_to', 'branch_pile', 'bed'];
+  const PEOPLE = ['man', 'woman'];
+  const BUBBLES = ['bubble_food', 'bubble_water', 'bubble_sleep', 'bubble_cold'];
+
+  it('есть всё из карточки: земля, природа, стоянка, мужчина и женщина, пузырьки', () => {
+    for (const name of [...TILES, ...NATURE, ...CAMP, ...PEOPLE, ...BUBBLES]) get(name);
+    for (const name of TILES) expect(get(name).kind, name).toBe('tile');
+    for (const name of [...NATURE, ...CAMP]) expect(get(name).kind, name).toBe('object');
+    for (const name of BUBBLES) expect(get(name).kind, name).toBe('icon');
   });
 
-  it('у травы нет контура: только цвета травы', () => {
-    const ramps = new Set(
-      Object.values(byName.get('grass')!.legend).map((c) => parseColorName(c)!.ramp),
-    );
-    expect([...ramps]).toEqual(['grass']);
-  });
-
-  it('житель в трёх тонах кожи: перекраска меняет только кожу, оттенок в оттенок', () => {
-    const villager = byName.get('villager')!;
-    const variants = Object.values(villager.variants ?? {});
-    expect(variants).toEqual([{ skin_light: 'skin_tan' }, { skin_light: 'skin_dark' }]);
-
-    const base = rasterizeSprite(villager, PALETTE);
-    const skin = PALETTE.ramps.get('skin_light')!;
-    for (const swap of variants as PaletteSwap[]) {
-      const target = PALETTE.ramps.get(swap.skin_light!)!;
-      const recoloured = rasterizeSprite(villager, PALETTE, swap);
-      let skinPixels = 0;
-      base.animations.forEach((animation, a) => {
-        animation.frames.forEach((frame, f) => {
-          const other = recoloured.animations[a]!.frames[f]!.pixels;
-          for (let i = 0; i < frame.pixels.length; i += 4) {
-            const rgb = [frame.pixels[i], frame.pixels[i + 1], frame.pixels[i + 2]];
-            const shade = skin.findIndex((c) => c.every((v, k) => v === rgb[k]));
-            const expected = shade >= 0 && frame.pixels[i + 3] === 255 ? target[shade]! : rgb;
-            if (shade >= 0) skinPixels++;
-            expect([other[i], other[i + 1], other[i + 2], other[i + 3]]).toEqual([
-              ...expected,
-              frame.pixels[i + 3],
-            ]);
-          }
-        });
-      });
-      expect(skinPixels).toBeGreaterThan(20);
+  it('земля — тайлы 16×16 без контура (GDD §10.1): ни контура, ни тени в легенде', () => {
+    for (const name of TILES) {
+      expect(get(name)).toMatchObject({ width: TILE_SIZE, height: TILE_SIZE });
+      expect(ramps(name).has('ink'), name).toBe(false);
+      expect(ramps(name).has('shadow'), name).toBe(false);
     }
+  });
+
+  it('вода рябит: 2–4 кадра одинаковой длительности', () => {
+    for (const name of ['water_shallow', 'water_deep']) {
+      const idle = Object.values(get(name).animations)[0]!;
+      expect(idle.frames.length, name).toBeGreaterThanOrEqual(2);
+      expect(idle.frames.length, name).toBeLessThanOrEqual(4);
+      expect(typeof idle.frameMs, name).toBe('number');
+    }
+  });
+
+  it('куст — с ягодами и без; костёр — горит (4 кадра) и потух', () => {
+    expect(Object.keys(get('berry_bush').animations)).toEqual(['ripe', 'empty']);
+    expect(Object.keys(get('campfire').animations)).toEqual(['burning', 'out']);
+    expect(get('campfire').animations.burning!.frames).toHaveLength(4);
+  });
+
+  it('у людей и всех предметов выше травы есть тень; у значков и тайлов — нет', () => {
+    for (const name of [
+      ...PEOPLE,
+      ...CAMP,
+      ...NATURE.filter((n) => n !== 'flowers' && n !== 'grass_tuft'),
+    ]) {
+      expect(get(name).shadow, name).toBeDefined();
+    }
+    for (const name of [...TILES, ...BUBBLES]) expect(get(name).shadow, name).toBeUndefined();
+  });
+
+  describe.each(PEOPLE)('%s', (name) => {
+    const person = get(name);
+    const directions = ['s', 'n', 'e', 'w'];
+
+    it('12×18, точка привязки между ступнями (GDD §10.1)', () => {
+      expect(person).toMatchObject({
+        kind: 'character',
+        width: 12,
+        height: 18,
+        anchor: { x: 6, y: 18 },
+      });
+    });
+
+    it('стоит (дышит, 2 кадра) и идёт (4 кадра) в 4 направлениях', () => {
+      expect(Object.keys(person.animations)).toEqual([
+        ...directions.map((d) => `idle_${d}`),
+        ...directions.map((d) => `walk_${d}`),
+      ]);
+      for (const d of directions) {
+        expect(person.animations[`idle_${d}`]!.frames).toHaveLength(2);
+        expect(person.animations[`walk_${d}`]!.frames).toHaveLength(4);
+      }
+    });
+
+    it('влево — не зеркало вправо: силуэт зеркальный, а свет остаётся слева-сверху', () => {
+      const raster = rasterizeSprite(person, PALETTE);
+      const frame = (animation: string) =>
+        raster.animations.find((a) => a.name === animation)!.frames[0]!;
+      const east = frame('idle_e');
+      const west = frame('idle_w');
+      let sameSilhouette = true;
+      let differentColours = 0;
+      for (let y = 0; y < person.height; y++) {
+        for (let x = 0; x < person.width; x++) {
+          const e = (y * person.width + (person.width - 1 - x)) * 4;
+          const w = (y * person.width + x) * 4;
+          if (east.pixels[e + 3] !== west.pixels[w + 3]) sameSilhouette = false;
+          if (east.pixels.subarray(e, e + 3).join() !== west.pixels.subarray(w, w + 3).join()) {
+            differentColours++;
+          }
+        }
+      }
+      expect(sameSilhouette).toBe(true);
+      expect(differentColours).toBeGreaterThan(5);
+    });
+
+    it('6 тонов кожи и 5 цветов волос; перекраска меняет только свой ряд, оттенок в оттенок', () => {
+      const variants = Object.values(person.variants ?? {});
+      const skins = variants.filter((swap) => 'skin_light' in swap);
+      const hair = variants.filter((swap) => 'hair_brown' in swap);
+      expect(skins).toHaveLength(5);
+      expect(hair).toHaveLength(4);
+      const base = rasterizeSprite(person, PALETTE);
+      for (const swap of variants as PaletteSwap[]) {
+        const [[from, to]] = Object.entries(swap) as [[string, string]];
+        const source = PALETTE.ramps.get(from)!;
+        const target = PALETTE.ramps.get(to)!;
+        const recoloured = rasterizeSprite(person, PALETTE, swap);
+        let changed = 0;
+        base.animations.forEach((animation, a) => {
+          animation.frames.forEach((frame, f) => {
+            const other = recoloured.animations[a]!.frames[f]!.pixels;
+            for (let i = 0; i < frame.pixels.length; i += 4) {
+              const rgb = [frame.pixels[i], frame.pixels[i + 1], frame.pixels[i + 2]];
+              const shade = source.findIndex((c) => c.every((v, k) => v === rgb[k]));
+              const opaque = frame.pixels[i + 3] === 255;
+              const expected = shade >= 0 && opaque ? target[shade]! : rgb;
+              if (shade >= 0 && opaque) changed++;
+              expect([other[i], other[i + 1], other[i + 2]]).toEqual([...expected]);
+            }
+          });
+        });
+        expect(changed, `${name}: ${from} → ${to}`).toBeGreaterThan(40);
+      }
+    });
   });
 });

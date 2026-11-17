@@ -1,10 +1,12 @@
 import { defineSprite } from '../sprite.ts';
 
 /*
- * A grown broadleaf tree (oak-like), 32×34. The crown is built of overlapping leaf clumps:
+ * A grown broadleaf tree (oak), 32×34. The crown is built of overlapping leaf clumps:
  * each lower clump overlaps the one behind it, the crevice between them is darker. Light comes
  * from the upper left (GDD §10.1): highlights on the upper-left clumps, shade low on the right.
  * Wind: the top of the crown leans one pixel right, back, one pixel left, back.
+ * Only the leaf and bark ramps are used, so a seasonal swap of the leaf ramp recolours the
+ * whole crown (stage 1.10).
  */
 
 const still = `
@@ -122,7 +124,7 @@ const left = `
 
 export default defineSprite({
   name: 'tree',
-  title: 'Лиственное дерево',
+  title: 'Лиственное дерево (дуб)',
   kind: 'object',
   width: 32,
   height: 34,
@@ -132,7 +134,7 @@ export default defineSprite({
     s: 'leaf.1',
     m: 'leaf.2',
     l: 'leaf.3',
-    h: 'grass.3',
+    h: 'leaf.4',
     A: 'bark.0',
     B: 'bark.1',
     C: 'bark.2',
@@ -141,4 +143,5 @@ export default defineSprite({
   animations: {
     idle: { frames: [still, right, still, left], frameMs: [700, 500, 700, 500] },
   },
+  shadow: { width: 24, height: 6, x: 2 },
 });
