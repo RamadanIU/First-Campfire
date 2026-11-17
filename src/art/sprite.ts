@@ -40,11 +40,13 @@ export const DEFAULT_FRAME_MS = 100;
 
 /**
  * - `tile` — a 16×16 map tile, anchored at its top-left corner; the gallery shows it tiled 3×3.
- * - `object` — anything standing on the map: trees, bushes, buildings, items.
+ * - `object` — anything standing on the map: trees, bushes, buildings.
+ * - `item` — a resource lying on the ground or carried, up to 16×16; the same picture is the
+ *   resource's icon in debug scenes and, later, in the interface (data/resources.json, `sprite`).
  * - `character` — people and animals.
  * - `icon` — signs drawn over the world: thought bubbles above heads (GDD §10.6).
  */
-export type SpriteKind = 'tile' | 'object' | 'character' | 'icon';
+export type SpriteKind = 'tile' | 'object' | 'item' | 'character' | 'icon';
 
 /** The palette colour of shadows under objects: a translucent ramp (docs/ART.md, «Тени»). */
 export const SHADOW_COLOR: ColorName = 'shadow.0';
@@ -147,7 +149,7 @@ export function usedRamps(def: SpriteDef): Set<string> {
 }
 
 const ID = /^[a-z][a-z0-9_]*$/;
-const KINDS: readonly SpriteKind[] = ['tile', 'object', 'character', 'icon'];
+const KINDS: readonly SpriteKind[] = ['tile', 'object', 'item', 'character', 'icon'];
 
 function isWholeNumber(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
@@ -174,6 +176,9 @@ export function validateSprite(def: SpriteDef, palette: Palette): string[] {
   }
   if (def.kind === 'tile' && (def.width !== TILE_SIZE || def.height !== TILE_SIZE)) {
     add(`тайл должен быть ${TILE_SIZE}×${TILE_SIZE}, а не ${def.width}×${def.height}`);
+  }
+  if (def.kind === 'item' && (def.width > TILE_SIZE || def.height > TILE_SIZE)) {
+    add(`предмет ${def.width}×${def.height} должен помещаться в тайл ${TILE_SIZE}×${TILE_SIZE}`);
   }
   const { x, y } = def.anchor ?? {};
   if (!isWholeNumber(x, 0, def.width) || !isWholeNumber(y, 0, def.height)) {

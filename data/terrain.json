@@ -1,0 +1,7 @@
+[
+  { "id": "grass", "name": "Трава", "look": "grass", "walkable": true, "speed": 1 },
+  { "id": "dirt", "name": "Земля", "look": "dirt", "walkable": true, "speed": 1.1 },
+  { "id": "sand", "name": "Песок", "look": "sand", "walkable": true, "speed": 0.8 },
+  { "id": "shallow_water", "name": "Мелкая вода", "look": "shallow_water", "walkable": false, "speed": null },
+  { "id": "deep_water", "name": "Глубокая вода", "look": "deep_water", "walkable": false, "speed": null }
+]

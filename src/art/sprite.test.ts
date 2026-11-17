@@ -149,7 +149,7 @@ describe('проверка спрайта', () => {
       'спрайт «stone»: нет названия (title)',
     ]);
     expect(validateSprite(stone({ kind: 'house' }), TEST)).toEqual([
-      'спрайт «stone»: неизвестный вид «house» — допустимы tile, object, character, icon',
+      'спрайт «stone»: неизвестный вид «house» — допустимы tile, object, item, character, icon',
     ]);
     expect(validateSprite(stone({ width: 0 }), TEST)).toContain(
       'спрайт «stone»: размер 0×3 — нужны целые числа от 1 до 256',
@@ -157,6 +157,23 @@ describe('проверка спрайта', () => {
     expect(validateSprite(stone({ anchor: { x: 5, y: 3 } }), TEST)).toEqual([
       'спрайт «stone»: точка привязки (5, 3) вне спрайта — нужны целые x от 0 до 4, y от 0 до 3',
     ]);
+  });
+
+  it('предмет помещается в тайл', () => {
+    expect(validateSprite(stone({ kind: 'item' }), TEST)).toEqual([]);
+    const wide = `${'o'.repeat(17)}\n${'m'.repeat(17)}`;
+    expect(
+      validateSprite(
+        stone({
+          kind: 'item',
+          width: 17,
+          height: 2,
+          anchor: { x: 8, y: 2 },
+          animations: frames(wide),
+        }),
+        TEST,
+      ),
+    ).toEqual(['спрайт «stone»: предмет 17×2 должен помещаться в тайл 16×16']);
   });
 
   it('тайл — ровно 16×16 с привязкой в левом верхнем углу', () => {

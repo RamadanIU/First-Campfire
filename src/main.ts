@@ -1,6 +1,7 @@
+import { checkDataRefs } from './app/dataRefs.ts';
 import { parseParams } from './app/params.ts';
 import { PRESENTATION_FPS } from './app/scene.ts';
-import { DEFAULT_SCENE, SCENES } from './app/scenes.ts';
+import { formatIssue } from './data/schema.ts';
 
 /**
  * Hook for automated checks (tools/screenshot.ts): `ready` flips to true once the
@@ -19,7 +20,19 @@ declare global {
   }
 }
 
-function start() {
+/** A problem that stops or spoils the start (a broken data table): shown over the page. */
+function showProblem(ui: HTMLElement, title: string, text: string): void {
+  const box = document.createElement('div');
+  box.className = 'start-problem';
+  const heading = document.createElement('h1');
+  heading.textContent = title;
+  const details = document.createElement('pre');
+  details.textContent = text;
+  box.append(heading, details);
+  ui.append(box);
+}
+
+async function start() {
   const params = parseParams(window.location.search);
   const hook: DebugHook = { ready: false, scene: params.scene, frame: 0, errors: [] };
   window.__fc = hook;
@@ -28,11 +41,30 @@ function start() {
 
   const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
   const ui = document.querySelector<HTMLElement>('#ui')!;
+
+  // The game is loaded after the hook is in place: the data tables are checked when they load,
+  // and a broken table must show up on the page (and in hook.errors), not as a blank screen.
+  let game: [typeof import('./app/scenes.ts'), typeof import('./data/index.ts')];
+  try {
+    game = await Promise.all([import('./app/scenes.ts'), import('./data/index.ts')]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    hook.errors.push(message);
+    showProblem(ui, 'Игра не запустилась', message);
+    hook.ready = true;
+    return;
+  }
+  const [{ DEFAULT_SCENE, SCENES }, { DATA }] = game;
+  const brokenRefs = checkDataRefs(DATA).map(formatIssue);
+  hook.errors.push(...brokenRefs);
   const factory = SCENES[params.scene];
   if (!factory) {
     hook.errors.push(`Unknown scene "${params.scene}". Known: ${Object.keys(SCENES).join(', ')}`);
   }
   const scene = (factory ?? SCENES[DEFAULT_SCENE]!)({ canvas, ui, params });
+  // References from the tables to sprites and looks of the ground: a broken one is shown on top.
+  if (brokenRefs.length > 0)
+    showProblem(ui, 'Битые ссылки в таблицах данных', brokenRefs.join('\n'));
 
   const resize = () => scene.resize(window.innerWidth, window.innerHeight);
   resize();
@@ -65,4 +97,4 @@ function start() {
   requestAnimationFrame(loop);
 }
 
-start();
+void start();

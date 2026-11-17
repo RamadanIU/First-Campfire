@@ -19,9 +19,9 @@ const modules = import.meta.glob<SpriteDef>(['./sprites/*.ts', '!./sprites/*.tes
   import: 'default',
 });
 
-const KIND_ORDER: readonly SpriteKind[] = ['tile', 'object', 'character', 'icon'];
+const KIND_ORDER: readonly SpriteKind[] = ['tile', 'object', 'item', 'character', 'icon'];
 
-/** Sprite files ordered for display: tiles, objects, characters, icons; by name within. */
+/** Sprite files ordered for display: tiles, objects, items, characters, icons; by name within. */
 export const SPRITE_FILES: readonly SpriteFile[] = Object.entries(modules)
   .map(([path, sprite]) => ({ file: path.replace(/^.*\//, '').replace(/\.ts$/, ''), sprite }))
   .sort(
