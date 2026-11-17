@@ -2,6 +2,7 @@ import { PALETTE, toHex } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { prepareTerrain, TERRAIN_LOOKS, terrainGrid } from '../art/terrain.ts';
+import { type CameraLayout, drawPicture, pixelScale } from '../render/camera.ts';
 import { createScenery, type Placement } from '../render/scenery.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { createTerrainLayer } from '../render/terrainLayer.ts';
@@ -13,7 +14,8 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
  * transitions, the forest, a glade, the camp, two people. Everything else is drawn to match it.
  *
  *   ?scene=stylesheet            the whole picture at the largest whole scale that fits
- *   &zoom=2 | &zoom=4            a fixed scale; if the picture does not fit, the camp is centred
+ *   &zoom=2 | &zoom=4            a zoom step (0.5, 1, 2, 4 — as the camera of the world, src/render/
+ *                                camera.ts); if the picture does not fit, the camp is centred
  *   &frame=N                     a fixed moment (screenshots); &ui=0 — no caption
  *
  * Nothing here is simulated: the woman's walk to the river is a presentation loop.
@@ -154,24 +156,28 @@ export function createStylesheetScene({ canvas, ui, params }: SceneContext): Sce
     MAP.length,
   );
   ground.composeAll();
+  // One pixel larger than the picture: ×0.5 samples the middle of every second pixel (drawPicture).
   const buffer = document.createElement('canvas');
-  buffer.width = WIDTH;
-  buffer.height = HEIGHT;
+  buffer.width = WIDTH + 1;
+  buffer.height = HEIGHT + 1;
   const ctx = buffer.getContext('2d')!;
   const scenery = createScenery(sheet, WIDTH, HEIGHT);
   const background = toHex(PALETTE.ramps.get('ui')![0]!);
 
-  let scale = 1;
-  let offsetX = 0;
-  let offsetY = 0;
+  let layout: CameraLayout = {
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+    view: { x: 0, y: 0, width: WIDTH, height: HEIGHT },
+  };
   let caption: HTMLElement | null = null;
 
   return {
-    resize(width, height) {
+    resize(width, height, pixelRatio) {
       canvas.width = width;
       canvas.height = height;
       const fits = Math.max(1, Math.min(4, Math.floor(Math.min(width / WIDTH, height / HEIGHT))));
-      scale = params.zoom ?? fits;
+      const scale = params.zoom === null ? fits : pixelScale(params.zoom, pixelRatio);
       // Centre the picture; if it is larger than the window, centre the camp instead.
       const centre = (screenSize: number, worldSize: number, focus: number) =>
         worldSize * scale <= screenSize
@@ -179,12 +185,16 @@ export function createStylesheetScene({ canvas, ui, params }: SceneContext): Sce
           : Math.round(
               Math.min(0, Math.max(screenSize - worldSize * scale, screenSize / 2 - focus * scale)),
             );
-      offsetX = centre(width, WIDTH, FOCUS.x);
-      offsetY = centre(height, HEIGHT, FOCUS.y);
+      layout = {
+        scale,
+        offsetX: centre(width, WIDTH, FOCUS.x),
+        offsetY: centre(height, HEIGHT, FOCUS.y),
+        view: { x: 0, y: 0, width: WIDTH, height: HEIGHT },
+      };
       if (params.ui) {
         caption ??= ui.appendChild(document.createElement('div'));
         caption.className = 'scene-caption';
-        caption.textContent = `Лист стиля · эпоха 0 · стоянка у реки · ×${scale}`;
+        caption.textContent = `Лист стиля · эпоха 0 · стоянка у реки · ×${String(params.zoom ?? scale).replace('.', ',')}`;
       }
     },
     render(frame) {
@@ -195,10 +205,9 @@ export function createStylesheetScene({ canvas, ui, params }: SceneContext): Sce
         [...STILL, MAN, MAN_THINKS, ...womanAt(timeMs)],
         timeMs,
       );
-      screen.imageSmoothingEnabled = false;
       screen.fillStyle = background;
       screen.fillRect(0, 0, canvas.width, canvas.height);
-      screen.drawImage(buffer, offsetX, offsetY, WIDTH * scale, HEIGHT * scale);
+      drawPicture(screen, buffer, layout);
     },
   };
 }

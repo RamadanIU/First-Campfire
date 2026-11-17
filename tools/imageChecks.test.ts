@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareImages, crispness } from './imageChecks.ts';
+import { compareImages, crispness, halfOf } from './imageChecks.ts';
 import type { RgbaImage } from './png.ts';
 
 /** A picture of `small` (rows of colour numbers) scaled ×scale and placed at (left, top). */
@@ -80,5 +80,58 @@ describe('сравнение снимков', () => {
     expect(compareImages(scaled(SMALL, 2, 0, 0, 6, 4), scaled(SMALL, 2, 0, 0, 8, 4)).sameSize).toBe(
       false,
     );
+  });
+});
+
+describe('×0,5 — каждый второй пиксель', () => {
+  /** A «×1 shot» w×h of varied colours: every pixel its own. */
+  function varied(width: number, height: number): RgbaImage {
+    const data = new Uint8Array(width * height * 4);
+    const pixels = new Uint32Array(data.buffer);
+    for (let i = 0; i < pixels.length; i++) pixels[i] = 0xff000000 + ((i * 2654435761) >>> 8);
+    return { width, height, data };
+  }
+  /** Half of `large`: pixel (2x + px, 2y + py), or the average of each 2×2 (smoothing). */
+  function half(large: RgbaImage, px: number, py: number, smooth = false): RgbaImage {
+    const width = large.width / 2;
+    const height = large.height / 2;
+    const data = new Uint8Array(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        for (let c = 0; c < 4; c++) {
+          const at = (lx: number, ly: number) => large.data[(ly * large.width + lx) * 4 + c]!;
+          data[(y * width + x) * 4 + c] = smooth
+            ? Math.round(
+                (at(2 * x, 2 * y) +
+                  at(2 * x + 1, 2 * y) +
+                  at(2 * x, 2 * y + 1) +
+                  at(2 * x + 1, 2 * y + 1)) /
+                  4,
+              )
+            : at(Math.min(large.width - 1, 2 * x + px), Math.min(large.height - 1, 2 * y + py));
+        }
+      }
+    }
+    return { width, height, data };
+  }
+
+  it('каждый второй пиксель (любой из пары) — ни одного расхождения, сдвиг найден', () => {
+    const large = varied(40, 24);
+    for (const [px, py] of [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ] as const) {
+      const report = halfOf(half(large, px, py), large);
+      expect(report).toMatchObject({ mismatched: 0, shiftX: px, shiftY: py, firstMismatch: null });
+      expect(report.compared).toBe(20 * 12);
+    }
+  });
+
+  it('сглаживание (среднее 2×2) — почти все пиксели не совпадают', () => {
+    const large = varied(40, 24);
+    const report = halfOf(half(large, 0, 0, true), large);
+    expect(report.mismatched).toBeGreaterThan(200);
+    expect(report.firstMismatch).not.toBeNull();
   });
 });

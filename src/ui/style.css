@@ -776,10 +776,15 @@ button.menu-card:focus-visible {
   color: #f1e3c4;
 }
 
-.world-panel-clock {
-  margin-bottom: 6px;
+.world-panel-clock,
+.world-panel-camera {
   font-size: 11px;
   color: #9aa6c4;
+}
+
+/* The zoom and how to move the camera (step 1.2). */
+.world-panel-camera {
+  margin-bottom: 6px;
 }
 
 .world-panel-status {
