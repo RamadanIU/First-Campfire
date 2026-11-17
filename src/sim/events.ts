@@ -9,15 +9,21 @@
  * New event types are added to `EventBody` below; `type` is a snake_case id.
  */
 import type { DayPhase, Season } from './calendar.ts';
+import type { Need } from './needs.ts';
 import type { Sex } from './villagers.ts';
 import type { World } from './world.ts';
 
-/** Why an event happened. Later steps add needs, decisions, villagers… */
+/** Why an event happened. Later steps add decisions… */
 export type Cause =
   /** A law of the world itself: `genesis` (the world's creation), `calendar` (time passing). */
   | { kind: 'rule'; rule: 'genesis' | 'calendar' }
   /** Another event of the journal, by id. */
-  | { kind: 'event'; event: number };
+  | { kind: 'event'; event: number }
+  /** A need of a villager (step 1.4): its scale fell to zero. */
+  | { kind: 'need'; villager: number; need: Need };
+
+/** What a villager died of (step 1.4). Later: cold, old age, illness… (GDD §4.3). */
+export type DeathReason = 'hunger' | 'thirst';
 
 /** What happened. One member per event type. */
 export type EventBody =
@@ -28,7 +34,27 @@ export type EventBody =
   | { type: 'fireflies_rose'; count: number }
   | { type: 'fireflies_gone'; count: number }
   /** A villager came to the world: the first two at its creation (step 1.3). */
-  | { type: 'villager_arrived'; villager: number; sex: Sex; x: number; y: number };
+  | { type: 'villager_arrived'; villager: number; sex: Sex; x: number; y: number }
+  /**
+   * A need of a villager fell to zero (step 1.4): hunger or thirst begins to harm health. The
+   * cause is the need itself; the death it may lead to points here.
+   */
+  | { type: 'need_ran_out'; villager: number; need: Need }
+  /**
+   * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
+   * out first. Could food and water be reached from where it died (`foodReachable`,
+   * `waterReachable`)? Death of a need that could be met is a mistake of the mind (GDD §15.2).
+   */
+  | {
+      type: 'villager_died';
+      villager: number;
+      sex: Sex;
+      x: number;
+      y: number;
+      reason: DeathReason;
+      foodReachable: boolean;
+      waterReachable: boolean;
+    };
 
 export type EventType = EventBody['type'];
 

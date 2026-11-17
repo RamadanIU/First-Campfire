@@ -2,7 +2,7 @@
  * The game's data tables: what each file in data/ must contain, and `loadTables` that reads and
  * checks them all (docs/ARCHITECTURE.md, «Таблицы данных»).
  *
- *   data/balance.json    numbers of time and life (GDD §2.1, §13.1)
+ *   data/balance.json    numbers of time, life, needs and choice (GDD §2.1, §2.3, §4.2, §13)
  *   data/resources.json  resources: food, materials, products (GDD §5.1, §5.2)
  *   data/terrain.json    types of ground: can one walk there, how fast (GDD §13.1, §6.1)
  *   data/objects.json    objects of the map: trees, bushes, boulders, flowers (GDD §2.2, §3.3)
@@ -25,6 +25,7 @@ import {
   obj,
   oneOf,
   readTables,
+  ref,
   type TableSchema,
   table,
   text,
@@ -54,6 +55,22 @@ function sharesOf100(what: string) {
 }
 
 const share = (doc: string) => int({ min: 1, max: 100, unit: '%', doc });
+
+/** A need of GDD §4.2: how fast it falls, how soon its absence kills. */
+function need(doc: string, death: string) {
+  return obj(
+    {
+      emptyDays: num({ min: 0.1, max: 100, unit: 'сут', doc: 'от 100 до 0 за' }),
+      deathDays: num({
+        min: 0.1,
+        max: 100,
+        unit: 'сут',
+        doc: `на нуле здоровье от 100 до 0 (смерть — ${death}) за`,
+      }),
+    },
+    { doc },
+  );
+}
 
 /** «From … to …» counts: the generator picks a number in between. */
 function range(doc: string, min: number, max: number) {
@@ -166,7 +183,7 @@ const balanceSchema = obj({
         min: 1,
         max: 64,
         unit: 'тайлов',
-        doc: 'Пока нет потребностей, жители бродят не дальше этого от точки старта',
+        doc: 'Отдыхая, жители бродят не дальше этого от дома (точки старта)',
       }),
       restTicks: obj(
         {
@@ -186,7 +203,84 @@ const balanceSchema = obj({
         doc: 'Сколько житель ждёт, когда другой освободит тайл на пути, прежде чем обойти его',
       }),
     },
-    { doc: 'Жители: ходьба, пока нет потребностей (шаг 1.3)' },
+    { doc: 'Жители: ходьба и отдых у дома (шаг 1.3)' },
+  ),
+  needs: obj(
+    {
+      food: need('Сытость', 'голод'),
+      water: need('Жажда (100 — напился)', 'жажда'),
+      healDays: num({
+        min: 0.1,
+        max: 100,
+        unit: 'сут',
+        doc: 'Здоровье от 0 до 100 восстанавливается за столько суток, пока ни одна нужда не на нуле',
+      }),
+    },
+    { doc: 'Потребности: шкалы 0–100, 100 — нужды нет (GDD §4.2)' },
+  ),
+  eating: obj(
+    {
+      biteRations: num({
+        min: 0.01,
+        max: 1,
+        unit: 'рационов',
+        doc: 'Сколько житель собирает с куста и съедает за раз (рацион — еда взрослого на сутки, GDD §13.2: он возвращает сытость одних суток)',
+      }),
+      biteTicks: int({
+        min: 1,
+        max: 400,
+        unit: 'тиков',
+        doc: 'Сколько тиков уходит на одну горсть: собрать и съесть',
+      }),
+      sipPoints: num({
+        min: 1,
+        max: 100,
+        unit: 'пунктов',
+        doc: 'Насколько глоток утоляет жажду',
+      }),
+      sipTicks: int({ min: 1, max: 400, unit: 'тиков', doc: 'Сколько тиков длится глоток' }),
+    },
+    { doc: 'Еда и питьё (GDD §13.2)' },
+  ),
+  ai: obj(
+    {
+      thinkTicks: int({
+        min: 1,
+        max: 400,
+        unit: 'тиков',
+        doc: 'Отдыхающий житель обдумывает, не пора ли поесть или попить, раз в столько тиков (GDD §2.3: 5–20)',
+      }),
+      restUtility: num({
+        min: 0.001,
+        max: 1,
+        doc: 'Полезность отдыха и прогулки у дома: нужда побеждает, когда нужда² × доступность больше (нужда 0…1)',
+      }),
+      halfAvailabilityTiles: num({
+        min: 1,
+        max: 10_000,
+        unit: 'тайлов',
+        doc: 'Доступность источника = 1 рядом и ½ на пути такой длины (тайлов травы): ближнее выбирают охотнее',
+      }),
+      jitterPercent: int({
+        min: 0,
+        max: 50,
+        unit: '%',
+        doc: 'Лёгкая случайность выбора: полезность каждого варианта умножается на 1 ± столько процентов',
+      }),
+      reservePoints: num({
+        min: 0,
+        max: 100,
+        unit: 'пунктов',
+        doc: 'Предусмотрительность: если другой нужды к возвращению из похода (туда, обратно и сама еда) останется меньше — сначала утолить её',
+      }),
+      retryTicks: int({
+        min: 1,
+        max: 4000,
+        unit: 'тиков',
+        doc: 'Не нашёл нигде, где утолить нужду (ягоды в округе кончились), — снова ищет не раньше чем через столько',
+      }),
+    },
+    { doc: 'Выбор действия: полезность = нужда² × доступность (GDD §2.3)' },
   ),
   map: obj(
     {
@@ -343,12 +437,36 @@ const objectsSchema = table(
       max: 1000,
       doc: 'Как часто среди объектов того же места: дубов 56 на 26 берёз. 0 — если место не задано',
     }),
+    harvest: nullable(
+      obj(
+        {
+          food: ref('resources', { doc: 'Какая еда (ресурс категории «еда»)' }),
+          rations: num({
+            min: 0.25,
+            max: 1000,
+            unit: 'рационов',
+            doc: 'Сколько её на объекте при сотворении мира',
+          }),
+          empty: id({ doc: 'Состояние, когда всё собрано (одно из states)' }),
+        },
+        {
+          doc: 'Еда, которую собирают и съедают на месте (шаг 1.4): малина — ягоды; пока не возобновляется (шаг 1.11)',
+        },
+      ),
+      'с объекта нечего собрать',
+    ),
   },
   {
-    check: ({ states, place, weight }) => {
+    check: ({ states, place, weight, harvest }) => {
       if (new Set(states).size !== states.length) return 'состояния повторяются';
       if (place === null && weight !== 0) return 'вес без места (place) — должен быть 0';
       if (place !== null && weight === 0) return 'у объекта с местом (place) вес больше 0';
+      if (harvest !== null && !states.includes(harvest.empty)) {
+        return `состояние «${harvest.empty}» (harvest.empty) не из списка states: ${states.join(', ')}`;
+      }
+      if (harvest !== null && harvest.empty === states[0]) {
+        return `harvest.empty не может быть начальным состоянием «${states[0]}» — объект появляется с едой`;
+      }
       return null;
     },
   },

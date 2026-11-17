@@ -6,7 +6,7 @@ import {
   type Season,
   TIME,
 } from '../sim/calendar.ts';
-import { type Cause, findEvent, type WorldEvent } from '../sim/events.ts';
+import { type Cause, type DeathReason, findEvent, type WorldEvent } from '../sim/events.ts';
 import { FIELD } from '../sim/systems/fireflies.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../sim/world.ts';
 import { bindSpeedKeys } from './controls.ts';
@@ -145,11 +145,20 @@ function describeEvent(event: WorldEvent): string {
       return `светлячки исчезли: ${event.count}`;
     case 'villager_arrived':
       return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} (житель ${event.villager})`;
+    case 'need_ran_out':
+      return `житель ${event.villager} ${event.need === 'food' ? 'голодает' : 'мучается жаждой'}`;
+    case 'villager_died':
+      return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager}: ${DIED_OF[event.reason]}`;
   }
 }
 
+const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
+
 function describeCause(world: World, cause: Cause): string {
   if (cause.kind === 'rule') return cause.rule === 'genesis' ? 'начало всего' : 'ход времени';
+  if (cause.kind === 'need') {
+    return `у жителя ${cause.villager} ${cause.need === 'food' ? 'кончилась сытость' : 'кончилась вода'}`;
+  }
   const source = findEvent(world, cause.event);
   return source ? `#${source.id} ${describeEvent(source)}` : `#${cause.event}`;
 }

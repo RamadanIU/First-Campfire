@@ -11,5 +11,5 @@
       "style": { "noNonNullAssertion": "off" }
     }
   },
-  "overrides": [{ "includes": ["data/**"], "formatter": { "lineWidth": 160 } }]
+  "overrides": [{ "includes": ["data/**"], "formatter": { "lineWidth": 220 } }]
 }

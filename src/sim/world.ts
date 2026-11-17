@@ -8,6 +8,7 @@
  * every system in the fixed order of SYSTEMS; systems see the new tick.
  */
 import { createJournal, type EventJournal, emit } from './events.ts';
+import { lifeSystem } from './life.ts';
 import type { WorldMap } from './map.ts';
 import { type GeneratedMap, generateMap } from './mapgen.ts';
 import type { MapObjects } from './objects.ts';
@@ -20,7 +21,7 @@ import { createVillagers, settleFirstPair, type Villagers, villagersSystem } fro
  * Named random streams, one per system. A new system adds its name to the end; streams are
  * derived from (seed, name), so adding one does not change the numbers of the others.
  */
-export const RNG_STREAMS = ['fireflies', 'map', 'villagers'] as const;
+export const RNG_STREAMS = ['fireflies', 'map', 'villagers', 'minds'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 export interface World {
@@ -36,7 +37,7 @@ export interface World {
   map: WorldMap;
   /** Trees, bushes, boulders… standing on the map (./objects.ts). */
   objects: MapObjects;
-  /** The people of the world (./villagers.ts, step 1.3). */
+  /** The people of the world (./villagers.ts, step 1.3), their needs and health (step 1.4). */
   villagers: Villagers;
 }
 
@@ -46,8 +47,16 @@ export interface System {
   step(world: World): void;
 }
 
-/** Systems in the order they run every tick. The order is part of the rules: do not reorder. */
-export const SYSTEMS: readonly System[] = [calendarEventsSystem, firefliesSystem, villagersSystem];
+/**
+ * Systems in the order they run every tick. The order is part of the rules: do not reorder.
+ * Life (needs, health, death — ./life.ts) goes before the villagers act.
+ */
+export const SYSTEMS: readonly System[] = [
+  calendarEventsSystem,
+  firefliesSystem,
+  lifeSystem,
+  villagersSystem,
+];
 
 export interface WorldOptions {
   /**

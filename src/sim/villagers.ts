@@ -1,31 +1,49 @@
 /**
- * Villagers (step 1.3): the people of the world. So far they only walk — there are no needs yet
- * (step 1.4), so they wander calmly around the place where they came to the world.
+ * Villagers (step 1.3; needs — step 1.4): the people of the world. They walk, rest and stroll
+ * near home, and go to eat and to drink when hunger or thirst presses.
  *
  *   - A villager is an entity with an id, a sex, looks (skin tone and hair colour — indices the
  *     renderer turns into palette swaps), a position — the tile it stands on plus progress
- *     towards the next one — the way it faces and what it is doing (`action`).
+ *     towards the next one — the way it faces, what it is doing (`action`), its needs (satiety
+ *     and thirst, 0…100, ./needs.ts) and health. ./life.ts makes the needs fall and the health
+ *     suffer, and writes deaths to the journal.
  *   - Walking: one tile per `movement.walkTicksPerTile` ticks on grass (GDD §13.1), slower on sand
  *     (data/terrain.json, `speed`), a diagonal step is √2 longer. Paths come from ./path.ts.
  *     Time left over after a step goes into the next one, so the pace is even.
  *   - Two people never stand on one tile: a villager occupies its tile and, while stepping, the
  *     next one too. One whose next tile is taken waits `villagers.giveWayTicks`, then looks for a
  *     way around; if there is none, it gives up and stands.
- *   - Without needs a villager rests `villagers.restTicks`, then walks to a free tile within
+ *   - What to do is the mind's choice (./minds.ts, GDD §2.3): a resting villager thinks every
+ *     `ai.thinkTicks`; when hunger or thirst outweighs rest, it walks to the nearest bush with
+ *     berries or to the water's edge, stands beside it facing it and eats (`eating.biteRations`
+ *     every `eating.biteTicks`, straight from the bush — ./objects.ts `takeFood`) or drinks
+ *     (`eating.sipPoints` every `eating.sipTicks`) until full; the bush picked clean turns empty.
+ *   - Otherwise it rests `villagers.restTicks`, then walks to a free tile within
  *     `villagers.wanderRadius` of home.
  *   - The observer's debug order (`orderWalk`, the scene `world` with `debug=1`) sends a villager
  *     to a tile; an unreachable one is refused at once and the villager goes on as before.
  *
- * Plain data (docs/ARCHITECTURE.md, rule 7); randomness — the stream `villagers`. The position of
- * the previous tick (`prevX`, `prevY`) is kept for the renderer's smooth motion (loop.alpha), and
- * the distance walked (`walked`) picks the frame of the walking animation — legs move with the way
- * covered, not with the clock, so they keep pace at ×20.
+ * Plain data (docs/ARCHITECTURE.md, rule 7); randomness — the streams `villagers` (looks, rest,
+ * strolls) and `minds` (the choice). The position of the previous tick (`prevX`, `prevY`) is kept
+ * for the renderer's smooth motion (loop.alpha), and the distance walked (`walked`) picks the
+ * frame of the walking animation — legs move with the way covered, not with the clock, so they
+ * keep pace at ×20.
  */
 import { DATA } from '../data/index.ts';
 import { type Cause, emit } from './events.ts';
 import { inside } from './map.ts';
 import { findCampSite } from './mapgen.ts';
-import { objectAt } from './objects.ts';
+import { type Choice, canUse, choose } from './minds.ts';
+import {
+  FULL,
+  fullNeeds,
+  isSated,
+  NEEDS,
+  type Need,
+  type PerNeed,
+  satietyPerRation,
+} from './needs.ts';
+import { findObject, objectAt, takeFood } from './objects.ts';
 import { canStep, DIAGONAL, findPath, type PathResult, type Tile, tileSpeed } from './path.ts';
 import { intRange } from './rng.ts';
 import type { System, World } from './world.ts';
@@ -42,14 +60,36 @@ export type Facing = 'n' | 'e' | 's' | 'w';
  */
 export const LOOKS = { skinTones: 6, hairColors: 5 } as const;
 
-/** Why a villager walks: to wander (no needs yet) or because the observer sent it (debug). */
-export type WalkPurpose = 'wander' | 'order';
+/**
+ * Why a villager walks: to stroll near home, because the observer sent it (debug), to eat or to
+ * drink (step 1.4).
+ */
+export type WalkPurpose = 'wander' | 'order' | 'eat' | 'drink';
+
+/** What meets a need (step 1.4): a bush with food — object `object` on its tile — or water. */
+export type Source =
+  | { kind: 'bush'; object: number; x: number; y: number }
+  | { kind: 'water'; x: number; y: number };
 
 export type VillagerAction =
-  /** Stands (breathes) until tick `until`, then decides what to do. */
+  /** Stands (breathes) until tick `until`, thinking now and then (./minds.ts); then strolls. */
   | { kind: 'idle'; until: number }
-  /** Walks to `goal` along `path` (the tiles still ahead); `waited` — ticks spent giving way. */
-  | { kind: 'walk'; purpose: WalkPurpose; goal: Tile; path: Tile[]; waited: number };
+  /**
+   * Walks to `goal` along `path` (the tiles still ahead); `waited` — ticks spent giving way;
+   * `source` — what it will eat or drink from there (null for a stroll or an order).
+   */
+  | {
+      kind: 'walk';
+      purpose: WalkPurpose;
+      goal: Tile;
+      path: Tile[];
+      waited: number;
+      source: Source | null;
+    }
+  /** Picks berries from the bush (object id) beside it and eats them; the next bite at `next`. */
+  | { kind: 'eat'; bush: number; next: number }
+  /** Drinks from the water tile beside it; the next sip at `next`. */
+  | { kind: 'drink'; water: Tile; next: number };
 
 export interface Villager {
   id: number;
@@ -74,6 +114,20 @@ export interface Villager {
   /** Tiles walked in a lifetime: the walking animation goes by distance (docs/ART.md). */
   walked: number;
   action: VillagerAction;
+  /** Satiety and thirst, 0…100: 100 — fed, not thirsty (./needs.ts, GDD §4.2). */
+  needs: PerNeed<number>;
+  /** 0…100; at 0 the villager dies (./life.ts). */
+  health: number;
+  /**
+   * While a need is at zero — the id of the journal event of it running out (the cause of a
+   * death it leads to); 0 — the need is not at zero.
+   */
+  ranOut: PerNeed<number>;
+  /**
+   * The mind's memory (./minds.ts): the tick of the last search that found nowhere to meet the
+   * need at all (no berries left in reach); 0 — none. Not searched again for `ai.retryTicks`.
+   */
+  nowhere: PerNeed<number>;
 }
 
 export interface Villagers {
@@ -84,6 +138,10 @@ export interface Villagers {
 
 /** Tries to find a tile to wander to before resting again. */
 const WANDER_TRIES = 8;
+/** The same, far from home: each try may search the whole map. */
+const HOMEWARD_TRIES = 2;
+/** One who walks will clear the way: it is waited for this many times longer than one who stands. */
+const WALKER_PATIENCE = 4;
 /** Rounding slack of a step's progress (floating sums of 1/5, √2…). */
 const EPSILON = 1e-9;
 
@@ -113,6 +171,13 @@ export function facingOf(dx: number, dy: number): Facing {
   if (dx > 0) return 'e';
   if (dx < 0) return 'w';
   return dy < 0 ? 'n' : 's';
+}
+
+/** Take a villager out of the world (it died). */
+export function removeVillager(world: World, id: number): void {
+  const list = world.villagers.list;
+  const index = list.findIndex((villager) => villager.id === id);
+  if (index >= 0) list.splice(index, 1);
 }
 
 /** Does another villager than `self` stand on tile (x, y) or step onto it? */
@@ -181,6 +246,10 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
     facing: facingOf(home.x - tile.x, home.y - tile.y),
     walked: 0,
     action: { kind: 'idle', until },
+    needs: fullNeeds(),
+    health: FULL,
+    ranOut: { food: 0, water: 0 },
+    nowhere: { food: 0, water: 0 },
   };
   world.villagers.nextId += 1;
   world.villagers.list.push(villager);
@@ -248,7 +317,14 @@ export function orderWalk(world: World, villager: Villager, goal: Tile): PathRes
   if (result.ok) {
     // The villager's own copy: walking uses it up, the caller keeps the whole path.
     const path = [...result.path];
-    villager.action = { kind: 'walk', purpose: 'order', goal: { ...goal }, path, waited: 0 };
+    villager.action = {
+      kind: 'walk',
+      purpose: 'order',
+      goal: { ...goal },
+      path,
+      waited: 0,
+      source: null,
+    };
   }
   return result;
 }
@@ -262,10 +338,16 @@ function rest(world: World, villager: Villager, ticks = restTicks(world)): void 
 function wander(world: World, villager: Villager): void {
   const radius = DATA.balance.villagers.wanderRadius;
   const rng = world.rng.villagers;
-  // A goal near home is near by path too: a long way round (across a river) is not a stroll.
+  const { home } = villager;
+  // Far from home (back from a far bush) — the stroll is the way home: a search of any length,
+  // but few tries. Near home, a goal near home is near by path too: a long way round (across a
+  // river) is not a stroll, so the search is short.
+  const away = Math.max(Math.abs(villager.x - home.x), Math.abs(villager.y - home.y)) > radius;
   const side = 2 * radius + 1;
-  const limit = Math.min(DATA.balance.movement.pathSearchTiles, side * side * 4);
-  for (let attempt = 0; attempt < WANDER_TRIES; attempt++) {
+  const all = DATA.balance.movement.pathSearchTiles;
+  const limit = away ? all : Math.min(all, side * side * 4);
+  const tries = away ? HOMEWARD_TRIES : WANDER_TRIES;
+  for (let attempt = 0; attempt < tries; attempt++) {
     const dx = intRange(rng, -radius, radius);
     const dy = intRange(rng, -radius, radius);
     if (dx * dx + dy * dy > radius * radius) continue;
@@ -276,13 +358,21 @@ function wander(world: World, villager: Villager): void {
     if (isGoalOfAnother(world, goal, villager)) continue;
     const result = planPath(world, villager, villager, goal, limit);
     if (!result.ok) continue;
-    villager.action = { kind: 'walk', purpose: 'wander', goal, path: result.path, waited: 0 };
+    villager.action = {
+      kind: 'walk',
+      purpose: 'wander',
+      goal,
+      path: result.path,
+      waited: 0,
+      source: null,
+    };
     return;
   }
   rest(world, villager, DATA.balance.villagers.giveWayTicks);
 }
 
-function isGoalOfAnother(world: World, goal: Tile, self: Villager): boolean {
+/** Is `goal` the tile another villager than `self` is walking to? */
+export function isGoalOfAnother(world: World, goal: Tile, self: Villager): boolean {
   return world.villagers.list.some(
     (other) =>
       other !== self &&
@@ -319,22 +409,130 @@ function advance(world: World, villager: Villager, time: number): number {
   return Math.max(0, time - left);
 }
 
+/** Does the villager think on this tick? Every `ai.thinkTicks`, each at its own moment. */
+function thinksNow(world: World, villager: Villager): boolean {
+  return (world.tick + villager.id) % DATA.balance.ai.thinkTicks === 0;
+}
+
+/** Set off to meet a need: walk to the spot beside the source, or start at once if there. */
+function setOff(world: World, villager: Villager, choice: Exclude<Choice, { kind: 'rest' }>): void {
+  if (choice.path.length === 0) {
+    begin(world, villager, choice.source);
+    return;
+  }
+  villager.action = {
+    kind: 'walk',
+    purpose: choice.kind,
+    goal: choice.goal,
+    path: choice.path,
+    waited: 0,
+    source: choice.source,
+  };
+}
+
 /**
- * A standing villager decides what to do now: rest on, set off, take the next step of its path,
- * wait for the way to clear. Returns true if a new step started.
+ * Standing beside a source: face it and start eating or drinking. The bush emptied or the
+ * spot is not beside it after all — think again on the next tick.
+ */
+function begin(world: World, villager: Villager, source: Source): void {
+  if (!canUse(world, source, villager.x, villager.y)) {
+    rest(world, villager, 0);
+    return;
+  }
+  villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
+  const { biteTicks, sipTicks } = DATA.balance.eating;
+  villager.action =
+    source.kind === 'bush'
+      ? { kind: 'eat', bush: source.object, next: world.tick + biteTicks }
+      : { kind: 'drink', water: { x: source.x, y: source.y }, next: world.tick + sipTicks };
+}
+
+/** A meal or a drink is over: rest if the need is met, otherwise think again at once. */
+function finish(world: World, villager: Villager, met: boolean): void {
+  rest(world, villager, met ? undefined : 0);
+}
+
+/**
+ * Eating at a bush: a bite every `eating.biteTicks` until full or the bush is bare. A meal is
+ * long, so between bites the villager checks whether another need has become more pressing than
+ * hunger (thirst — while eating far from the water) and goes to meet it if the mind says so.
+ */
+function eat(world: World, villager: Villager, action: Extract<VillagerAction, { kind: 'eat' }>) {
+  if (world.tick < action.next) return;
+  const { biteRations, biteTicks } = DATA.balance.eating;
+  const bush = findObject(world.objects, action.bush);
+  const taken = bush ? takeFood(bush, biteRations) : 0;
+  gain(villager, 'food', taken * satietyPerRation());
+  const full = isSated(villager.needs.food, 'food');
+  if (full || taken === 0 || !bush || bush.stock <= 0) {
+    finish(world, villager, full);
+    return;
+  }
+  action.next = world.tick + biteTicks;
+  if (morePressing(villager, 'food')) {
+    const choice = choose(world, villager);
+    if (choice.kind !== 'rest' && choice.kind !== 'eat') setOff(world, villager, choice);
+  }
+}
+
+/** Is a need other than `current` more pressing than it (its scale lower)? */
+function morePressing(villager: Villager, current: Need): boolean {
+  return NEEDS.some((need) => need !== current && villager.needs[need] < villager.needs[current]);
+}
+
+/** Drinking at the water: a sip every `eating.sipTicks` until thirst is quenched. */
+function drink(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'drink' }>,
+) {
+  if (world.tick < action.next) return;
+  const { sipPoints, sipTicks } = DATA.balance.eating;
+  gain(villager, 'water', sipPoints);
+  if (isSated(villager.needs.water, 'water')) {
+    finish(world, villager, true);
+    return;
+  }
+  action.next = world.tick + sipTicks;
+}
+
+/** A need is met by `amount` points (never above full). */
+function gain(villager: Villager, need: Need, amount: number): void {
+  villager.needs[need] = Math.min(FULL, villager.needs[need] + amount);
+}
+
+/**
+ * A standing villager decides what to do now: eat or drink on, rest on, think (eat, drink or
+ * stroll), take the next step of its path, wait for the way to clear. Returns true if a new
+ * step started.
  */
 function decide(world: World, villager: Villager): boolean {
   const action = villager.action;
+  if (action.kind === 'eat') {
+    eat(world, villager, action);
+    return false;
+  }
+  if (action.kind === 'drink') {
+    drink(world, villager, action);
+    return false;
+  }
   if (action.kind === 'idle') {
-    if (world.tick < action.until) return false;
-    wander(world, villager);
+    const rested = world.tick >= action.until;
+    if (!rested && !thinksNow(world, villager)) return false;
+    const choice = choose(world, villager);
+    if (choice.kind === 'rest') {
+      if (!rested) return false;
+      wander(world, villager);
+    } else {
+      setOff(world, villager, choice);
+    }
     if (villager.action.kind !== 'walk') return false;
   }
   const walk = villager.action;
   if (walk.kind !== 'walk') return false;
   const next = walk.path[0];
   if (!next) {
-    rest(world, villager);
+    arrive(world, villager, walk);
     return false;
   }
   const dx = next.x - villager.x;
@@ -342,12 +540,11 @@ function decide(world: World, villager: Villager): boolean {
   const adjacent = Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && (dx !== 0 || dy !== 0);
   if (!adjacent || !canStep(world.map, world.objects, villager.x, villager.y, dx, dy)) {
     // The world changed under the path: look for another one.
-    return replan(world, villager, walk.goal, walk.purpose);
+    return replan(world, villager, walk);
   }
   if (isTaken(world, next.x, next.y, villager)) {
     walk.waited += 1;
-    if (walk.waited > DATA.balance.villagers.giveWayTicks)
-      replan(world, villager, walk.goal, walk.purpose);
+    if (walk.waited > patience(world, villager, next)) replan(world, villager, walk);
     return false;
   }
   walk.path.shift();
@@ -359,11 +556,44 @@ function decide(world: World, villager: Villager): boolean {
   return true;
 }
 
+/**
+ * How long a villager waits for tile `next` to clear before looking for a way around. One who
+ * stands there (resting, eating) is gone round after `villagers.giveWayTicks`. One who walks will
+ * clear the way, so it is waited for longer — except when the two meet head-on (each wants the
+ * other's tile — in a passage one tile wide): then the one with the larger id gives way after
+ * `giveWayTicks` and the other waits. Both turning back at the same moment would meet again and
+ * again (step 1.3 had that).
+ */
+function patience(world: World, villager: Villager, next: Tile): number {
+  const giveWay = DATA.balance.villagers.giveWayTicks;
+  const other = world.villagers.list.find(
+    (v) =>
+      v !== villager &&
+      ((v.x === next.x && v.y === next.y) || (v.toX === next.x && v.toY === next.y)),
+  );
+  if (other?.action.kind !== 'walk') return giveWay;
+  const wants = [{ x: other.toX, y: other.toY }, ...other.action.path.slice(0, 1)];
+  const headOn = wants.some((tile) => tile.x === villager.x && tile.y === villager.y);
+  return headOn && villager.id > other.id ? giveWay : WALKER_PATIENCE * giveWay;
+}
+
+/** At the end of a walk: eat or drink if that was the point, otherwise rest. */
+function arrive(world: World, villager: Villager, walk: Extract<VillagerAction, { kind: 'walk' }>) {
+  if (walk.source) begin(world, villager, walk.source);
+  else rest(world, villager);
+}
+
 /** A new path to the same goal around the others; none — give up and stand. */
-function replan(world: World, villager: Villager, goal: Tile, purpose: WalkPurpose): boolean {
-  const result = planPath(world, villager, villager, goal);
+function replan(
+  world: World,
+  villager: Villager,
+  walk: Extract<VillagerAction, { kind: 'walk' }>,
+): boolean {
+  const result = planPath(world, villager, villager, walk.goal);
   if (result.ok && result.path.length > 0) {
-    villager.action = { kind: 'walk', purpose, goal, path: result.path, waited: 0 };
+    villager.action = { ...walk, path: result.path, waited: 0 };
+  } else if (result.ok) {
+    arrive(world, villager, walk);
   } else {
     rest(world, villager, DATA.balance.villagers.giveWayTicks);
   }

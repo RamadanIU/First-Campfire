@@ -195,6 +195,51 @@ describe('испорченная запись даёт понятную ошиб
     ]);
   });
 
+  it('еда на объекте: ресурс есть, состояние «всё собрано» — из списка и не начальное', () => {
+    const bush = (t: Tables) => t.objects.find((r) => r.id === 'berry_bush')!;
+    const harvest = (t: Tables) => bush(t).harvest as Json;
+    expect(DATA.objects.get('berry_bush').harvest).toEqual({
+      food: 'berries',
+      rations: 4,
+      empty: 'empty',
+    });
+    expect(DATA.objects.get('oak').harvest).toBeNull();
+    expect(
+      problemsWith((t) => {
+        harvest(t).food = 'beries';
+      }),
+    ).toEqual([
+      'data/objects.json · запись «berry_bush» · поле «harvest.food»: нет записи «beries» в таблице data/resources.json — может быть, «berries»?',
+    ]);
+    expect(
+      problemsWith((t) => {
+        harvest(t).empty = 'bare';
+      }),
+    ).toEqual([
+      'data/objects.json · запись «berry_bush»: состояние «bare» (harvest.empty) не из списка states: ripe, empty',
+    ]);
+    expect(
+      problemsWith((t) => {
+        harvest(t).empty = 'ripe';
+      }),
+    ).toEqual([
+      'data/objects.json · запись «berry_bush»: harvest.empty не может быть начальным состоянием «ripe» — объект появляется с едой',
+    ]);
+    expect(
+      problemsWith((t) => {
+        delete bush(t).harvest;
+      }),
+    ).toHaveLength(1);
+  });
+
+  it('потребности — из GDD §4.2', () => {
+    expect(DATA.balance.needs).toEqual({
+      food: { emptyDays: 2.5, deathDays: 4 },
+      water: { emptyDays: 1.5, deathDays: 2 },
+      healDays: 2,
+    });
+  });
+
   it('карта: стороны делятся на чанки, «от» не больше «до»', () => {
     expect(
       problemsWith((t) => {

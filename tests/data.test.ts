@@ -184,7 +184,13 @@ describe('сцена data показывает таблицы как есть', 
       walkable: 'нет',
       states: 'ripe → empty',
       place: 'опушка · вес 1',
+      harvest: 'Ягоды · 4 рациона → empty',
     });
+    expect(rows.find((r) => r.id === 'oak')!.harvest).toBe('—');
+    // What is gathered and eaten on the spot is food.
+    for (const def of DATA.objects.records) {
+      if (def.harvest) expect(DATA.resources.get(def.harvest.food).category, def.id).toBe('food');
+    }
     expect(rows.find((r) => r.id === 'flowers')!.walkable).toBe('да');
   });
 
@@ -194,7 +200,10 @@ describe('сцена data показывает таблицы как есть', 
       'Время (GDD §2.1, §13.1)',
       'Движение (GDD §13.1)',
       'Жизнь (GDD §13.1)',
-      'Жители: ходьба, пока нет потребностей (шаг 1.3)',
+      'Жители: ходьба и отдых у дома (шаг 1.3)',
+      'Потребности: шкалы 0–100, 100 — нужды нет (GDD §4.2)',
+      'Еда и питьё (GDD §13.2)',
+      'Выбор действия: полезность = нужда² × доступность (GDD §2.3)',
       'Карта (GDD §2.2, §3.1, §3.3)',
     ]);
     const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.key, r.value]));
@@ -205,6 +214,11 @@ describe('сцена data показывает таблицы как есть', 
     expect(rows.get('life.minYearsBetweenChildren')).toBe('2 года');
     expect(rows.get('movement.pathSearchTiles')).toBe('4096 тайлов');
     expect(rows.get('villagers.restTicks')).toBe('от 30 тиков · до 120 тиков');
+    expect(rows.get('needs.food')).toBe(
+      'от 100 до 0 за 2,5 сут · на нуле здоровье от 100 до 0 (смерть — голод) за 4 сут',
+    );
+    expect(rows.get('eating.biteRations')).toBe('0,25 рациона');
+    expect(rows.get('ai.restUtility')).toBe('0,15');
     expect(rows.get('map.width')).toBe('64 тайла');
     expect(rows.get('map.bushes')).toBe('от 12 шт. · до 22 шт.');
     expect(rows.get('map.camp')).toBe(
