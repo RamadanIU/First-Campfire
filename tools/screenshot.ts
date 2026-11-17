@@ -16,14 +16,22 @@
  *   --scale <n>      device pixel ratio (default 1; pixel art does not need more)
  *   --wait <ms>      extra wait after the page is ready (default 0)
  *   --no-build       reuse the existing dist/ instead of rebuilding
+ *   --check-crisp <n>  every shot must be crisp pixel art at ×n: each n×n square of one colour
+ *                    (use with `ui=0` — text is not pixel art); a blurred shot fails the command.
+ *                    n counts pixels of the PNG: with --scale 2 a picture at zoom ×2 is ×4
+ *   --compare <dir>  compare every shot with the shot of the same name in <dir> (the NN- prefix
+ *                    is ignored), e.g. the previous step's folder: «pixel for pixel» or where
+ *                    they differ. Differences are reported, not failed — judge them by eye
  *
  * Playwright and Chromium are preinstalled in Claude Code cloud sessions and are
  * deliberately NOT in package.json (a second copy would not find the browser).
  */
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildGame, chromium, hasBuild, ROOT, serveGame } from './browser.ts';
+import { compareImages, crispness } from './imageChecks.ts';
+import { decodePng } from './png.ts';
 
 function fail(message: string): never {
   console.error(`✗ ${message}`);
@@ -40,6 +48,8 @@ const { values, positionals } = parseArgs({
     scale: { type: 'string', default: '1' },
     wait: { type: 'string', default: '0' },
     'no-build': { type: 'boolean', default: false },
+    'check-crisp': { type: 'string' },
+    compare: { type: 'string' },
   },
 });
 
@@ -62,6 +72,23 @@ const shots = positionals.map((argument) => {
     query: query.startsWith('?') || query === '' ? query : `?${query}`,
   };
 });
+
+const crispScale = values['check-crisp'] === undefined ? null : Number(values['check-crisp']);
+if (crispScale !== null && !(Number.isInteger(crispScale) && crispScale >= 2))
+  fail(`--check-crisp: масштаб — целое число от 2, получено ${values['check-crisp']}`);
+const compareDir = values.compare === undefined ? null : join(ROOT, values.compare);
+if (compareDir !== null && !existsSync(compareDir)) fail(`--compare: нет папки ${values.compare}`);
+
+/** The shot named `name` in the folder to compare with: NN-name.png with any NN. */
+function previousShot(name: string): string | null {
+  const file = readdirSync(compareDir!).find(
+    (entry) => entry.replace(/^\d+-/, '') === `${name}.png`,
+  );
+  return file === undefined ? null : join(compareDir!, file);
+}
+
+const fmt = (value: number) => value.toLocaleString('ru-RU');
+const comparisons: string[] = [];
 
 const outDir = values.out
   ? join(ROOT, values.out)
@@ -107,23 +134,63 @@ try {
     errors.push(...((await page.evaluate('window.__fc ? window.__fc.errors : []')) as string[]));
 
     const file = join(outDir, `${String(index + 1).padStart(2, '0')}-${shot.name}.png`);
-    await page.screenshot({ path: file });
+    const png: Buffer = await page.screenshot({ path: file });
     await context.close();
+    const notes: string[] = [];
+
+    if (crispScale !== null) {
+      const report = crispness(decodePng(png), crispScale);
+      if (report.mixed > 0)
+        errors.push(
+          `не резкий ×${crispScale}: ${fmt(report.mixed)} из ${fmt(report.blocks)} квадратов ${crispScale}×${crispScale} не одноцветны, первый — у (${report.firstMixed!.x}, ${report.firstMixed!.y}) (интерфейс скрыт параметром ui=0?)`,
+        );
+      else
+        notes.push(
+          `  резкий ×${crispScale}: все ${fmt(report.blocks)} квадратов ${crispScale}×${crispScale} одноцветны (сетка от ${report.shiftX}, ${report.shiftY})`,
+        );
+    }
+    if (compareDir !== null) {
+      const previous = previousShot(shot.name);
+      if (previous === null) {
+        comparisons.push(`  ? ${shot.name}: в ${values.compare} нет кадра с таким именем`);
+      } else {
+        const difference = compareImages(decodePng(png), decodePng(readFileSync(previous)));
+        const against = relative(ROOT, previous);
+        if (!difference.sameSize)
+          comparisons.push(`  ≠ ${shot.name}: другой размер, чем ${against}`);
+        else if (difference.differing === 0)
+          comparisons.push(`  = ${shot.name}: пиксель в пиксель как ${against}`);
+        else {
+          const box = difference.box!;
+          comparisons.push(
+            `  ≠ ${shot.name}: отличаются ${fmt(difference.differing)} пикселей от ${against} — в прямоугольнике x ${box.x}…${box.x + box.width - 1}, y ${box.y}…${box.y + box.height - 1}`,
+          );
+        }
+      }
+    }
 
     if (errors.length > 0) {
       failures.push(...errors.map((error) => `${shot.name}: ${error}`));
-      console.error(`✗ ${relative(ROOT, file)} — снят, но на странице есть ошибки`);
+      console.error(
+        `✗ ${relative(ROOT, file)} — снят, но есть ошибки (на странице или в проверке кадра)`,
+      );
     } else {
       console.log(`✓ ${relative(ROOT, file)}  ←  ${shot.query || '(без параметров)'}`);
     }
+    for (const note of notes) console.log(note);
   }
 } finally {
   await browser.close();
   server.close();
 }
 
+if (comparisons.length > 0) {
+  console.log(`\nСравнение с ${values.compare} (отличия — повод посмотреть глазами, а не ошибка):`);
+  for (const line of comparisons) console.log(line);
+}
+
 if (failures.length > 0) {
-  console.error('\nОшибки на странице:');
+  console.error('\nОшибки:');
   for (const failure of failures) console.error(`  ✗ ${failure}`);
   process.exit(1);
 }
