@@ -220,7 +220,7 @@ describe('автосохранение', () => {
     const autosave = createAutosave(world, slot, { enabled: true, savedTick: 100 });
     runTicks(world, TICKS_PER_YEAR * 2); // the journal grows past the limit
     autosave.afterTicks();
-    expect(autosave.error).toMatch(/переполнено.*МБ.*в файл/);
+    expect(autosave.error).toMatch(/переполнено \(сохранение — \d+ КБ\).*в файл/);
     expect(autosave.savedTick).toBe(100);
     autosave.afterTicks(); // same year: no new attempt every frame
     expect(autosave.error).not.toBeNull();
@@ -243,7 +243,7 @@ describe('автосохранение', () => {
   it('сохранение в файл открывается тем же загрузчиком', () => {
     const world = createWorld(7);
     runTicks(world, 9_000);
-    expect(saveFileName(world)).toBe('первый-костёр-зерно-7-год-2-тик-9000.json');
+    expect(saveFileName(world)).toBe('first-campfire-seed-7-year-2-tick-9000.json');
     const result = loadWorld(saveWorld(world));
     expect(result.ok && hashState(result.world)).toBe(hashState(world));
   });

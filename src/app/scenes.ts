@@ -5,6 +5,7 @@ import { createPaletteScene } from './paletteScene.ts';
 import type { SceneFactory } from './scene.ts';
 import { createStylesheetScene } from './stylesheetScene.ts';
 import { createTitleScene } from './titleScene.ts';
+import { createWorldScene } from './worldScene.ts';
 
 /**
  * Registry of scenes reachable through ?scene=<name>.
@@ -12,7 +13,10 @@ import { createTitleScene } from './titleScene.ts';
  * which automatically makes it available to the screenshot tool.
  */
 export const SCENES: Record<string, SceneFactory> = {
+  /** Title screen with the menu: continue, new world, load from file (steps 0.4, 0.7). */
   title: createTitleScene,
+  /** The player's world: from the autosave slot, saved once a year and on leaving (step 0.7). */
+  world: createWorldScene,
   /** Debug: simulation core — calendar, sky by time of day, speed, event journal (step 0.2). */
   clock: createClockScene,
   /** Debug: every sprite large and at natural size; &sprite=<name> — one sprite in detail (step 0.3). */

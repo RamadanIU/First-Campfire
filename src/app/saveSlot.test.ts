@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTOSAVE_KEY, createSaveSlot, type KeyValueStorage } from './saveSlot.ts';
+import { AUTOSAVE_KEY, createSaveSlot, type KeyValueStorage, storedSize } from './saveSlot.ts';
 
 function storageThatThrows(error: Error): KeyValueStorage {
   return {
@@ -56,5 +56,11 @@ describe('слот автосохранения', () => {
     const result = slot.write('x');
     expect(!result.ok && result.message).toMatch(/не дал записать.*SecurityError/);
     expect(() => slot.clear()).not.toThrow();
+  });
+
+  it('размер сохранения — в КБ или МБ, как в хранилище (два байта на знак)', () => {
+    expect(storedSize(10)).toBe('1 КБ');
+    expect(storedSize(8_000)).toBe('16 КБ');
+    expect(storedSize(900_000)).toBe('1,7 МБ');
   });
 });

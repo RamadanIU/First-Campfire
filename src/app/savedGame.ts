@@ -213,7 +213,10 @@ export function saveOnLeave(
   });
 }
 
-/** File name for «Save to file»: «первый-костёр-зерно-7-год-2-тик-9000.json». */
+/**
+ * File name for «Save to file»: «first-campfire-seed-7-year-2-tick-9000.json». Latin letters
+ * only: browsers and file systems may turn a Cyrillic name into «download».
+ */
 export function saveFileName(world: World): string {
-  return `первый-костёр-зерно-${world.seed}-год-${calendarAt(world.tick).year}-тик-${world.tick}.json`;
+  return `first-campfire-seed-${world.seed}-year-${calendarAt(world.tick).year}-tick-${world.tick}.json`;
 }

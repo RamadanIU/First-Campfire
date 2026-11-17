@@ -10,6 +10,7 @@ import { type Cause, findEvent, type WorldEvent } from '../sim/events.ts';
 import { FIELD } from '../sim/systems/fireflies.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../sim/world.ts';
 import { bindSpeedKeys } from './controls.ts';
+import { SEASON_NAME } from './dates.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
 import type { Scene, SceneContext } from './scene.ts';
 
@@ -19,6 +20,9 @@ import type { Scene, SceneContext } from './scene.ts';
  * temporary test system) fly at night, and the last journal entries show events with causes.
  *
  *   ?scene=clock&seed=1&ticks=3130&speed=5   Space — pause, 1–4 — ×1 ×2 ×5 ×20
+ *
+ * The same view shows the saved world of the scene `world` (step 0.7) until the map of stage 1
+ * replaces it: `createClockView(context, world)`.
  *
  * Colours here are temporary, like the title screen's; the master palette arrives in step 0.4.
  */
@@ -30,12 +34,6 @@ const HORIZON_SHARE = 0.71;
 const DAWN_HOUR = 5;
 const JOURNAL_LINES = 7;
 
-const SEASON_NAME: Record<Season, string> = {
-  spring: 'весна',
-  summer: 'лето',
-  autumn: 'осень',
-  winter: 'зима',
-};
 const SEASON_CAME: Record<Season, string> = {
   spring: 'наступила весна',
   summer: 'наступило лето',
@@ -161,13 +159,23 @@ function escapeHtml(text: string): string {
   );
 }
 
-export function createClockScene({ canvas, ui, params }: SceneContext): Scene {
+export function createClockScene(context: SceneContext): Scene {
+  const world = createWorld(context.params.seed);
+  runTicks(world, context.params.ticks);
+  return createClockView(context, world).scene;
+}
+
+/** A running world, drawn as the sky over a meadow with the HUD and the journal. */
+export interface ClockView {
+  scene: Scene;
+  loop: GameLoop;
+}
+
+export function createClockView({ canvas, ui, params }: SceneContext, world: World): ClockView {
   const screen = canvas.getContext('2d')!;
   const buffer = document.createElement('canvas');
   const ctx = buffer.getContext('2d')!;
 
-  const world = createWorld(params.seed);
-  runTicks(world, params.ticks);
   const loop: GameLoop = createGameLoop(() => stepWorld(world), {
     ticksPerSecond: TIME.ticksPerSecond,
     speed: params.speed,
@@ -284,7 +292,7 @@ export function createClockScene({ canvas, ui, params }: SceneContext): Scene {
     }
   }
 
-  return {
+  const scene: Scene = {
     update(elapsedMs) {
       loop.advance(elapsedMs);
     },
@@ -312,6 +320,7 @@ export function createClockScene({ canvas, ui, params }: SceneContext): Scene {
       hud?.update(world, loop);
     },
   };
+  return { scene, loop };
 }
 
 /** DOM overlay: date and time, speed, a bar of the day's phases and the event journal. */

@@ -9,6 +9,7 @@ describe('parseParams', () => {
   it('reads seed, scene, frame and ui', () => {
     expect(parseParams('?seed=42&scene=title&frame=10&ui=0')).toEqual({
       seed: 42,
+      seedGiven: true,
       scene: 'title',
       frame: 10,
       ui: false,
@@ -75,6 +76,7 @@ describe('parseParams', () => {
   it('ignores malformed numbers instead of producing NaN', () => {
     const params = parseParams('?seed=abc&frame=1.5');
     expect(params.seed).toBe(DEFAULT_PARAMS.seed);
+    expect(params.seedGiven).toBe(false);
     expect(params.frame).toBeNull();
   });
 

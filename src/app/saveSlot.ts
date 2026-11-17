@@ -37,9 +37,13 @@ export interface SaveSlot {
 export const NO_STORAGE =
   'Браузер не даёт игре хранилище (частный режим или запрет данных сайтов) — автосохранения не будет. Сохраняйте мир в файл.';
 
-function megabytes(length: number): string {
+/** Size of a string in the storage: «1,7 МБ», «16 КБ». */
+export function storedSize(length: number): string {
   // localStorage keeps strings as UTF-16: two bytes a character.
-  return `${((length * 2) / 1024 / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ`;
+  const kilobytes = (length * 2) / 1024;
+  return kilobytes < 1024
+    ? `${Math.max(1, Math.round(kilobytes))} КБ`
+    : `${(kilobytes / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ`;
 }
 
 function isQuotaError(error: unknown): boolean {
@@ -69,7 +73,7 @@ export function createSaveSlot(storage: KeyValueStorage | null, key = AUTOSAVE_K
         if (isQuotaError(error)) {
           return {
             ok: false,
-            message: `Хранилище браузера переполнено (сохранение — ${megabytes(text.length)}): автосохранение не записано. Сохраните мир в файл.`,
+            message: `Хранилище браузера переполнено (сохранение — ${storedSize(text.length)}): автосохранение не записано. Сохраните мир в файл.`,
           };
         }
         return {

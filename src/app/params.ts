@@ -21,6 +21,8 @@ export type SlotPreset = (typeof SLOT_PRESETS)[number];
 export interface LaunchParams {
   /** World seed. One seed — one history. */
   seed: number;
+  /** The address names a seed (`seed=`): «New world» on the title screen offers it. */
+  seedGiven: boolean;
   /** Which scene to open. Scenes are registered in src/app/scenes.ts. */
   scene: string;
   /** If set, render exactly this animation frame and stop (deterministic screenshots). */
@@ -46,6 +48,7 @@ export interface LaunchParams {
 
 export const DEFAULT_PARAMS: LaunchParams = {
   seed: 1,
+  seedGiven: false,
   scene: 'title',
   frame: null,
   ui: true,
@@ -90,6 +93,7 @@ export function parseParams(search: string): LaunchParams {
   const slot = parseSlot(query.get('slot'));
   return {
     seed: seed ?? DEFAULT_PARAMS.seed,
+    seedGiven: seed !== null,
     scene: scene ? scene : DEFAULT_PARAMS.scene,
     frame: parseInteger(query.get('frame'), 0),
     ui: query.get('ui') !== '0',

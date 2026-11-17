@@ -22,9 +22,18 @@ body {
   pointer-events: none;
 }
 
-.title {
+/* Title screen: the title, a note and the menu in one column (step 0.7). */
+.title-screen {
   position: absolute;
-  top: 12%;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12vh;
+  box-sizing: border-box;
+}
+
+.title {
   width: 100%;
   text-align: center;
   text-shadow: 0 3px 0 #2a1a12;
@@ -486,4 +495,331 @@ body {
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* Title menu (step 0.7): cards at the bottom of the title column; a note under the title. */
+.menu {
+  width: min(960px, calc(100% - 32px));
+  margin: auto 0 20px;
+  pointer-events: auto;
+}
+
+.menu-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.menu-card {
+  display: flex;
+  flex: 1 1 250px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 16px 12px;
+  box-sizing: border-box;
+  font: inherit;
+  text-align: left;
+  color: #f1e3c4;
+  background: rgba(11, 16, 38, 0.86);
+  border: 2px solid rgba(241, 227, 196, 0.22);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
+}
+
+button.menu-card {
+  cursor: pointer;
+}
+
+button.menu-card:hover,
+button.menu-card:focus-visible {
+  outline: none;
+  background: rgba(30, 30, 54, 0.94);
+  border-color: #ffd27a;
+}
+
+.menu-card.primary {
+  border-color: #ffd27a;
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.45),
+    inset 0 0 0 2px rgba(255, 210, 122, 0.14);
+}
+
+.menu-title {
+  margin-bottom: 2px;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  color: #ffd27a;
+  text-shadow: 0 2px 0 #2a1a12;
+}
+
+.menu-sub {
+  font-size: 13px;
+  color: #c9b48a;
+}
+
+.menu-warn,
+.menu-error {
+  font-size: 12px;
+  color: #ffb4a0;
+}
+
+.menu-card [hidden] {
+  display: none;
+}
+
+.menu-seed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.menu-seed label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #c9b48a;
+}
+
+.menu-seed input {
+  width: 10ch;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: bold;
+  color: #f1e3c4;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(241, 227, 196, 0.3);
+  border-radius: 0;
+}
+
+.menu-seed input:focus {
+  outline: none;
+  border-color: #ffd27a;
+}
+
+.menu-seed input[aria-invalid] {
+  border-color: #ff8a70;
+}
+
+.menu-reroll,
+.menu-go,
+.menu-actions button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.menu-reroll {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: #ffd27a;
+  background: transparent;
+  border: 2px solid rgba(255, 210, 122, 0.4);
+}
+
+.menu-reroll:hover {
+  border-color: #ffd27a;
+}
+
+.menu-go,
+.menu-actions button.primary {
+  padding: 4px 14px;
+  font-weight: bold;
+  color: #2a1a12;
+  background: #ffd27a;
+  border: 2px solid #ffd27a;
+  box-shadow: 0 3px 0 #a8743a;
+}
+
+.menu-go:hover,
+.menu-actions button.primary:hover {
+  background: #ffe2a6;
+}
+
+/* The note sits in the title block, under the subtitle. */
+.menu-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  width: min(820px, calc(100% - 32px));
+  margin-top: 18px;
+  padding: 8px 14px;
+  box-sizing: border-box;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+  text-shadow: none;
+  color: #f1e3c4;
+  background: rgba(11, 16, 38, 0.9);
+  border: 2px solid rgba(159, 176, 216, 0.5);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.menu-note[hidden] {
+  display: none;
+}
+
+.menu-note-text {
+  flex: 1 1 320px;
+}
+
+.menu-note-title {
+  font-weight: bold;
+  color: #ffd27a;
+}
+
+.menu-note-problem {
+  color: #ffd8cc;
+  background: rgba(60, 14, 12, 0.92);
+  border-color: rgba(255, 120, 100, 0.7);
+}
+
+.menu-note-problem .menu-note-title {
+  color: #ffb4a0;
+}
+
+.menu-note-ask {
+  border-color: #ffd27a;
+}
+
+.menu-detail {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #c99a90;
+}
+
+.menu-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.menu-actions button {
+  padding: 4px 14px;
+  color: #f1e3c4;
+  background: transparent;
+  border: 2px solid rgba(241, 227, 196, 0.35);
+}
+
+.menu-actions button:hover {
+  border-color: #f1e3c4;
+}
+
+/* Phones and low screens: compact cards right under the title, above the people at the fire. */
+@media (max-width: 600px), (max-height: 520px) {
+  .menu {
+    margin: 14px 0 12px;
+  }
+
+  .menu-cards {
+    gap: 8px;
+  }
+
+  .menu-card {
+    flex-basis: 200px;
+    padding: 7px 12px 9px;
+  }
+
+  .menu-title {
+    font-size: 17px;
+  }
+
+  .menu-tagline {
+    display: none;
+  }
+
+  .menu-note {
+    margin-top: 12px;
+    font-size: 13px;
+  }
+}
+
+/* Phones: one card per row. */
+@media (max-width: 600px) {
+  .menu-card {
+    flex-basis: 100%;
+  }
+}
+
+/* Panel of the world scene (step 0.7): how the world is saved, save to file, to the menu. */
+.world-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 300px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  background: rgba(11, 16, 38, 0.72);
+  border: 1px solid rgba(241, 227, 196, 0.18);
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.world-panel-title {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #ffd27a;
+}
+
+.world-panel-status {
+  color: #f1e3c4;
+}
+
+.world-panel-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #9aa6c4;
+}
+
+.world-panel-notes p {
+  margin: 6px 0 0;
+}
+
+.world-panel .world-panel-warn {
+  color: #ffb4a0;
+}
+
+.world-panel-ok {
+  color: #b9dd9a;
+}
+
+.world-panel-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.world-panel button {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: #f1e3c4;
+  cursor: pointer;
+  background: rgba(241, 227, 196, 0.06);
+  border: 1px solid rgba(241, 227, 196, 0.35);
+  border-radius: 2px;
+}
+
+.world-panel button:hover {
+  color: #ffd27a;
+  border-color: #ffd27a;
+}
+
+@media (max-width: 760px) {
+  .world-panel {
+    top: 226px;
+    right: auto;
+    left: 12px;
+    width: min(340px, calc(100% - 48px));
+  }
 }
