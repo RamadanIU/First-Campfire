@@ -1,4 +1,5 @@
 import { createClockScene } from './clockScene.ts';
+import { createDataScene } from './dataScene.ts';
 import { createGalleryScene } from './galleryScene.ts';
 import { createPaletteScene } from './paletteScene.ts';
 import type { SceneFactory } from './scene.ts';
@@ -20,6 +21,8 @@ export const SCENES: Record<string, SceneFactory> = {
   palette: createPaletteScene,
   /** Debug: the style reference — a camp by a river made of the sprites of epoch 0 (step 0.4). */
   stylesheet: createStylesheetScene,
+  /** Debug: the data tables — resources with icons, types of ground, numbers of the balance (step 0.5). */
+  data: createDataScene,
 };
 
 export const DEFAULT_SCENE = 'title';

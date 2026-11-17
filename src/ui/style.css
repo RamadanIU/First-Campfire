@@ -390,3 +390,100 @@ body {
 .gallery.bare .recolour th {
   display: none;
 }
+
+/* Debug scene `data` (step 0.5): the data tables as loaded. */
+.data .data-columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 24px;
+}
+
+.data h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: normal;
+  color: #c9b48a;
+}
+
+.data .data-table {
+  border-collapse: collapse;
+}
+
+.data .data-table .head {
+  padding: 2px 10px 4px 0;
+  font-weight: normal;
+  font-size: 11px;
+  color: #9aa6c4;
+  text-align: left;
+  border-bottom: 1px solid rgba(241, 227, 196, 0.14);
+}
+
+.data .data-table td {
+  padding: 2px 10px 2px 0;
+  color: #f1e3c4;
+  vertical-align: middle;
+}
+
+.data .data-table td.id {
+  color: #9aa6c4;
+  font-size: 12px;
+}
+
+.data .data-table td.number {
+  white-space: nowrap;
+}
+
+.data .data-table td.picture {
+  padding: 1px 10px 1px 0;
+}
+
+.data .data-table td.name {
+  max-width: 190px;
+}
+
+.data .data-table .named b {
+  display: block;
+  font-weight: normal;
+}
+
+.data .data-table .named small {
+  display: block;
+  font-size: 11px;
+  color: #9aa6c4;
+}
+
+.data .how-to {
+  margin-top: 20px;
+}
+
+/* A problem at the start of the game (a broken data table), shown over everything. */
+.start-problem {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  color: #ffd8cc;
+  background: rgba(60, 14, 12, 0.94);
+  border: 1px solid rgba(255, 120, 100, 0.7);
+  border-radius: 4px;
+}
+
+.start-problem h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: #ffb4a0;
+}
+
+.start-problem pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}

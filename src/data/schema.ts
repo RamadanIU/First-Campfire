@@ -216,7 +216,8 @@ export function closest(word: string, known: Iterable<string>): string | null {
       bestDistance = distance;
     }
   }
-  return bestDistance <= Math.max(2, Math.floor(word.length / 3)) ? best : null;
+  // One typo per three letters: «fod» → food, «beries» → berries, but not «meat» → man.
+  return bestDistance <= Math.max(1, Math.floor(word.length / 3)) ? best : null;
 }
 
 function suggestion(word: string, known: Iterable<string>): string {
