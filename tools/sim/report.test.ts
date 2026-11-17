@@ -37,6 +37,7 @@ function world(seed: number, nights: number, swarm: number | null, hash: string)
   return {
     seed,
     status: 'ok',
+    fromTick: 0,
     ticks: 9600,
     years: 2,
     hash,
@@ -57,6 +58,7 @@ function world(seed: number, nights: number, swarm: number | null, hash: string)
 const FAILED: WorldRun = {
   seed: 4,
   status: 'error',
+  fromTick: 0,
   ticks: 5000,
   years: 1,
   hash: '',
@@ -82,6 +84,7 @@ const META: RunMeta = {
   command: 'npm run sim -- --seeds 1..4 --years 2',
   seedsText: '1..4',
   years: 2,
+  load: null,
   threads: 2,
   startedAt: '2026-11-17T00:00:00.000Z',
   seconds: 0.5,
@@ -93,11 +96,11 @@ describe('итоги прогона: CSV', () => {
   it('строка на мир по возрастанию зерна; время — в последних столбцах; у упавшего мира показатели пусты', () => {
     expect(worldsCsv(RUNS, METRICS)).toBe(
       [
-        'seed,status,years,ticks,hash,nights,swarm_mean,journal,tick_mean_us,tick_p99_us,tick_max_us,sim_seconds,run_seconds,years_per_second',
-        '1,ok,2,9600,aaaa,24,,160,0.3,1.25,812.5,0.0144,0.03,138.8889',
-        '2,ok,2,9600,bbbb,20,13,160,0.3,1.25,812.5,0.0144,0.03,138.8889',
-        '3,ok,2,9600,cccc,24,14.1235,160,0.3,1.25,812.5,0.0144,0.03,138.8889',
-        '4,error,1,5000,,,,,0.3,1.25,9000,0.0144,0.03,138.8889',
+        'seed,status,years,from_tick,ticks,hash,nights,swarm_mean,journal,tick_mean_us,tick_p99_us,tick_max_us,sim_seconds,run_seconds,years_per_second',
+        '1,ok,2,0,9600,aaaa,24,,160,0.3,1.25,812.5,0.0144,0.03,138.8889',
+        '2,ok,2,0,9600,bbbb,20,13,160,0.3,1.25,812.5,0.0144,0.03,138.8889',
+        '3,ok,2,0,9600,cccc,24,14.1235,160,0.3,1.25,812.5,0.0144,0.03,138.8889',
+        '4,error,1,0,5000,,,,,0.3,1.25,9000,0.0144,0.03,138.8889',
         '',
       ].join('\n'),
     );
@@ -125,13 +128,13 @@ describe('итоги прогона: CSV', () => {
     expect(slow).not.toBe(fast);
     expect(dropColumns(slow, TIMING_COLUMNS)).toBe(dropColumns(fast, TIMING_COLUMNS));
     expect(dropColumns(fast, TIMING_COLUMNS).split('\n')[0]).toBe(
-      'seed,status,years,ticks,hash,nights,swarm_mean,journal',
+      'seed,status,years,from_tick,ticks,hash,nights,swarm_mean,journal',
     );
   });
 
   it('текст с запятой или кавычкой берётся в кавычки', () => {
     const odd = { ...world(9, 1, 1, 'with,comma "q"'), years: 0, yearRows: [] };
-    expect(worldsCsv([odd], METRICS).split('\n')[1]).toMatch(/^9,ok,0,9600,"with,comma ""q""",/);
+    expect(worldsCsv([odd], METRICS).split('\n')[1]).toMatch(/^9,ok,0,0,9600,"with,comma ""q""",/);
   });
 });
 
@@ -159,7 +162,13 @@ describe('итоги прогона: сводка', () => {
       ticksPerSecond: 67600,
       yearsPerSecond: 14,
     });
-    expect(summary.params).toEqual({ seeds: '1..4', seedCount: 4, years: 2, threads: 2 });
+    expect(summary.params).toEqual({
+      seeds: '1..4',
+      seedCount: 4,
+      years: 2,
+      threads: 2,
+      load: null,
+    });
     expect(summary.metrics[0]).toEqual({
       id: 'nights',
       name: 'Ночей',
@@ -176,6 +185,47 @@ describe('итоги прогона: сводка', () => {
       { seed: 4, tick: 5000, message: 'житель, застрял', stack: FAILED.error?.stack },
     ]);
     expect(JSON.parse(JSON.stringify(summary))).toEqual(summary);
+  });
+
+  it('мир из сохранения: тики — только прожитые в прогоне, годы — календарные', () => {
+    // Loaded at tick 7 000 (year 2), run for one year: a partial year 2 and a partial year 3.
+    const loaded: WorldRun = {
+      ...world(5, 12, 14, 'eeee'),
+      fromTick: 7000,
+      ticks: 11_800,
+      years: 1,
+      yearRows: [
+        {
+          year: 2,
+          fromTick: 7000,
+          toTick: 9600,
+          values: { nights: 6 },
+          tickMeanUs: 1,
+          tickMaxUs: 2,
+        },
+        {
+          year: 3,
+          fromTick: 9600,
+          toTick: 11_800,
+          values: { nights: 6 },
+          tickMeanUs: 1,
+          tickMaxUs: 2,
+        },
+      ],
+    };
+    const load = { file: 'мир.json', seed: 5, tick: 7000, dataChanged: false };
+    const summary = summarize([loaded], METRICS, { ...META, seedsText: '5', years: 1, load });
+    expect(summary.speed.ticks).toBe(4800);
+    expect(summary.params.load).toEqual(load);
+    expect(summary.years.map((y) => [y.year, y.metrics.nights?.mean])).toEqual([
+      [2, 6],
+      [3, 6],
+    ]);
+    expect(worldsCsv([loaded], METRICS).split('\n')[1]).toMatch(/^5,ok,1,7000,11800,eeee,/);
+    const first = formatReport(summary, [loaded], []).split('\n')[0];
+    expect(first).toBe(
+      `Готово за 0,50 с: мир из сохранения + 1 год · 4${NBSP}800 тиков · 2 игровых лет/с (9${NBSP}600 тиков/с, потоков: 2)`,
+    );
   });
 
   it('отпечаток прогона: не зависит от порядка результатов, меняется с историей любого мира', () => {

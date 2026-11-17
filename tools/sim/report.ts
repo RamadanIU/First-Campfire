@@ -31,10 +31,23 @@ export interface Aggregate {
   worlds: number;
 }
 
+/** The save a run started from (`--load`). */
+export interface LoadInfo {
+  /** The file as given on the command line. */
+  file: string;
+  seed: number;
+  /** Tick of the saved world. */
+  tick: number;
+  /** The data tables changed since the save (the world goes on by the current ones). */
+  dataChanged: boolean;
+}
+
 export interface RunMeta {
   command: string;
   seedsText: string;
   years: number;
+  /** The save the run continued, or null for new worlds. */
+  load: LoadInfo | null;
   threads: number;
   /** ISO time when the run started. */
   startedAt: string;
@@ -48,7 +61,13 @@ export interface RunMeta {
 export interface Summary {
   format: 1;
   command: string;
-  params: { seeds: string; seedCount: number; years: number; threads: number };
+  params: {
+    seeds: string;
+    seedCount: number;
+    years: number;
+    threads: number;
+    load: LoadInfo | null;
+  };
   environment: RunMeta['environment'];
   startedAt: string;
   seconds: number;
@@ -59,7 +78,7 @@ export interface Summary {
   fingerprint: string;
   /** Metrics over the whole run of each world. */
   metrics: { id: string; name: string; kind: MetricKind; total: Aggregate | null }[];
-  /** Metrics of each year across worlds — curves like «population by year». */
+  /** Metrics of each calendar year across worlds — curves like «population by year». */
   years: { year: number; metrics: Record<string, Aggregate | null> }[];
   timing: {
     timerCostUs: number;
@@ -88,11 +107,20 @@ function csv(header: readonly string[], rows: (string | number | null)[][]): str
 
 /** One row per world: seed, outcome, metrics over the whole run, timing. Sorted by seed. */
 export function worldsCsv(runs: readonly WorldRun[], metrics: readonly Metric[]): string {
-  const header = ['seed', 'status', 'years', 'ticks', 'hash', ...metrics.map((m) => m.id)];
+  const header = [
+    'seed',
+    'status',
+    'years',
+    'from_tick',
+    'ticks',
+    'hash',
+    ...metrics.map((m) => m.id),
+  ];
   const rows = bySeed(runs).map((run) => [
     run.seed,
     run.status,
     run.years,
+    run.fromTick,
     run.ticks,
     run.hash,
     ...metrics.map((m) => (run.status === 'ok' ? (run.totals[m.id] ?? null) : null)),
@@ -189,11 +217,18 @@ export function summarize(
   const sorted = bySeed(runs);
   const ok = sorted.filter((run) => run.status === 'ok');
   const failed = sorted.filter((run) => run.status === 'error');
-  const ticks = sorted.reduce((total, run) => total + run.ticks, 0);
+  // Ticks simulated in this run (a loaded world already had some).
+  const ticks = sorted.reduce((total, run) => total + run.ticks - run.fromTick, 0);
   const years = sorted.reduce((total, run) => total + run.years, 0);
-  const yearCount = ok.reduce((most, run) => Math.max(most, run.yearRows.length), 0);
   const across = (pick: (run: WorldRun) => MetricValue) =>
     aggregate(ok.map((run) => [run.seed, pick(run)] as const));
+  // Yearly rows by calendar year: worlds loaded from a save do not start with year 1.
+  const rowsByYear = new Map(
+    ok.map((run) => [run, new Map(run.yearRows.map((row) => [row.year, row]))] as const),
+  );
+  const calendarYears = [...new Set(ok.flatMap((run) => run.yearRows.map((row) => row.year)))].sort(
+    (a, b) => a - b,
+  );
 
   return {
     format: 1,
@@ -203,6 +238,7 @@ export function summarize(
       seedCount: sorted.length,
       years: meta.years,
       threads: meta.threads,
+      load: meta.load,
     },
     environment: meta.environment,
     startedAt: meta.startedAt,
@@ -221,10 +257,13 @@ export function summarize(
       kind: m.kind,
       total: across((run) => run.totals[m.id] ?? null),
     })),
-    years: Array.from({ length: yearCount }, (_, index) => ({
-      year: index + 1,
+    years: calendarYears.map((year) => ({
+      year,
       metrics: Object.fromEntries(
-        metrics.map((m) => [m.id, across((run) => run.yearRows[index]?.values[m.id] ?? null)]),
+        metrics.map((m) => [
+          m.id,
+          across((run) => rowsByYear.get(run)?.get(year)?.values[m.id] ?? null),
+        ]),
       ),
     })),
     timing: {
@@ -340,9 +379,12 @@ export function formatReport(
 ): string {
   const { worlds, speed, params } = summary;
   const out: string[] = [];
+  const what = params.load
+    ? `мир из сохранения + ${params.years} ${plural(params.years, 'год', 'года', 'лет')}`
+    : `${worlds.total} ${plural(worlds.total, 'мир', 'мира', 'миров')} × ` +
+      `${params.years} ${plural(params.years, 'год', 'года', 'лет')}`;
   out.push(
-    `Готово за ${formatNumber(summary.seconds)} с: ${worlds.total} ${plural(worlds.total, 'мир', 'мира', 'миров')} × ` +
-      `${params.years} ${plural(params.years, 'год', 'года', 'лет')} · ${formatNumber(speed.ticks)} тиков · ` +
+    `Готово за ${formatNumber(summary.seconds)} с: ${what} · ${formatNumber(speed.ticks)} тиков · ` +
       `${formatNumber(speed.yearsPerSecond)} игровых лет/с (${formatNumber(speed.ticksPerSecond)} тиков/с, ` +
       `потоков: ${params.threads})`,
   );

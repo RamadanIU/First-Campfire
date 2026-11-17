@@ -4,26 +4,30 @@
  *
  *   npm run sim                                   # seeds 1..100, 10 years each
  *   npm run sim -- --seeds 1..20 --years 50 --threads 2 --out out/sim-50
+ *   npm run sim -- --load world.json --years 5    # continue a saved world for 5 more years
  *   npm run bench                                 # speed: 3 worlds × 200 years on one thread
  *
  * Worlds run in parallel worker threads (./sim/worker.ts), one world at a time per thread;
  * progress goes to the console. At the end: the console table (mean, minimum, maximum across
  * worlds) and files in --out: worlds.csv, years.csv, summary.json (./sim/report.ts).
- * Exit code: 0 — all worlds finished, 1 — some world failed, 2 — wrong command line.
+ * Exit code: 0 — all worlds finished, 1 — some world failed, 2 — wrong command line or a save
+ * that cannot be opened.
  *
  * What is counted: src/sim/metrics.ts. How to add a metric and read the results:
  * docs/ARCHITECTURE.md, «Прогоны без графики».
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { TICKS_PER_YEAR } from '../src/sim/calendar.ts';
+import { calendarAt, TICKS_PER_YEAR } from '../src/sim/calendar.ts';
 import { METRICS } from '../src/sim/metrics.ts';
+import { loadWorld } from '../src/sim/save.ts';
 import { ArgsError, parseSimArgs, type SimOptions, USAGE } from './sim/args.ts';
 import {
   formatNumber,
   formatReport,
+  type LoadInfo,
   plural,
   summarize,
   worldsCsv,
@@ -47,13 +51,53 @@ if (options.help) {
   process.exit(0);
 }
 
-const { seeds, years, threads } = options;
+/** The save of --load, opened and checked before any thread starts. */
+function openSave(file: string): { text: string; info: LoadInfo; warnings: string[] } {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    const reason = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'нет такого файла' : error;
+    console.error(`✗ --load: не удалось прочитать «${file}»: ${reason}`);
+    process.exit(2);
+  }
+  const result = loadWorld(text);
+  if (!result.ok) {
+    const { message, detail } = result.error;
+    console.error(`✗ --load: «${file}» не открылся. ${message}${detail ? `\n  ${detail}` : ''}`);
+    process.exit(2);
+  }
+  const { seed, tick } = result.header;
+  const dataChanged = result.warnings.some((warning) => warning.code === 'data_changed');
+  return {
+    text,
+    info: { file, seed, tick, dataChanged },
+    warnings: result.warnings.map((warning) => warning.message),
+  };
+}
+
+const save = options.load === null ? null : openSave(options.load);
+const seeds = save ? [save.info.seed] : options.seeds;
+const seedsText = save ? String(save.info.seed) : options.seedsText;
+const { years, threads } = options;
+const fromTick = save?.info.tick ?? 0;
 const totalYears = seeds.length * years;
-console.log(
-  `Прогон без графики: ${seeds.length} ${plural(seeds.length, 'мир', 'мира', 'миров')} ` +
-    `(зёрна ${options.seedsText}) × ${years} ${plural(years, 'год', 'года', 'лет')} ` +
-    `= ${formatNumber(years * TICKS_PER_YEAR)} тиков на мир · потоков: ${threads}`,
-);
+const yearsText = `${years} ${plural(years, 'год', 'года', 'лет')}`;
+if (save) {
+  const date = calendarAt(save.info.tick);
+  console.log(
+    `Прогон без графики: мир из сохранения ${save.info.file} (зерно ${save.info.seed}, ` +
+      `тик ${formatNumber(save.info.tick)} — год ${date.year}, день года ${date.dayOfYear}) ` +
+      `+ ${yearsText} = ${formatNumber(years * TICKS_PER_YEAR)} тиков · потоков: ${threads}`,
+  );
+  for (const warning of save.warnings) console.log(`⚠ ${warning}`);
+} else {
+  console.log(
+    `Прогон без графики: ${seeds.length} ${plural(seeds.length, 'мир', 'мира', 'миров')} ` +
+      `(зёрна ${seedsText}) × ${yearsText} ` +
+      `= ${formatNumber(years * TICKS_PER_YEAR)} тиков на мир · потоков: ${threads}`,
+  );
+}
 
 /** Progress line: redrawn in place in a terminal, every 10 % otherwise (logs, CI). */
 function createProgress() {
@@ -116,7 +160,7 @@ function runPool(): Promise<PoolResult> {
     };
 
     const start = () => {
-      const setup: WorkerSetup = { years };
+      const setup: WorkerSetup = { years, save: save?.text ?? null };
       const worker = new Worker(WORKER, { workerData: setup });
       let current: number | undefined;
       let yearsOfCurrent = 0;
@@ -167,7 +211,8 @@ function crashed(seed: number, error: Error, yearsDone: number): WorldRun {
   return {
     seed,
     status: 'error',
-    ticks: yearsDone * TICKS_PER_YEAR,
+    fromTick,
+    ticks: fromTick + yearsDone * TICKS_PER_YEAR,
     years: yearsDone,
     hash: '',
     totals: {},
@@ -183,7 +228,7 @@ function crashed(seed: number, error: Error, yearsDone: number): WorldRun {
     error: {
       message: `поток прогона упал: ${error.message}`,
       stack: error.stack ?? '',
-      tick: yearsDone * TICKS_PER_YEAR,
+      tick: fromTick + yearsDone * TICKS_PER_YEAR,
     },
   };
 }
@@ -195,8 +240,9 @@ const seconds = (performance.now() - started) / 1000;
 
 const summary = summarize(runs, METRICS, {
   command: ['npm run sim --', ...process.argv.slice(2)].join(' '),
-  seedsText: options.seedsText,
+  seedsText,
   years,
+  load: save?.info ?? null,
   threads,
   startedAt: startedAt.toISOString(),
   seconds,

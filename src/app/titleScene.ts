@@ -6,6 +6,7 @@ import { createScenery, type Placement } from '../render/scenery.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { createTerrainLayer } from '../render/terrainLayer.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
+import { createTitleMenu } from './titleMenu.ts';
 
 /**
  * Title screen: two people at a campfire at night, drawn with the game's sprites (step 0.4).
@@ -14,6 +15,9 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
  * to blue, and around the fire lies a warm circle of light in stepped rings — pixel-art
  * lighting (GDD §10.1: «ночью — круги тёплого света»). The flames are their own light and are
  * drawn after the filter. Real day and night of the world arrive in stage 1 (1.5, 1.9).
+ *
+ * Over the picture — the menu (./titleMenu.ts, step 0.7): continue the saved world, start a new
+ * one, load one from a file. `ui=0` hides all of it: the picture alone.
  */
 const VIEW_W = 240;
 const VIEW_H = 135;
@@ -114,11 +118,14 @@ export function createTitleScene({ canvas, ui, params }: SceneContext): Scene {
 
   if (params.ui) {
     ui.innerHTML = `
-      <div class="title">
-        <h1>ПЕРВЫЙ КОСТЁР</h1>
-        <p>симулятор эволюции цивилизации</p>
+      <div class="title-screen">
+        <div class="title">
+          <h1>ПЕРВЫЙ КОСТЁР</h1>
+          <p>симулятор эволюции цивилизации</p>
+        </div>
       </div>
-      <div class="build">v${__APP_VERSION__} · зерно ${params.seed}</div>`;
+      <div class="build">v${__APP_VERSION__}</div>`;
+    createTitleMenu(ui.querySelector<HTMLElement>('.title-screen')!, params);
   }
 
   /** Multiply the picture by the night and the firelight. */
