@@ -104,6 +104,7 @@ export function createTitleScene({ canvas, ui, params }: SceneContext): Scene {
     MAP[0]!.length,
     MAP.length,
   );
+  ground.composeAll();
   const scenery = createScenery(sheet, VIEW_W, MAP.length * TILE_SIZE);
   const sparkColours = ['fire.3', 'fire.2', 'fire.1'].map((name) => {
     const [ramp, shade] = name.split('.');

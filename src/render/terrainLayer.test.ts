@@ -80,4 +80,12 @@ describe('слой земли', () => {
     expect(layer.cachedStates).toBe(4);
     expect(created).toBe(4);
   });
+
+  it('composeAll собирает все состояния сразу — потом новые не собираются', () => {
+    const layer = createTerrainLayer(ART, AT, 3, 2);
+    layer.composeAll();
+    expect(layer.cachedStates).toBe(4);
+    for (let t = 0; t < 5000; t += 100) layer.canvasAt(t);
+    expect(created).toBe(4);
+  });
 });

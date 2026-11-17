@@ -13,6 +13,7 @@ import {
   type TerrainArt,
   type TerrainAt,
   terrainStateKey,
+  terrainStateTimes,
 } from '../art/terrain.ts';
 
 export interface TerrainLayer {
@@ -23,6 +24,8 @@ export interface TerrainLayer {
   readonly cachedStates: number;
   /** The whole ground at presentation time `timeMs`, one canvas pixel per world pixel. */
   canvasAt(timeMs: number): HTMLCanvasElement;
+  /** Compose every state now (at scene start), so the animation never stutters later. */
+  composeAll(): void;
 }
 
 export function createTerrainLayer(
@@ -67,6 +70,9 @@ export function createTerrainLayer(
         cache.set(key, canvas);
       }
       return canvas;
+    },
+    composeAll() {
+      for (const timeMs of terrainStateTimes(art)) this.canvasAt(timeMs);
     },
   };
 }

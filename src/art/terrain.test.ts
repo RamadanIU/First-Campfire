@@ -16,6 +16,7 @@ import {
   terrainFrameAt,
   terrainGrid,
   terrainStateKey,
+  terrainStateTimes,
   validateTerrainLooks,
   variationAt,
 } from './terrain.ts';
@@ -231,5 +232,17 @@ describe('анимация воды', () => {
     expect(terrainStateKey(ART, 0)).toBe(terrainStateKey(ART, ms - 1));
     expect(terrainStateKey(ART, 0)).not.toBe(terrainStateKey(ART, ms));
     expect(terrainFrameAt(ART, 'grass', 3, 5, 12345)).toBe(0);
+  });
+
+  it('все состояния земли перечислимы: по одному моменту на каждое сочетание кадров ряби', () => {
+    const times = terrainStateTimes(ART);
+    expect(times).toHaveLength(4);
+    expect(new Set(times.map((t) => terrainStateKey(ART, t))).size).toBe(4);
+    const still = prepareTerrain(
+      TERRAIN_LOOKS.filter((look) => look.id === 'grass'),
+      SPRITES,
+      PALETTE,
+    );
+    expect(terrainStateTimes(still)).toEqual([0]);
   });
 });

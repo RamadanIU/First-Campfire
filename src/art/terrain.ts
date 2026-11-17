@@ -299,6 +299,37 @@ export function terrainStateKey(art: TerrainArt, timeMs: number): string {
   return parts.join('.');
 }
 
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+/**
+ * One presentation time for every distinct state of the ground (every combination of ripple
+ * frames), so that a renderer can compose them all in advance instead of stuttering when a new
+ * state first shows up. Without animated ground — just [0].
+ */
+export function terrainStateTimes(art: TerrainArt): number[] {
+  let step = 0;
+  let cycle = 1;
+  for (const look of art.looks.values()) {
+    if (look.frames <= 1) continue;
+    step = gcd(step, look.frameMs);
+    const own = look.frames * look.frameMs;
+    cycle = (cycle / gcd(cycle, own)) * own;
+  }
+  if (step === 0) return [0];
+  const times: number[] = [];
+  const seen = new Set<string>();
+  for (let t = 0; t < cycle; t += step) {
+    const key = terrainStateKey(art, t);
+    if (!seen.has(key)) {
+      seen.add(key);
+      times.push(t);
+    }
+  }
+  return times;
+}
+
 /** The ground visible at a world pixel and the tile whose texture shows there. */
 interface Visible {
   look: PreparedLook;
@@ -401,9 +432,28 @@ export function composeTerrainTile(
   timeMs: number,
 ): Raster {
   const size = TILE_SIZE;
-  const pixels = new Uint8ClampedArray(size * size * 4);
   const left = x * size;
   const top = y * size;
+
+  // Fast path — most of a map: the same ground all around, nothing to blend.
+  const id = at(x, y);
+  let uniform = true;
+  for (let dy = -1; dy <= 1 && uniform; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (at(x + dx, y + dy) !== id) {
+        uniform = false;
+        break;
+      }
+    }
+  }
+  if (uniform) {
+    const look = lookOf(art, id);
+    const raster = look.variations[variationAt(art, id, x, y)]!;
+    const frame = raster.animations[0]!.frames[terrainFrameAt(art, id, x, y, timeMs)]!;
+    return { width: size, height: size, pixels: new Uint8ClampedArray(frame.pixels) };
+  }
+
+  const pixels = new Uint8ClampedArray(size * size * 4);
 
   // Visible ground on the tile plus a one-pixel ring around it (for shore and foam).
   const span = size + 2;

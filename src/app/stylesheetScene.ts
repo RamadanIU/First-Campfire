@@ -153,6 +153,7 @@ export function createStylesheetScene({ canvas, ui, params }: SceneContext): Sce
     MAP[0]!.length,
     MAP.length,
   );
+  ground.composeAll();
   const buffer = document.createElement('canvas');
   buffer.width = WIDTH;
   buffer.height = HEIGHT;
