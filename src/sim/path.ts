@@ -1,5 +1,6 @@
 /**
- * Paths over the tiles of the map (step 1.3): A* on the grid of tiles, eight directions.
+ * Paths over the tiles of the map (step 1.3): A* on the grid of tiles, eight directions; the
+ * nearest tile of a kind (step 1.4: where to eat, where to drink) — `findNearest`.
  *
  *   - Water and objects that block the way (trees, stumps, bushes, boulders) cannot be entered
  *     (`isPassable`, ./objects.ts); flowers and tall grass can.
@@ -42,6 +43,11 @@ export type PathResult =
 export interface PathOptions {
   /** Most tiles the search may look at; default — `movement.pathSearchTiles`. */
   limit?: number;
+  /**
+   * `findNearest` only: give up (`too_far`) beyond this cost, tiles of grass — a source farther
+   * away would be of no use anyway. Default — no bound.
+   */
+  maxCost?: number;
   /** Tiles that must not be stepped on besides the map's own obstacles (other villagers). */
   avoid?: (x: number, y: number) => boolean;
 }
@@ -218,29 +224,32 @@ class OpenList {
 
 const open = new OpenList();
 
+/** Where a search ended up: the path to tile `end` (an index) and its cost. */
+type SearchResult =
+  | { ok: true; end: number; path: Tile[]; cost: number; explored: number }
+  | { ok: false; reason: 'unreachable' | 'too_far'; explored: number };
+
 /**
- * The cheapest path from tile `from` to tile `to` (A*, eight directions, no cutting corners).
- * The starting tile itself is never checked: one may always leave the tile one stands on.
+ * The search itself, shared by `findPath` and `findNearest`: from tile `from` over the passable
+ * tiles (eight directions, no cutting corners, a step costs its length over the ground's speed)
+ * until a tile for which `isGoal` holds is taken from the open list — the cheapest one, as long
+ * as `heuristic` never overestimates (0 makes it Dijkstra's search). The starting tile is tested
+ * too, but never checked for being passable: one may always leave the tile one stands on.
  */
-export function findPath(
+function search(
   map: WorldMap,
   objects: MapObjects,
   from: Tile,
-  to: Tile,
-  options: PathOptions = {},
-): PathResult {
-  const limit = options.limit ?? DATA.balance.movement.pathSearchTiles;
-  const avoid = options.avoid;
-  if (from.x === to.x && from.y === to.y) return { ok: true, path: [], cost: 0, explored: 0 };
-  if (tileSpeed(map, objects, to.x, to.y) === 0 || avoid?.(to.x, to.y)) {
-    return { ok: false, reason: 'blocked', explored: 0 };
-  }
-
+  isGoal: (node: number, x: number, y: number) => boolean,
+  heuristic: (x: number, y: number) => number,
+  limit: number,
+  avoid: ((x: number, y: number) => boolean) | undefined,
+  maxCost = Number.POSITIVE_INFINITY,
+): SearchResult {
   const { width } = map;
   const s = scratchFor(map.width * map.height);
   const stamp = s.search;
   const speeds = groundSpeeds(map);
-  const fastest = fastestGround();
 
   /** Speed of entering a tile (0 — blocked), computed once per search. */
   const speedAt = (x: number, y: number): number => {
@@ -259,15 +268,8 @@ export function findPath(
     s.speed[index] = speed;
     return speed;
   };
-  const heuristic = (x: number, y: number): number => {
-    const dx = Math.abs(x - to.x);
-    const dy = Math.abs(y - to.y);
-    const straight = Math.abs(dx - dy);
-    return (straight + DIAGONAL * Math.min(dx, dy)) / fastest;
-  };
 
   const start = from.y * width + from.x;
-  const goal = to.y * width + to.x;
   open.clear();
   s.seen[start] = stamp;
   s.g[start] = 0;
@@ -280,20 +282,22 @@ export function findPath(
     const node = open.pop();
     if (s.closed[node] === stamp) continue; // a stale entry: the tile was reached cheaper
     s.closed[node] = stamp;
-    if (node === goal) {
+    // Tiles come out in order of cost (with no heuristic): everything left is farther still.
+    if (s.g[node]! > maxCost) return { ok: false, reason: 'too_far', explored };
+    const x = node % width;
+    const y = (node - x) / width;
+    if (isGoal(node, x, y)) {
       const path: Tile[] = [];
-      for (let at = goal; at !== start; at = s.parent[at]!) {
-        const x = at % width;
-        path.push({ x, y: (at - x) / width });
+      for (let at = node; at !== start; at = s.parent[at]!) {
+        const px = at % width;
+        path.push({ x: px, y: (at - px) / width });
       }
       path.reverse();
-      return { ok: true, path, cost: s.g[goal]!, explored };
+      return { ok: true, end: node, path, cost: s.g[node]!, explored };
     }
     explored += 1;
     if (explored >= limit) return { ok: false, reason: 'too_far', explored };
 
-    const x = node % width;
-    const y = (node - x) / width;
     const g = s.g[node]!;
     for (const [dx, dy] of STEPS) {
       const nx = x + dx;
@@ -304,7 +308,7 @@ export function findPath(
       if (diagonal && (speedAt(nx, y) === 0 || speedAt(x, ny) === 0)) continue;
       const next = ny * width + nx;
       if (s.closed[next] === stamp) continue;
-      if (avoid !== undefined && next !== goal && avoid(nx, ny)) continue;
+      if (avoid?.(nx, ny)) continue;
       const cost = g + (diagonal ? DIAGONAL : 1) / speed;
       if (s.seen[next] === stamp && s.g[next]! <= cost) continue;
       s.seen[next] = stamp;
@@ -315,4 +319,90 @@ export function findPath(
     }
   }
   return { ok: false, reason: 'unreachable', explored };
+}
+
+/**
+ * The cheapest path from tile `from` to tile `to` (A*, eight directions, no cutting corners).
+ * The starting tile itself is never checked: one may always leave the tile one stands on.
+ */
+export function findPath(
+  map: WorldMap,
+  objects: MapObjects,
+  from: Tile,
+  to: Tile,
+  options: PathOptions = {},
+): PathResult {
+  const limit = options.limit ?? DATA.balance.movement.pathSearchTiles;
+  const avoid = options.avoid;
+  if (from.x === to.x && from.y === to.y) return { ok: true, path: [], cost: 0, explored: 0 };
+  if (tileSpeed(map, objects, to.x, to.y) === 0 || avoid?.(to.x, to.y)) {
+    return { ok: false, reason: 'blocked', explored: 0 };
+  }
+  const fastest = fastestGround();
+  const goal = to.y * map.width + to.x;
+  const result = search(
+    map,
+    objects,
+    from,
+    (node) => node === goal,
+    (x, y) => {
+      const dx = Math.abs(x - to.x);
+      const dy = Math.abs(y - to.y);
+      const straight = Math.abs(dx - dy);
+      return (straight + DIAGONAL * Math.min(dx, dy)) / fastest;
+    },
+    limit,
+    avoid,
+  );
+  if (!result.ok) return result;
+  return { ok: true, path: result.path, cost: result.cost, explored: result.explored };
+}
+
+export type NearestResult =
+  | {
+      ok: true;
+      /** The tile found: the nearest one where `isGoal` holds. */
+      tile: Tile;
+      /** Tiles to step on to get there; empty if already there. */
+      path: Tile[];
+      /** Cost of the path, tiles of grass (as in `PathResult`). */
+      cost: number;
+      explored: number;
+    }
+  | { ok: false; reason: 'unreachable' | 'too_far'; explored: number };
+
+/**
+ * The nearest tile by path — from `from` — for which `isGoal(x, y)` holds, and the way there
+ * (step 1.4: a spot by a bush with berries, by the water). One flood of the map in rings of
+ * growing cost (Dijkstra's search, the same steps and costs as `findPath`), so the nearest of
+ * many candidates costs one search, not one per candidate. The starting tile counts too. Ties go
+ * by a fixed order: one map — one answer. Tiles of `avoid` are neither crossed nor found.
+ */
+export function findNearest(
+  map: WorldMap,
+  objects: MapObjects,
+  from: Tile,
+  isGoal: (x: number, y: number) => boolean,
+  options: PathOptions = {},
+): NearestResult {
+  const limit = options.limit ?? DATA.balance.movement.pathSearchTiles;
+  const result = search(
+    map,
+    objects,
+    from,
+    (_node, x, y) => isGoal(x, y),
+    () => 0,
+    limit,
+    options.avoid,
+    options.maxCost,
+  );
+  if (!result.ok) return result;
+  const x = result.end % map.width;
+  return {
+    ok: true,
+    tile: { x, y: (result.end - x) / map.width },
+    path: result.path,
+    cost: result.cost,
+    explored: result.explored,
+  };
 }

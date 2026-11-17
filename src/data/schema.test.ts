@@ -278,6 +278,15 @@ describe('несколько таблиц и ссылки', () => {
     ]);
   });
 
+  it('таблица, которая сама не список, — одна её ошибка, без лавины битых ссылок на неё', () => {
+    const { issues } = readTables(schemas, {
+      resources: { berries: {} },
+      recipes: [{ id: 'jam', output: 'berries' }],
+    });
+    expect(messages(issues)).toHaveLength(1);
+    expect(messages(issues)[0]).toMatch(/^data\/resources\.json: ожидается список записей/);
+  });
+
   it('ссылка на неизвестную таблицу — ошибка в схеме, а не в данных', () => {
     const broken = { a: { file: 'data/a.json', schema: table({ id: id(), b: ref('nowhere') }) } };
     expect(() => readTables(broken, { a: [{ id: 'x', b: 'y' }] })).toThrow(/неизвестную таблицу/);

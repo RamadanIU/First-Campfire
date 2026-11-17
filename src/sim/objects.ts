@@ -1,6 +1,7 @@
 /**
  * Objects of the map: trees, bushes, boulders, flowers… (GDD §2.2, the object layer). Each is an
- * entity with an id, a kind (`def` — a record of data/objects.json), a tile and a state.
+ * entity with an id, a kind (`def` — a record of data/objects.json), a tile, a state and the food
+ * still on it (`stock`, step 1.4: berries of a bush, eaten on the spot — `takeFood`).
  *
  * The list is kept in the order of ids (new objects get the next id and go to the end), so an
  * object is found by its id with a binary search. The tile → object index is the map's `object`
@@ -20,6 +21,11 @@ export interface MapObject {
   y: number;
   /** One of the def's `states`; the first one when the object appears. */
   state: string;
+  /**
+   * Food still to be gathered from it, rations (step 1.4: berries on a bush); 0 — nothing, or
+   * the object has none at all (its def's `harvest` is null).
+   */
+  stock: number;
 }
 
 export interface MapObjects {
@@ -53,17 +59,34 @@ export function placeObject(
   if (map.object[at] !== 0) {
     throw new Error(`Тайл (${x}, ${y}) уже занят объектом #${map.object[at]}`);
   }
+  const kind = DATA.objects.get(def);
   const object: MapObject = {
     id: objects.nextId,
     def,
     x,
     y,
-    state: DATA.objects.get(def).states[0]!,
+    state: kind.states[0]!,
+    stock: kind.harvest?.rations ?? 0,
   };
   objects.nextId += 1;
   objects.list.push(object);
   map.object[at] = object.id;
   return object;
+}
+
+/**
+ * Take up to `rations` of food from an object (berries from a bush): what is taken — less if
+ * less is left. Picked clean, the object turns to its def's `harvest.empty` state.
+ */
+export function takeFood(object: MapObject, rations: number): number {
+  const taken = Math.min(rations, object.stock);
+  object.stock -= taken;
+  if (object.stock <= 0) {
+    object.stock = 0;
+    const harvest = defOf(object).harvest;
+    if (harvest) object.state = harvest.empty;
+  }
+  return taken;
 }
 
 /** Remove an object from the map and the list. */

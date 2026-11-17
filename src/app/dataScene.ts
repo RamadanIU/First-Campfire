@@ -42,6 +42,8 @@ const UNIT_FORMS: Readonly<Record<string, readonly [string, string, string]>> = 
   лет: ['год', 'года', 'лет'],
   сезонов: ['сезон', 'сезона', 'сезонов'],
   тайлов: ['тайл', 'тайла', 'тайлов'],
+  рационов: ['рацион', 'рациона', 'рационов'],
+  пунктов: ['пункт', 'пункта', 'пунктов'],
 };
 
 function plural(value: number, forms: readonly [string, string, string]): string {
@@ -143,6 +145,8 @@ export interface ObjectRow {
   readonly states: string;
   /** «лес · 56» — where the map generator puts it and how often. */
   readonly place: string;
+  /** «Ягоды · 4 рациона → empty» — food gathered from it and its state once picked clean. */
+  readonly harvest: string;
 }
 
 const PLACE_NAME: Readonly<Record<ObjectPlace, string>> = {
@@ -161,6 +165,10 @@ export function objectRows(data: GameData): ObjectRow[] {
     walkable: def.walkable ? 'да' : 'нет',
     states: def.states.join(' → '),
     place: def.place === null ? '—' : `${PLACE_NAME[def.place]} · вес ${def.weight}`,
+    harvest:
+      def.harvest === null
+        ? '—'
+        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, 'рационов')} → ${def.harvest.empty}`,
   }));
 }
 
@@ -374,26 +382,27 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
 
   // Objects of the map.
   const things = document.createElement('section');
-  things.innerHTML = `<h2>Объекты карты — ${TABLES.objects.file}</h2><p class="meta">Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное).</p>`;
+  things.innerHTML = `<h2>Объекты карты — ${TABLES.objects.file}</h2><p class="meta">Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное); еда — что с него собирают и съедают на месте (шаг 1.4).</p>`;
   things.append(
     table(
-      ['', 'Название · id', 'Проходим', 'Состояния', 'Место · вес', 'Спрайт'],
+      ['', 'Название · id', 'Проходим', 'Состояния', 'Место · вес', 'Еда на нём', 'Спрайт'],
       objects.map((row) => [
         objectPicture(sheet, row.sprite, row.states.split(' → ')[0]!),
         named(row.name, row.id),
         row.walkable,
         row.states,
         row.place,
+        row.harvest,
         row.sprite,
       ]),
-      ['picture', 'name', '', 'id', '', 'id'],
+      ['picture', 'name', '', 'id', '', '', 'id'],
     ),
   );
   root.append(things);
 
   // Balance.
   const numbersSection = document.createElement('section');
-  numbersSection.innerHTML = `<h2>Баланс — ${TABLES.balance.file}</h2><p class="meta">Числа GDD §2.1 и §13.1; карта — §2.2 и §3.1. Ядро симуляции берёт время отсюда: сезон — ${withUnit(TICKS_PER_SEASON, 'тиков')}, год — ${withUnit(TICKS_PER_YEAR, 'тиков')} (${DAYS_PER_YEAR} сут, ${formatNumber(TICKS_PER_YEAR / DATA.balance.time.ticksPerSecond / 60)} мин на ×1).</p>`;
+  numbersSection.innerHTML = `<h2>Баланс — ${TABLES.balance.file}</h2><p class="meta">Числа GDD §2.1 и §13.1; карта — §2.2 и §3.1; потребности и выбор действия — §4.2, §13.2 и §2.3. Ядро симуляции берёт время отсюда: сезон — ${withUnit(TICKS_PER_SEASON, 'тиков')}, год — ${withUnit(TICKS_PER_YEAR, 'тиков')} (${DAYS_PER_YEAR} сут, ${formatNumber(TICKS_PER_YEAR / DATA.balance.time.ticksPerSecond / 60)} мин на ×1).</p>`;
   const balanceColumns = document.createElement('div');
   balanceColumns.className = 'data-columns';
   for (const group of balance) {

@@ -52,7 +52,9 @@ export interface LaunchParams {
   slot: SlotPreset | null;
   /**
    * Debug overlays of the world (`debug=1`; several — `debug=1,needs`): `1` — paths of villagers
-   * as lines, a click sends the chosen villager to a tile (step 1.3). Empty — none.
+   * as lines, a click sends the chosen villager to a tile (step 1.3); `needs` — bars of satiety,
+   * thirst and health over the heads and what each one is doing (step 1.4). Any word turns on
+   * the paths and the click. Empty — none.
    */
   debug: readonly string[];
   /**

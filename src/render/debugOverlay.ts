@@ -1,5 +1,6 @@
 /**
- * Debug overlay of the world (`debug=1`, step 1.3): where villagers are going. Drawn into the
+ * Debug overlay of the world (`debug=1`, step 1.3; `debug=needs`, step 1.4): where villagers are
+ * going and how they are. Drawn into the
  * picture of the world at one canvas pixel per world pixel, over everything, so it is as crisp as
  * the sprites at every zoom step.
  *
@@ -10,6 +11,8 @@
  *   - The goal — the corners of its tile.
  *   - The chosen villager — a small arrow above the head.
  *   - A refused order — a red cross on the tile.
+ *   - Needs (`debug=needs`): three bars over the head — satiety (berry red), thirst (water blue),
+ *     health (leaf green); full bar — no need, empty — at zero.
  *
  * Colours are the palette's (src/art/palette.ts).
  */
@@ -24,7 +27,23 @@ export const OVERLAY_COLORS = {
   edge: color('ink.0'),
   chosen: color('fire.3'),
   refused: color('berry.1'),
+  food: color('berry.1'),
+  water: color('water.3'),
+  health: color('leaf.4'),
+  empty: color('ui.1'),
 } as const;
+
+/** The bars of needs: inner width and the height of one bar, px. */
+export const NEED_BARS = { width: 12, bar: 2 } as const;
+/** Height of the whole box of bars with its dark frame and separators, px. */
+export const NEED_BARS_HEIGHT = 3 * NEED_BARS.bar + 4;
+
+/** Filled pixels of a bar for a value 0…100: never empty above zero, never full below 100. */
+export function barFill(value: number, width: number = NEED_BARS.width): number {
+  if (value <= 0) return 0;
+  if (value >= 100) return width;
+  return Math.min(width - 1, Math.max(1, Math.round((value / 100) * width)));
+}
 
 export interface Point {
   x: number;
@@ -160,4 +179,35 @@ export function drawRefused(ctx: CanvasRenderingContext2D, view: PixelRect, tile
       }
     }
   }
+}
+
+/**
+ * Bars of needs over a villager's head (`debug=needs`): satiety, thirst, health, top to bottom,
+ * in a dark frame whose lower edge is 2 px above `top` (the top of its sprite, world pixels).
+ */
+export function drawNeeds(
+  ctx: CanvasRenderingContext2D,
+  view: PixelRect,
+  x: number,
+  top: number,
+  values: { food: number; water: number; health: number },
+): void {
+  const { width, bar } = NEED_BARS;
+  const left = Math.round(x) - Math.floor(width / 2) - 1;
+  const y0 = Math.round(top) - 2 - NEED_BARS_HEIGHT;
+  ctx.fillStyle = OVERLAY_COLORS.edge;
+  ctx.fillRect(left - view.x, y0 - view.y, width + 2, NEED_BARS_HEIGHT);
+  const rows = [
+    [values.food, OVERLAY_COLORS.food],
+    [values.water, OVERLAY_COLORS.water],
+    [values.health, OVERLAY_COLORS.health],
+  ] as const;
+  rows.forEach(([value, color], i) => {
+    const y = y0 + 1 + i * (bar + 1) - view.y;
+    const filled = barFill(value);
+    ctx.fillStyle = color;
+    ctx.fillRect(left + 1 - view.x, y, filled, bar);
+    ctx.fillStyle = OVERLAY_COLORS.empty;
+    ctx.fillRect(left + 1 + filled - view.x, y, width - filled, bar);
+  });
 }

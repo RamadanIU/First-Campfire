@@ -1,10 +1,10 @@
 [
-  { "id": "oak", "name": "Дуб", "sprite": "tree", "walkable": false, "states": ["grown"], "place": "forest", "weight": 56 },
-  { "id": "birch", "name": "Берёза", "sprite": "birch", "walkable": false, "states": ["grown"], "place": "forest", "weight": 26 },
-  { "id": "oak_young", "name": "Молодой дуб", "sprite": "tree_young", "walkable": false, "states": ["grown"], "place": "forest", "weight": 16 },
-  { "id": "stump", "name": "Пень", "sprite": "stump", "walkable": false, "states": ["old"], "place": "forest", "weight": 2 },
-  { "id": "berry_bush", "name": "Малина", "sprite": "berry_bush", "walkable": false, "states": ["ripe", "empty"], "place": "edge", "weight": 1 },
-  { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1 },
-  { "id": "flowers", "name": "Цветы", "sprite": "flowers", "walkable": true, "states": ["bloom"], "place": "meadow", "weight": 4 },
-  { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5 }
+  { "id": "oak", "name": "Дуб", "sprite": "tree", "walkable": false, "states": ["grown"], "place": "forest", "weight": 56, "harvest": null },
+  { "id": "birch", "name": "Берёза", "sprite": "birch", "walkable": false, "states": ["grown"], "place": "forest", "weight": 26, "harvest": null },
+  { "id": "oak_young", "name": "Молодой дуб", "sprite": "tree_young", "walkable": false, "states": ["grown"], "place": "forest", "weight": 16, "harvest": null },
+  { "id": "stump", "name": "Пень", "sprite": "stump", "walkable": false, "states": ["old"], "place": "forest", "weight": 2, "harvest": null },
+  { "id": "berry_bush", "name": "Малина", "sprite": "berry_bush", "walkable": false, "states": ["ripe", "empty"], "place": "edge", "weight": 1, "harvest": { "food": "berries", "rations": 4, "empty": "empty" } },
+  { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1, "harvest": null },
+  { "id": "flowers", "name": "Цветы", "sprite": "flowers", "walkable": true, "states": ["bloom"], "place": "meadow", "weight": 4, "harvest": null },
+  { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5, "harvest": null }
 ]

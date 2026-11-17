@@ -3,7 +3,14 @@ import { TILE_SIZE } from '../art/sprite.ts';
 import type { MapObject } from '../sim/objects.ts';
 import { placementOf } from './mapRenderer.ts';
 
-const at = (id: number, def = 'oak'): MapObject => ({ id, def, x: 10, y: 20, state: 'grown' });
+const at = (id: number, def = 'oak'): MapObject => ({
+  id,
+  def,
+  x: 10,
+  y: 20,
+  state: 'grown',
+  stock: 0,
+});
 
 describe('объект на карте', () => {
   it('спрайт — из таблицы объектов; стоит на своём тайле, сдвинут на несколько пикселей', () => {

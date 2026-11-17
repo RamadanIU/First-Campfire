@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { mapFromRows } from '../../tests/scenario.ts';
-import { canStep, DIAGONAL, findPath, type PathResult, type Tile, tileSpeed } from './path.ts';
+import { isWater } from './map.ts';
+import {
+  canStep,
+  DIAGONAL,
+  findNearest,
+  findPath,
+  type PathResult,
+  type Tile,
+  tileSpeed,
+} from './path.ts';
 
 function search(rows: string[], from: Tile, to: Tile, options = {}): PathResult {
   const { map, objects } = mapFromRows(rows);
@@ -133,5 +142,75 @@ describe('поиск пути (A*)', () => {
     search(OPEN, { x: 0, y: 0 }, { x: 7, y: 5 });
     search(['.~.', '.~.', '...'], { x: 0, y: 0 }, { x: 2, y: 0 });
     expect(search(rows, { x: 0, y: 0 }, { x: 9, y: 4 })).toEqual(first);
+  });
+});
+
+describe('ближайшее место (поиск по кольцам цены)', () => {
+  /** A tile beside the water (on one of its four sides). */
+  const byWater = (map: ReturnType<typeof mapFromRows>['map']) => (x: number, y: number) =>
+    [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ].some(([dx, dy]) => isWater(map, x + dx!, y + dy!));
+
+  it('находит ближайший по пути, а не по прямой: вода за деревьями дальше той, что в обход', () => {
+    // Water at the top right is 2 tiles away in a straight line, but the trees wall it off; the
+    // pond at the bottom is farther in a line, yet nearer by path.
+    const rows = [
+      '.....T~~',
+      '.....T~~',
+      '.....T..',
+      '.....TTT',
+      '........',
+      '........',
+      '.~~.....',
+    ];
+    const { map, objects } = mapFromRows(rows);
+    const result = findNearest(map, objects, { x: 4, y: 1 }, byWater(map));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tile.y).toBeGreaterThanOrEqual(5);
+    expect(byWater(map)(result.tile.x, result.tile.y)).toBe(true);
+    // The path leads exactly there, step by step, and is the cheapest one to that tile.
+    expect(result.path.at(-1)).toEqual(result.tile);
+    const direct = findPath(map, objects, { x: 4, y: 1 }, result.tile);
+    expect(direct.ok && direct.cost).toBeCloseTo(result.cost, 12);
+  });
+
+  it('стоит на месте — пустой путь; цели нет — «недостижимо», слишком далеко — «сдался»', () => {
+    const { map, objects } = mapFromRows(OPEN);
+    expect(findNearest(map, objects, { x: 2, y: 2 }, (x, y) => x === 2 && y === 2)).toMatchObject({
+      ok: true,
+      tile: { x: 2, y: 2 },
+      path: [],
+      cost: 0,
+    });
+    expect(findNearest(map, objects, { x: 2, y: 2 }, () => false)).toMatchObject({
+      ok: false,
+      reason: 'unreachable',
+      explored: 48,
+    });
+    expect(
+      findNearest(map, objects, { x: 0, y: 0 }, (x, y) => x === 7 && y === 5, { limit: 10 }),
+    ).toMatchObject({ ok: false, reason: 'too_far' });
+  });
+
+  it('обходит занятые тайлы и не выбирает их', () => {
+    const { map, objects } = mapFromRows(OPEN);
+    const taken = (x: number, y: number) => x === 3 && y === 2;
+    const result = findNearest(map, objects, { x: 1, y: 2 }, (x) => x === 3, { avoid: taken });
+    expect(result.ok && result.tile).not.toEqual({ x: 3, y: 2 });
+    expect(result.ok && result.tile.x).toBe(3);
+  });
+
+  it('одна карта — один ответ при равных расстояниях', () => {
+    const { map, objects } = mapFromRows(OPEN);
+    const corners = (x: number, y: number) => (x === 0 || x === 7) && (y === 0 || y === 5);
+    const first = findNearest(map, objects, { x: 3, y: 2 }, corners);
+    for (let i = 0; i < 5; i++) {
+      expect(findNearest(map, objects, { x: 3, y: 2 }, corners)).toEqual(first);
+    }
   });
 });

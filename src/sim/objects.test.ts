@@ -8,6 +8,7 @@ import {
   objectAt,
   placeObject,
   removeObject,
+  takeFood,
 } from './objects.ts';
 
 function emptyMap() {
@@ -21,14 +22,31 @@ describe('объекты карты', () => {
     const { map, objects } = emptyMap();
     const bush = placeObject(map, objects, 'berry_bush', 3, 4);
     const oak = placeObject(map, objects, 'oak', 10, 2);
-    expect(bush).toEqual({ id: 1, def: 'berry_bush', x: 3, y: 4, state: 'ripe' });
+    expect(bush).toEqual({ id: 1, def: 'berry_bush', x: 3, y: 4, state: 'ripe', stock: 4 });
     expect(oak.id).toBe(2);
+    expect(oak.stock).toBe(0);
     expect(objects.nextId).toBe(3);
     expect(map.object[tileIndex(map, 3, 4)]).toBe(1);
     expect(objectAt(map, objects, 10, 2)).toBe(oak);
     expect(objectAt(map, objects, 5, 5)).toBeUndefined();
     expect(objectAt(map, objects, -1, 5)).toBeUndefined();
     expect(defOf(bush).name).toBe('Малина');
+  });
+
+  it('еду с куста берут, пока она есть; обобранный куст пустеет', () => {
+    const { map, objects } = emptyMap();
+    const bush = placeObject(map, objects, 'berry_bush', 3, 4);
+    expect(takeFood(bush, 1.5)).toBe(1.5);
+    expect(bush).toMatchObject({ stock: 2.5, state: 'ripe' });
+    expect(takeFood(bush, 2)).toBe(2);
+    // Less is left than asked: only what is there; the bush is empty now.
+    expect(takeFood(bush, 1)).toBe(0.5);
+    expect(bush).toMatchObject({ stock: 0, state: 'empty' });
+    expect(takeFood(bush, 1)).toBe(0);
+    // Nothing on a tree, and it keeps its state.
+    const oak = placeObject(map, objects, 'oak', 10, 2);
+    expect(takeFood(oak, 1)).toBe(0);
+    expect(oak.state).toBe('grown');
   });
 
   it('на тайле не больше одного объекта; за край карты ставить нельзя', () => {

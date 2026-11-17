@@ -33,6 +33,10 @@ function villager(fields: Partial<Villager> = {}): Villager {
     facing: 's',
     walked: 0,
     action: { kind: 'idle', until: 0 },
+    needs: { food: 100, water: 100 },
+    health: 100,
+    ranOut: { food: 0, water: 0 },
+    nowhere: { food: 0, water: 0 },
     ...fields,
   };
 }

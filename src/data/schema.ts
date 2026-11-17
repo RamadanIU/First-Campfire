@@ -552,13 +552,18 @@ export function readTables<S extends SchemaSet>(
     const cursor: Cursor = { file, record: null, path: '', sink };
     const value = schema.read(raw[name], cursor);
     values[name] = value;
-    if (schema.record !== null && Array.isArray(value)) {
+    // A file that is not a list of records at all has its own error; references into it are
+    // not checked (every one of them would fail and bury that error).
+    if (schema.record !== null && Array.isArray(value) && Array.isArray(raw[name])) {
       ids.set(name, new Set(value.map((record) => String((record as { id: unknown }).id))));
     }
   }
   for (const { table: target, id: wanted, at } of sink.refs) {
+    if (!Object.hasOwn(schemas, target)) {
+      throw new Error(`Схема ссылается на неизвестную таблицу «${target}»`);
+    }
     const known = ids.get(target);
-    if (!known) throw new Error(`Схема ссылается на неизвестную таблицу «${target}»`);
+    if (!known) continue;
     if (!known.has(wanted)) {
       sink.issues.push({
         ...at,
