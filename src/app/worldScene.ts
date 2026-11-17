@@ -21,6 +21,7 @@ import {
   createAutosave,
   openSaveSlot,
   openWorld,
+  randomSeed,
   saveFileName,
   saveOnLeave,
 } from './savedGame.ts';
@@ -31,7 +32,8 @@ import { createTitleScene } from './titleScene.ts';
 export function createWorldScene(context: SceneContext): Scene {
   const { params, ui } = context;
   const slot = openSaveSlot(params);
-  const opened = openWorld(params, slot);
+  // An empty slot gets a new world with a random seed; a frozen frame (screenshots) takes `seed=`.
+  const opened = openWorld(params, slot, params.frame === null ? randomSeed : () => params.seed);
   if (opened.kind === 'problem') {
     // The title menu reads the same slot and explains what is wrong, offering a new world.
     return createTitleScene({ ...context, params: { ...params, slot: null } });
@@ -136,7 +138,7 @@ function createWorldPanel(
       } else if (autosave.error !== null) {
         text = `⚠ ${autosave.error}`;
       } else if (autosave.savedTick !== null) {
-        text = `Сохранён: ${dateOf(autosave.savedTick)}, тик ${formatCount(autosave.savedTick)}`;
+        text = `Сохранён: ${dateOf(autosave.savedTick)}, тик\u00a0${formatCount(autosave.savedTick)}`;
       } else {
         text = 'Ещё не сохранялся';
       }

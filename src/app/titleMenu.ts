@@ -134,7 +134,9 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
     spellcheck: 'false',
     autocomplete: 'off',
   }) as HTMLInputElement;
-  seedInput.value = String(params.seedGiven ? params.seed : randomSeed());
+  // A random seed is suggested — except when the address names one or freezes a frame
+  // (screenshots must come out the same every time).
+  seedInput.value = String(params.seedGiven || params.frame !== null ? params.seed : randomSeed());
   const reroll = h('button', { type: 'button', class: 'menu-reroll', title: 'Случайное зерно' });
   reroll.textContent = '↻';
   const begin = h('button', { type: 'button', class: 'menu-go', 'data-action': 'new' });
