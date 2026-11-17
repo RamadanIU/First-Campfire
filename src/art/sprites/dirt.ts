@@ -15,7 +15,7 @@ export default defineSprite({
     d: 'dirt.0',
     m: 'dirt.1',
     l: 'dirt.2',
-    P: 'stone.3',
+    P: 'stone.2',
   },
   animations: {
     idle: {

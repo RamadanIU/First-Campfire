@@ -51,6 +51,18 @@ body {
   color: #7f8aa8;
 }
 
+/* Caption of debug pictures (style sheet). */
+.scene-caption {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  padding: 4px 8px;
+  background: rgba(21, 19, 27, 0.75);
+  border-radius: 3px;
+  font-size: 13px;
+  color: #f0e9d6;
+}
+
 /* Debug HUD of the clock scene (step 0.2). A proper observer HUD arrives in stage 1. */
 .hud,
 .journal {

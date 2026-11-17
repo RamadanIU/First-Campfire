@@ -15,7 +15,17 @@ describe('parseParams', () => {
       ticks: 0,
       speed: 1,
       sprite: null,
+      zoom: null,
     });
+  });
+
+  it('reads zoom: only whole scales 1–4, anything else — the scene decides', () => {
+    expect(parseParams('?zoom=2').zoom).toBe(2);
+    expect(parseParams('?zoom=4').zoom).toBe(4);
+    expect(parseParams('?zoom=0').zoom).toBeNull();
+    expect(parseParams('?zoom=5').zoom).toBeNull();
+    expect(parseParams('?zoom=1.5').zoom).toBeNull();
+    expect(parseParams('?zoom=x').zoom).toBeNull();
   });
 
   it('reads the gallery sprite name', () => {

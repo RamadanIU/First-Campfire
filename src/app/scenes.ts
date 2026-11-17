@@ -1,6 +1,7 @@
 import { createClockScene } from './clockScene.ts';
 import { createGalleryScene } from './galleryScene.ts';
 import type { SceneFactory } from './scene.ts';
+import { createStylesheetScene } from './stylesheetScene.ts';
 import { createTitleScene } from './titleScene.ts';
 
 /**
@@ -14,6 +15,8 @@ export const SCENES: Record<string, SceneFactory> = {
   clock: createClockScene,
   /** Debug: every sprite large and at natural size; &sprite=<name> — one sprite in detail (step 0.3). */
   gallery: createGalleryScene,
+  /** Debug: the style reference — a camp by a river made of the sprites of epoch 0 (step 0.4). */
+  stylesheet: createStylesheetScene,
 };
 
 export const DEFAULT_SCENE = 'title';
