@@ -277,28 +277,35 @@ interface Row {
   value: Aggregate | null;
 }
 
-/** «Мин» and «Макс» cells: the number, and the seed in brackets when worlds differ. */
-function extremeCells(rows: readonly Row[], which: 'min' | 'max'): string[] {
+/**
+ * «Мин» or «Макс» column: the number, and the seed in brackets when worlds differ. The brackets
+ * get a column of their own width, so numbers (and the title) stay right-aligned.
+ */
+function extremeColumn(rows: readonly Row[], which: 'min' | 'max', title: string) {
   const suffixes = rows.map(({ value }) => {
     if (value === null || value.min === value.max) return '';
     return ` (${which === 'min' ? value.minSeed : value.maxSeed})`;
   });
   const width = Math.max(0, ...suffixes.map((s) => s.length));
-  return rows.map(({ value }, i) =>
-    value === null ? '—' : formatNumber(value[which]) + suffixes[i]!.padEnd(width),
-  );
+  return {
+    title: title.padEnd(title.length + width),
+    cells: rows.map(
+      ({ value }, i) =>
+        (value === null ? '—' : formatNumber(value[which])) + suffixes[i]!.padEnd(width),
+    ),
+  };
 }
 
 function aggregateTable(rows: readonly Row[]): string {
-  const mins = extremeCells(rows, 'min');
-  const maxes = extremeCells(rows, 'max');
+  const mins = extremeColumn(rows, 'min', 'Мин');
+  const maxes = extremeColumn(rows, 'max', 'Макс');
   return formatTable(
-    ['Показатель', 'Среднее', 'Мин', 'Макс'],
+    ['Показатель', 'Среднее', mins.title, maxes.title],
     rows.map((row, i) => [
       row.name,
       row.value === null ? '—' : formatNumber(row.value.mean),
-      mins[i]!,
-      maxes[i]!,
+      mins.cells[i]!,
+      maxes.cells[i]!,
     ]),
     ['l', 'r', 'r', 'r'],
   );
