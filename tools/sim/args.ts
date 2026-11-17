@@ -7,10 +7,13 @@ import { parseArgs } from 'node:util';
 export const USAGE = `Прогоны без графики: много миров подряд, итог — таблица и файлы.
 
   npm run sim -- --seeds 1..100 --years 10
+  npm run sim -- --load мир.json --years 5
 
 Параметры:
   --seeds <список>   зёрна миров: 1..100, 1,2,5 или 1..10,50 (по умолчанию 1..100)
   --years <N>        сколько игровых лет прожить каждому миру (по умолчанию 10)
+  --load <файл>      продолжить мир из сохранения (из игры: «Сохранить в файл») ещё на --years лет;
+                     мир один — тот, что в файле, поэтому вместе с --seeds нельзя
   --threads <N>      сколько миров считать одновременно (по умолчанию — по числу ядер)
   --out <папка>      куда записать итог (по умолчанию out/sim)
   --help             эта справка
@@ -22,7 +25,7 @@ export const USAGE = `Прогоны без графики: много миро�
 Подробно — docs/ARCHITECTURE.md, раздел «Прогоны без графики».`;
 
 export interface SimOptions {
-  /** Seeds in ascending order, without repeats. */
+  /** Seeds in ascending order, without repeats. Empty with --load: the seed is in the save. */
   seeds: number[];
   /** The seeds as written on the command line (for the report). */
   seedsText: string;
@@ -30,6 +33,8 @@ export interface SimOptions {
   threads: number;
   out: string;
   help: boolean;
+  /** Save file to continue (--load), or null. */
+  load: string | null;
 }
 
 /** A mistake on the command line; the message is for people. */
@@ -96,8 +101,9 @@ export function parseSimArgs(argv: string[], cpus: number): SimOptions {
       strict: true,
       allowPositionals: false,
       options: {
-        seeds: { type: 'string', default: '1..100' },
+        seeds: { type: 'string' },
         years: { type: 'string', default: '10' },
+        load: { type: 'string' },
         threads: { type: 'string' },
         out: { type: 'string', default: 'out/sim' },
         help: { type: 'boolean', short: 'h', default: false },
@@ -109,14 +115,22 @@ export function parseSimArgs(argv: string[], cpus: number): SimOptions {
       option ? `неизвестный параметр или нет значения: ${option}` : `не понял параметры: ${error}`,
     );
   }
-  const seedsText = String(values.seeds);
-  const seeds = parseSeeds(seedsText);
+  const load = values.load === undefined ? null : String(values.load);
+  if (load !== null && load.trim() === '') throw new ArgsError('--load: не указан файл сохранения');
+  if (load !== null && values.seeds !== undefined) {
+    throw new ArgsError(
+      '--load и --seeds вместе нельзя: из сохранения продолжается один мир — тот, что в файле (его зерно записано в сохранении)',
+    );
+  }
+  const seedsText = load === null ? String(values.seeds ?? '1..100') : '';
+  const seeds = load === null ? parseSeeds(seedsText) : [];
+  const worlds = load === null ? seeds.length : 1;
   const years = parseCount('years', String(values.years), MAX_YEARS);
   const threads =
     values.threads === undefined
-      ? Math.max(1, Math.min(cpus, seeds.length))
-      : Math.min(parseCount('threads', String(values.threads), 256), seeds.length);
+      ? Math.max(1, Math.min(cpus, worlds))
+      : Math.min(parseCount('threads', String(values.threads), 256), worlds);
   const out = String(values.out);
   if (out.trim() === '') throw new ArgsError('--out: пустое имя папки');
-  return { seeds, seedsText, years, threads, out, help: values.help === true };
+  return { seeds, seedsText, years, threads, out, help: values.help === true, load };
 }

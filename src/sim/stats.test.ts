@@ -140,6 +140,22 @@ describe('статистика мира', () => {
     ]);
   });
 
+  it('запись, разрезанная на любом тике, складывается в ту же статистику, что и целая', () => {
+    const whole = record(createWorld(5), 2 * TICKS_PER_YEAR);
+    // 4 800 — the new year: several events happen on that very tick; 7 000 — an ordinary tick.
+    for (const cut of [TICKS_PER_YEAR, 7_000, 280]) {
+      const world = createWorld(5);
+      const before = record(world, cut);
+      const after = record(world, 2 * TICKS_PER_YEAR - cut);
+      for (const id of ['events', 'nights', 'fireflies']) {
+        expect(before.totals[id]! + after.totals[id]!, `${id}, разрез на тике ${cut}`).toBe(
+          whole.totals[id],
+        );
+      }
+      if (cut === TICKS_PER_YEAR) expect(after.years).toEqual([whole.years[1]]);
+    }
+  });
+
   it('запись не меняет мир: хэш тот же, что без неё', () => {
     const watched = createWorld(9);
     record(watched, TICKS_PER_YEAR);

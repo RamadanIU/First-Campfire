@@ -171,8 +171,11 @@ function createAccumulator(metrics: readonly Metric[]): Accumulator {
 }
 
 /**
- * Start recording `metrics` of `world` from its current tick. Events already in the journal
- * at this moment (for a new world — its creation) are counted too.
+ * Start recording `metrics` of `world` from its current tick. For a new world (tick 0) its
+ * creation is counted too. A world that has run before — loaded from a save, say — counts only
+ * what happens from now on: the events of its current tick were made by the step before, which
+ * belongs to the previous recording. So statistics split at any tick add up to the statistics
+ * of the whole run (a year's row is the same whether or not the world was saved and loaded).
  */
 export function createStats(world: World, metrics: readonly Metric[]): Stats {
   const problems = checkMetrics(metrics);
@@ -196,12 +199,10 @@ export function createStats(world: World, metrics: readonly Metric[]): Stats {
     period: createAccumulator(metrics),
     years: [],
   };
-  // Events of the current tick belong to this recording (for a new world — its creation);
-  // older ones (a world that has run before) do not.
+  // A new world: its creation (the events of tick 0) belongs to this recording. A world that
+  // has run before: everything already in the journal belongs to earlier steps.
   const list = world.events.list;
-  let start = list.length;
-  while (start > 0 && list[start - 1]!.tick === world.tick) start--;
-  stats.lastEventId = start > 0 ? list[start - 1]!.id : 0;
+  stats.lastEventId = world.tick === 0 ? 0 : (list.at(-1)?.id ?? 0);
   takeNewEvents(stats, world);
   return stats;
 }

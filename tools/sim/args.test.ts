@@ -29,7 +29,25 @@ describe('параметры npm run sim', () => {
       threads: 4,
       out: 'out/sim',
       help: false,
+      load: null,
     });
+  });
+
+  it('--load: один мир из сохранения, один поток; с --seeds нельзя', () => {
+    expect(parseSimArgs(['--load', 'out/мир.json', '--years', '5'], 8)).toEqual({
+      seeds: [],
+      seedsText: '',
+      years: 5,
+      threads: 1,
+      out: 'out/sim',
+      help: false,
+      load: 'out/мир.json',
+    });
+    expect(() => parseSimArgs(['--load', 'мир.json', '--seeds', '1..3'], 8)).toThrow(
+      '--load и --seeds вместе нельзя',
+    );
+    expect(() => parseSimArgs(['--load', ' '], 8)).toThrow('--load: не указан файл сохранения');
+    expect(() => parseSimArgs(['--load'], 8)).toThrow(ArgsError);
   });
 
   it('все параметры', () => {

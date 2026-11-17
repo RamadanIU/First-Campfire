@@ -1,9 +1,13 @@
 /**
- * One headless world from start to finish: create it, run it for N years recording the
- * metrics (src/sim/metrics.ts) and timing every tick, return everything as plain data.
+ * One headless world from start to finish: create it (or take one loaded from a save), run it
+ * for N years recording the metrics (src/sim/metrics.ts) and timing every tick, return
+ * everything as plain data.
  *
  * Used by the worker threads of `npm run sim` (./worker.ts) and by tests. A world that throws
  * does not stop the run: the result says where it failed (`status: 'error'`).
+ *
+ * A loaded world may stand in the middle of a year: it runs N × 4 800 ticks all the same, so
+ * its first and last yearly rows are partial (from_tick / to_tick show it).
  */
 import { TICKS_PER_YEAR } from '../../src/sim/calendar.ts';
 import { hashState } from '../../src/sim/hash.ts';
@@ -43,15 +47,17 @@ export interface WorldTiming {
 export interface WorldRun {
   seed: number;
   status: 'ok' | 'error';
-  /** Ticks simulated. */
+  /** Tick the run started from: 0 for a new world, the save's tick for a loaded one. */
+  fromTick: number;
+  /** Tick the world reached (simulated in this run: ticks − fromTick). */
   ticks: number;
-  /** Whole years simulated. */
+  /** Whole game years simulated in this run. */
   years: number;
   /** Fingerprint of the final world state (src/sim/hash.ts); empty if the world failed. */
   hash: string;
   /** Metrics over the whole run by id; empty if the world failed. */
   totals: Record<string, MetricValue>;
-  /** One row per finished year. */
+  /** One row per calendar year the run went through (the first and last may be partial). */
   yearRows: YearRun[];
   timing: WorldTiming;
   /** Why the world failed, or null. */
@@ -60,7 +66,10 @@ export interface WorldRun {
 
 export interface RunOptions {
   seed: number;
+  /** Game years to run (× 4 800 ticks), counted from the start tick. */
   years: number;
+  /** A world to continue (loaded from a save; its seed must be `seed`). Default: a new world. */
+  start?: World;
   metrics?: readonly Metric[];
   /** Cost of one timer reading, µs, subtracted from every tick (see ./timing.ts). */
   timerCostUs?: number;
@@ -73,7 +82,12 @@ export interface RunOptions {
 export function runWorld(options: RunOptions): WorldRun {
   const { seed, years, metrics = METRICS, timerCostUs = 0, onYear, step = stepWorld } = options;
   const started = performance.now();
-  const world = createWorld(seed);
+  if (options.start && options.start.seed !== seed) {
+    throw new Error(`runWorld: мир из сохранения с зерном ${options.start.seed}, а не ${seed}`);
+  }
+  const world = options.start ?? createWorld(seed);
+  const fromTick = world.tick;
+  const yearsDone = () => Math.floor((world.tick - fromTick) / TICKS_PER_YEAR);
   const stats = createStats(world, metrics);
   const timer = createTickTimer();
   const yearRows: YearRun[] = [];
@@ -88,7 +102,8 @@ export function runWorld(options: RunOptions): WorldRun {
     tickMaxUs: timer.maxUs,
     simSeconds: timer.totalUs / 1e6,
     runSeconds: (performance.now() - started) / 1000,
-    yearsPerSecond: timer.totalUs > 0 ? yearRows.length / (timer.totalUs / 1e6) : 0,
+    yearsPerSecond:
+      timer.totalUs > 0 ? (world.tick - fromTick) / TICKS_PER_YEAR / (timer.totalUs / 1e6) : 0,
   });
 
   try {
@@ -115,8 +130,9 @@ export function runWorld(options: RunOptions): WorldRun {
     return {
       seed,
       status: 'error',
+      fromTick,
       ticks: world.tick,
-      years: yearRows.length,
+      years: yearsDone(),
       hash: '',
       totals: {},
       yearRows,
@@ -126,11 +142,20 @@ export function runWorld(options: RunOptions): WorldRun {
   }
 
   const report = finishStats(stats, world);
+  // A world that started mid-year ends mid-year too: its last, partial year closes here.
+  for (const period of report.years.slice(yearRows.length)) {
+    yearRows.push({
+      ...period,
+      tickMeanUs: yearTicks > 0 ? yearTotal / yearTicks : 0,
+      tickMaxUs: yearMax,
+    });
+  }
   return {
     seed,
     status: 'ok',
+    fromTick,
     ticks: world.tick,
-    years: yearRows.length,
+    years: yearsDone(),
     hash: hashState(world),
     totals: report.totals,
     yearRows,
