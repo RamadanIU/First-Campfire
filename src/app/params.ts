@@ -2,7 +2,8 @@ import { isSpeed, type Speed } from './loop.ts';
 
 /**
  * Launch parameters read from the page URL (?seed=42&scene=clock&ticks=3000&speed=5&frame=10&ui=0).
- * Scene-specific ones: `sprite=` (the gallery shows one sprite large).
+ * Scene-specific ones: `sprite=` (the gallery shows one sprite large), `zoom=` (whole-number scale
+ * of pictures of the world, e.g. the style sheet).
  * They make every screen reproducible: the screenshot tool and bug reports
  * use the same URL to get the same picture.
  */
@@ -21,6 +22,8 @@ export interface LaunchParams {
   speed: Speed;
   /** Gallery: show this one sprite large (by name) instead of all sprites. */
   sprite: string | null;
+  /** Scale of the world on screen: 1, 2, 3 or 4 (GDD §10.1); null — the scene picks one that fits. */
+  zoom: number | null;
 }
 
 export const DEFAULT_PARAMS: LaunchParams = {
@@ -31,7 +34,11 @@ export const DEFAULT_PARAMS: LaunchParams = {
   ticks: 0,
   speed: 1,
   sprite: null,
+  zoom: null,
 };
+
+/** Whole-number scales of the world picture (GDD §10.1: ×1 city, ×2 street, ×4 portrait). */
+export const ZOOMS = [1, 2, 3, 4] as const;
 
 function parseInteger(raw: string | null, min: number): number | null {
   if (raw === null || !/^-?\d+$/.test(raw.trim())) return null;
@@ -42,6 +49,11 @@ function parseInteger(raw: string | null, min: number): number | null {
 function parseSpeed(raw: string | null): Speed | null {
   const value = parseInteger(raw, 0);
   return value !== null && isSpeed(value) ? value : null;
+}
+
+function parseZoom(raw: string | null): number | null {
+  const value = parseInteger(raw, 1);
+  return value !== null && (ZOOMS as readonly number[]).includes(value) ? value : null;
 }
 
 export function parseParams(search: string): LaunchParams {
@@ -56,5 +68,6 @@ export function parseParams(search: string): LaunchParams {
     ticks: parseInteger(query.get('ticks'), 0) ?? DEFAULT_PARAMS.ticks,
     speed: parseSpeed(query.get('speed')) ?? DEFAULT_PARAMS.speed,
     sprite: sprite ? sprite : DEFAULT_PARAMS.sprite,
+    zoom: parseZoom(query.get('zoom')),
   };
 }

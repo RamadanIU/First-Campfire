@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPalette, type PaletteSwap } from './palette.ts';
-import { rasterizeSprite } from './raster.ts';
+import { rasterizeShadow, rasterizeSprite } from './raster.ts';
 import type { SpriteDef } from './sprite.ts';
 
 const TEST = createPalette([
@@ -83,5 +83,49 @@ describe('растеризатор', () => {
     expect(() => rasterizeSprite(FLAG, TEST, { red: 'gray' } as PaletteSwap)).toThrow(
       'Спрайт «flag», подмена с ошибками:\nподмена «red → gray»: в рядах разное число цветов (3 и 2)',
     );
+  });
+});
+
+describe('прозрачность и тени', () => {
+  const GLASS = createPalette([
+    { name: 'red', title: '', colors: ['#400000', '#ff0000'] },
+    { name: 'shadow', title: '', colors: ['#101020'], alpha: 0.25 },
+  ]);
+  const POST: SpriteDef = {
+    name: 'post',
+    title: 'Столбик',
+    kind: 'object',
+    width: 2,
+    height: 2,
+    anchor: { x: 1, y: 2 },
+    legend: { r: 'red.1', s: 'shadow.0' } as unknown as SpriteDef['legend'],
+    animations: { idle: { frames: ['rr\nrs'] } },
+    shadow: { width: 4, height: 2, x: 1 },
+  };
+
+  it('пиксель полупрозрачного ряда сохраняет его прозрачность', () => {
+    const frame = rasterizeSprite(POST, GLASS).animations[0]!.frames[0]!;
+    expect(pixel(frame, 0, 0)).toEqual([255, 0, 0, 255]);
+    expect(pixel(frame, 1, 1)).toEqual([16, 16, 32, 64]);
+  });
+
+  it('тень — непрозрачный эллипс цвета тени; прозрачность — отдельным числом для отрисовки', () => {
+    const shadow = rasterizeShadow(POST, GLASS)!;
+    expect([shadow.width, shadow.height, shadow.alpha]).toEqual([4, 2, 64]);
+    expect(shadow.anchor).toEqual({ x: 1, y: 1 });
+    expect(pixel(shadow, 0, 0)).toEqual([16, 16, 32, 255]);
+    expect(rasterizeSprite(POST, GLASS).shadow).toEqual(shadow);
+  });
+
+  it('спрайт без тени — тени нет; палитра без цвета тени — понятная ошибка', () => {
+    const { shadow: _, ...flat } = POST;
+    expect(rasterizeShadow(flat, GLASS)).toBeNull();
+    expect(rasterizeSprite({ ...FLAG }, TEST).shadow).toBeNull();
+    expect(() =>
+      rasterizeShadow(
+        { ...POST, legend: { r: 'red.1' } as never, animations: { idle: { frames: ['rr\nrr'] } } },
+        TEST,
+      ),
+    ).toThrow('В палитре нет цвета тени shadow.0');
   });
 });

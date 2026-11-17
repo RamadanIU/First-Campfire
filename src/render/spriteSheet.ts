@@ -23,12 +23,25 @@ export interface DrawOptions {
   swap?: PaletteSwap;
 }
 
+export interface ShadowOptions {
+  /** Whole-number scale, default 1. */
+  scale?: number;
+  /**
+   * Draw the shape fully opaque. For a shadow layer: draw every shadow opaque into one canvas,
+   * then put the layer on the ground once with `shadowOpacity` — overlapping shadows merge
+   * instead of darkening twice.
+   */
+  opaque?: boolean;
+}
+
 export interface SpriteSheet {
   /** The base atlas (all sprites, original colours) and its canvas. */
   readonly atlas: Atlas;
   readonly canvas: HTMLCanvasElement;
   /** Recoloured variants built so far. */
   readonly variantCount: number;
+  /** Opacity of shadows, 0…1 (the palette's shadow colour). */
+  readonly shadowOpacity: number;
   has(name: string): boolean;
   entry(name: string): AtlasEntry;
   /**
@@ -42,6 +55,17 @@ export interface SpriteSheet {
     y: number,
     options?: DrawOptions,
   ): void;
+  /**
+   * Draw the sprite's soft shadow for an object whose anchor is at (x, y). Draw shadows before
+   * objects. Returns false (and draws nothing) if the sprite has no shadow.
+   */
+  drawShadow(
+    ctx: CanvasRenderingContext2D,
+    name: string,
+    x: number,
+    y: number,
+    options?: ShadowOptions,
+  ): boolean;
 }
 
 function toCanvas(atlas: Atlas): HTMLCanvasElement {
@@ -82,12 +106,18 @@ export function createSpriteSheet(defs: readonly SpriteDef[], palette: Palette):
     return found;
   }
 
+  let shadowOpacity = 1;
+  for (const sprite of atlas.sprites.values()) {
+    if (sprite.shadow) shadowOpacity = sprite.shadow.alpha / 255;
+  }
+
   return {
     atlas,
     canvas,
     get variantCount() {
       return variants.size;
     },
+    shadowOpacity,
     has: (name) => atlas.sprites.has(name),
     entry,
     draw(ctx, name, x, y, options = {}) {
@@ -116,6 +146,28 @@ export function createSpriteSheet(defs: readonly SpriteDef[], palette: Palette):
         rect.w * scale,
         rect.h * scale,
       );
+    },
+    drawShadow(ctx, name, x, y, options = {}) {
+      const shadow = entry(name).shadow;
+      if (!shadow) return false;
+      const scale = Math.max(1, Math.round(options.scale ?? 1));
+      const { rect } = shadow;
+      const alpha = ctx.globalAlpha;
+      if (!options.opaque) ctx.globalAlpha = alpha * (shadow.alpha / 255);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        canvas,
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Math.round(x - shadow.anchor.x * scale),
+        Math.round(y - shadow.anchor.y * scale),
+        rect.w * scale,
+        rect.h * scale,
+      );
+      ctx.globalAlpha = alpha;
+      return true;
     },
   };
 }

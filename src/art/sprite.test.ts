@@ -6,6 +6,8 @@ import {
   frameDurations,
   parseGrid,
   type SpriteDef,
+  shadowMask,
+  shadowOrigin,
   usedRamps,
   validateSprite,
   validateSpriteSet,
@@ -147,7 +149,7 @@ describe('проверка спрайта', () => {
       'спрайт «stone»: нет названия (title)',
     ]);
     expect(validateSprite(stone({ kind: 'house' }), TEST)).toEqual([
-      'спрайт «stone»: неизвестный вид «house» — допустимы tile, object, character',
+      'спрайт «stone»: неизвестный вид «house» — допустимы tile, object, character, icon',
     ]);
     expect(validateSprite(stone({ width: 0 }), TEST)).toContain(
       'спрайт «stone»: размер 0×3 — нужны целые числа от 1 до 256',
@@ -222,6 +224,43 @@ describe('проверка спрайта', () => {
   it('имена спрайтов не повторяются', () => {
     expect(validateSpriteSet([stone(), stone({ name: 'rock' }), stone()])).toEqual([
       'спрайт «stone»: имя уже занято другим спрайтом',
+    ]);
+  });
+});
+
+describe('тень', () => {
+  const rows = (mask: boolean[][]) => mask.map((row) => row.map((v) => (v ? 'x' : '.')).join(''));
+
+  it('эллипс с чёткими краями, симметричный: 12×4 — строки по 8, 12, 12, 8 пикселей', () => {
+    expect(rows(shadowMask(12, 4))).toEqual([
+      '..xxxxxxxx..',
+      'xxxxxxxxxxxx',
+      'xxxxxxxxxxxx',
+      '..xxxxxxxx..',
+    ]);
+    const mask = rows(shadowMask(9, 3));
+    expect(mask).toEqual([...mask].reverse());
+    expect(mask.map((row) => [...row].reverse().join(''))).toEqual(mask);
+  });
+
+  it('центр тени — на точке привязки со сдвигом', () => {
+    expect(shadowOrigin({ width: 12, height: 4 })).toEqual({ x: -6, y: -2 });
+    expect(shadowOrigin({ width: 9, height: 3, x: 1, y: 1 })).toEqual({ x: -3, y: 0 });
+  });
+
+  it('проверка: размер, сдвиг, тень шире, чем выше; у тайлов и значков тени нет', () => {
+    expect(validateSprite(stone({ shadow: { width: 6, height: 2, x: 1 } }), TEST)).toEqual([]);
+    expect(validateSprite(stone({ shadow: { width: 0, height: 2 } }), TEST)).toEqual([
+      'спрайт «stone»: тень: размер 0×2 — нужны целые числа от 1 до 256',
+    ]);
+    expect(validateSprite(stone({ shadow: { width: 4, height: 2, x: 0.5 } }), TEST)).toEqual([
+      'спрайт «stone»: тень: сдвиг (0.5, 0) — нужны целые числа',
+    ]);
+    expect(validateSprite(stone({ shadow: { width: 2, height: 4 } }), TEST)).toEqual([
+      'спрайт «stone»: тень 2×4: тень лежит на земле — она шире, чем выше',
+    ]);
+    expect(validateSprite(stone({ kind: 'icon', shadow: { width: 4, height: 2 } }), TEST)).toEqual([
+      'спрайт «stone»: тень: у вида «icon» тени не бывает',
     ]);
   });
 });

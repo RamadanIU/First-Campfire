@@ -23,6 +23,14 @@ export interface AtlasAnimation {
   readonly durations: readonly number[];
 }
 
+export interface AtlasShadow {
+  readonly rect: AtlasRect;
+  /** The point inside the shadow image where the sprite's anchor lands. */
+  readonly anchor: { readonly x: number; readonly y: number };
+  /** Opacity to draw the (opaque) shadow image with, 0…255. */
+  readonly alpha: number;
+}
+
 export interface AtlasEntry {
   readonly name: string;
   readonly width: number;
@@ -31,6 +39,8 @@ export interface AtlasEntry {
   /** The first animation of the sprite. */
   readonly defaultAnimation: string;
   readonly animations: ReadonlyMap<string, AtlasAnimation>;
+  /** The soft shadow, packed into the same atlas; null if the sprite has none. */
+  readonly shadow: AtlasShadow | null;
 }
 
 export interface Atlas {
@@ -39,6 +49,7 @@ export interface Atlas {
   /** RGBA, 4 bytes per pixel. */
   readonly pixels: Uint8ClampedArray;
   readonly sprites: ReadonlyMap<string, AtlasEntry>;
+  /** Animation frames in the atlas (shadows not counted). */
   readonly frameCount: number;
 }
 
@@ -93,9 +104,11 @@ export function buildAtlas(
 ): Atlas {
   const rasters = defs.map((def) => rasterizeSprite(def, palette, swap));
   const frames = rasters.flatMap((sprite) => sprite.animations.flatMap((a) => a.frames));
-  const layout = packRects(frames.map((frame) => ({ w: frame.width, h: frame.height })));
+  const shadows = rasters.flatMap((sprite) => (sprite.shadow ? [sprite.shadow] : []));
+  const images = [...frames, ...shadows];
+  const layout = packRects(images.map((image) => ({ w: image.width, h: image.height })));
   const pixels = new Uint8ClampedArray(layout.width * layout.height * 4);
-  frames.forEach((frame, index) => {
+  images.forEach((frame, index) => {
     const rect = layout.rects[index]!;
     for (let row = 0; row < frame.height; row++) {
       const from = row * frame.width * 4;
@@ -107,6 +120,7 @@ export function buildAtlas(
   });
 
   let next = 0;
+  let nextShadow = frames.length;
   const sprites = new Map<string, AtlasEntry>();
   for (const sprite of rasters) {
     const animations = new Map<string, AtlasAnimation>();
@@ -123,6 +137,13 @@ export function buildAtlas(
       anchor: sprite.anchor,
       defaultAnimation: sprite.animations[0]!.name,
       animations,
+      shadow: sprite.shadow
+        ? {
+            rect: layout.rects[nextShadow++]!,
+            anchor: sprite.shadow.anchor,
+            alpha: sprite.shadow.alpha,
+          }
+        : null,
     });
   }
   return {

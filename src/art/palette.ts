@@ -6,8 +6,8 @@
  * Recolouring (skin tone, hair, season, dye) swaps whole ramps: `{ skin_light: 'skin_dark' }`
  * draws every `skin_light.N` pixel as `skin_dark.N`. Swapped ramps must have the same length.
  *
- * This is the DRAFT palette of step 0.3 (32 colours: enough for the three trial sprites).
- * Step 0.4 replaces it with the ~64-colour master palette of GDD §10.1. See docs/ART.md.
+ * This is the master palette of GDD §10.1 (step 0.4): 69 colours of the world, one translucent
+ * shadow colour and 3 service colours of debug screens. See docs/ART.md for what each ramp is for.
  */
 
 export interface RampDef {
@@ -17,22 +17,70 @@ export interface RampDef {
   readonly title: string;
   /** Hex colours `#rrggbb`, strictly from dark to light. */
   readonly colors: readonly string[];
+  /**
+   * Opacity 0…1 of every colour of the ramp; default 1 (opaque). Translucent ramps darken or
+   * tint what lies under them — the soft shadow under objects is one (GDD §10.1).
+   */
+  readonly alpha?: number;
 }
 
 export const RAMPS = [
+  // Outline and shadow.
+  { name: 'ink', title: 'контур персонажей и предметов, глаза', colors: ['#241820'] },
+  {
+    name: 'shadow',
+    title: 'тень под объектами (полупрозрачная)',
+    colors: ['#1a1830'],
+    alpha: 0.32,
+  },
+  // Ground.
   { name: 'grass', title: 'трава', colors: ['#2e4d33', '#416d3b', '#5d8f41', '#8ab955'] },
-  { name: 'leaf', title: 'листва', colors: ['#1c302c', '#2c4f37', '#427140', '#66984a'] },
-  { name: 'bark', title: 'кора и дерево', colors: ['#2b1d1b', '#4b3127', '#6e4c35', '#957250'] },
+  { name: 'dirt', title: 'земля, тропа', colors: ['#5e3d29', '#80573a', '#a37a50'] },
+  { name: 'sand', title: 'песок, берег', colors: ['#b0915f', '#d2b47c', '#ead5a0'] },
+  {
+    name: 'water',
+    title: 'вода: глубокая → мелкая → пена',
+    colors: ['#1c3b5e', '#245b82', '#2f7c9f', '#4ea0ba', '#a8dde3'],
+  },
+  { name: 'stone', title: 'камень, галька', colors: ['#3c3c4b', '#5d5f70', '#878a99', '#b6b9c2'] },
+  // Plants and wood.
+  {
+    name: 'leaf',
+    title: 'листва деревьев и кустов',
+    colors: ['#1c302c', '#2c4f37', '#427140', '#66984a', '#94bd5a'],
+  },
+  {
+    name: 'bark',
+    title: 'кора, древесина, ветки',
+    colors: ['#2a1e1f', '#47332d', '#6a4f40', '#8e735c'],
+  },
+  { name: 'berry', title: 'ягоды', colors: ['#7c1f3a', '#c23b4e'] },
+  // Fire.
+  { name: 'fire', title: 'огонь, угли', colors: ['#b2361f', '#e8692c', '#f9aa3c', '#ffe48f'] },
+  // People: six skin tones and five hair colours (rows of one length swap with each other).
+  { name: 'skin_pale', title: 'кожа бледная', colors: ['#d4917a', '#efbfa2', '#fde3cc'] },
   { name: 'skin_light', title: 'кожа светлая', colors: ['#c47e5f', '#e8ac85', '#f7d3ac'] },
-  { name: 'skin_tan', title: 'кожа смуглая', colors: ['#9a5d3e', '#c58a5c', '#e0ae7c'] },
-  { name: 'skin_dark', title: 'кожа тёмная', colors: ['#4f2d22', '#77452f', '#9c6446'] },
-  { name: 'hair', title: 'волосы тёмно-русые', colors: ['#3b241b', '#5c3926', '#82553a'] },
-  { name: 'hide', title: 'шкура, кожа одежды', colors: ['#5a4030', '#8a6a48', '#b89a6c'] },
-  { name: 'ink', title: 'контур персонажей, глаза', colors: ['#241820'] },
+  { name: 'skin_tan', title: 'кожа смуглая', colors: ['#a96d47', '#cc9461', '#e6b882'] },
+  { name: 'skin_olive', title: 'кожа оливковая', colors: ['#8c5a39', '#b07a4b', '#cf9c69'] },
+  { name: 'skin_brown', title: 'кожа коричневая', colors: ['#6a3d2a', '#91593a', '#b47a52'] },
+  { name: 'skin_dark', title: 'кожа тёмная', colors: ['#45281f', '#673d2c', '#8d5b40'] },
+  { name: 'hair_black', title: 'волосы чёрные', colors: ['#2b2228', '#4a3b40'] },
+  { name: 'hair_brown', title: 'волосы тёмно-русые', colors: ['#45291c', '#6a432f'] },
+  { name: 'hair_chestnut', title: 'волосы каштановые', colors: ['#6e3a22', '#9a5a36'] },
+  { name: 'hair_red', title: 'волосы рыжие', colors: ['#9a421f', '#cc6a30'] },
+  { name: 'hair_blond', title: 'волосы светлые', colors: ['#a8844a', '#d8b870'] },
+  // Clothes of epoch 0: hides and furs, bone and shell ornaments (GDD §10.3).
+  { name: 'hide', title: 'сыромятная кожа, шкуры', colors: ['#5c4331', '#8a6a48', '#b39468'] },
+  {
+    name: 'bone',
+    title: 'кость, ракушки, берёста, белое',
+    colors: ['#8c8273', '#c7bea9', '#f0e9d6'],
+  },
+  // Service colours of debug screens (gallery, palette): background and checker cells.
   {
     name: 'ui',
-    title: 'служебные: фон, клетки галереи, метки',
-    colors: ['#15131b', '#45414f', '#504c5c', '#f0e2c2'],
+    title: 'служебные: фон и клетки отладочных экранов',
+    colors: ['#15131b', '#45414f', '#504c5c'],
   },
 ] as const satisfies readonly RampDef[];
 
@@ -49,6 +97,8 @@ export type Rgb = readonly [number, number, number];
 export interface Palette {
   /** Ramps in definition order, colours dark → light. */
   readonly ramps: ReadonlyMap<string, readonly Rgb[]>;
+  /** Opacity of each ramp's colours, 0…255 (255 — opaque). */
+  readonly alphas: ReadonlyMap<string, number>;
   /** The definitions the palette was built from (names, titles, hex codes). */
   readonly defs: readonly RampDef[];
 }
@@ -84,6 +134,14 @@ export function validatePalette(defs: readonly RampDef[]): string[] {
     if (names.has(ramp.name)) problems.push(`${where}: такое имя ряда уже есть`);
     names.add(ramp.name);
     if (ramp.colors.length === 0) problems.push(`${where}: ряд пуст`);
+    if (
+      ramp.alpha !== undefined &&
+      !(typeof ramp.alpha === 'number' && ramp.alpha > 0 && ramp.alpha < 1)
+    ) {
+      problems.push(
+        `${where}: прозрачность ${ramp.alpha} — нужно число больше 0 и меньше 1 (или не указывать)`,
+      );
+    }
     ramp.colors.forEach((hex, shade) => {
       const color = `${ramp.name}.${shade}`;
       if (!HEX.test(hex)) {
@@ -112,6 +170,7 @@ export function createPalette(defs: readonly RampDef[]): Palette {
   if (problems.length > 0) throw new Error(`Палитра с ошибками:\n${problems.join('\n')}`);
   return {
     ramps: new Map(defs.map((ramp) => [ramp.name, ramp.colors.map(parseHex)])),
+    alphas: new Map(defs.map((ramp) => [ramp.name, Math.round((ramp.alpha ?? 1) * 255)])),
     defs,
   };
 }
@@ -128,6 +187,17 @@ export function resolveColor(palette: Palette, name: string, swap: PaletteSwap =
   if (!parsed) return null;
   const ramp = (swap as Record<string, string | undefined>)[parsed.ramp] ?? parsed.ramp;
   return palette.ramps.get(ramp)?.[parsed.shade] ?? null;
+}
+
+/** Opacity 0…255 of a named colour after applying `swap`, or null if there is no such colour. */
+export function resolveAlpha(
+  palette: Palette,
+  name: string,
+  swap: PaletteSwap = {},
+): number | null {
+  if (resolveColor(palette, name, swap) === null) return null;
+  const { ramp } = parseColorName(name)!;
+  return palette.alphas.get((swap as Record<string, string | undefined>)[ramp] ?? ramp) ?? null;
 }
 
 /** Problems with a swap: unknown ramps, ramps of different length. */

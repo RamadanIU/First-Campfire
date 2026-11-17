@@ -8,6 +8,7 @@ import {
   parseHex,
   RAMPS,
   type RampDef,
+  resolveAlpha,
   resolveColor,
   swapKey,
   toHex,
@@ -34,10 +35,54 @@ describe('палитра игры', () => {
     }
   });
 
-  it('в черновой палитре шага 0.3 есть три тона кожи одинаковой длины', () => {
-    const skins = ['skin_light', 'skin_tan', 'skin_dark'].map((name) => PALETTE.ramps.get(name));
-    expect(skins.every((ramp) => ramp !== undefined)).toBe(true);
-    expect(new Set(skins.map((ramp) => ramp!.length)).size).toBe(1);
+  it('мастер-палитра GDD §10.1: около 64 цветов мира, плюс тень и служебные', () => {
+    const count = (names: string[]) =>
+      RAMPS.filter((ramp) => names.includes(ramp.name)).reduce((n, r) => n + r.colors.length, 0);
+    const all = RAMPS.reduce((n, ramp) => n + ramp.colors.length, 0);
+    const world = all - count(['shadow', 'ui']);
+    expect(world).toBeGreaterThanOrEqual(56);
+    expect(world).toBeLessThanOrEqual(72);
+  });
+
+  it('шесть тонов кожи и пять цветов волос — ряды одной длины, подменяют друг друга', () => {
+    const ramps = (prefix: string) =>
+      [...PALETTE.ramps.entries()].filter(([name]) => name.startsWith(prefix));
+    const skins = ramps('skin_');
+    const hair = ramps('hair_');
+    expect(skins).toHaveLength(6);
+    expect(hair).toHaveLength(5);
+    for (const group of [skins, hair]) {
+      expect(new Set(group.map(([, colors]) => colors.length)).size).toBe(1);
+      const [first] = group[0]!;
+      for (const [name] of group)
+        expect(validateSwap(PALETTE, { [first]: name } as PaletteSwap)).toEqual([]);
+    }
+  });
+
+  it('есть все материалы карточки шага 0.4: земля, зелень, вода, дерево, камень, огонь, шкуры', () => {
+    for (const name of [
+      'grass',
+      'dirt',
+      'sand',
+      'water',
+      'leaf',
+      'bark',
+      'stone',
+      'fire',
+      'hide',
+      'bone',
+      'ink',
+      'ui',
+    ]) {
+      expect(PALETTE.ramps.has(name), name).toBe(true);
+    }
+  });
+
+  it('полупрозрачен только цвет тени', () => {
+    const translucent = [...PALETTE.alphas.entries()].filter(([, alpha]) => alpha < 255);
+    expect(translucent.map(([name]) => name)).toEqual(['shadow']);
+    expect(translucent[0]![1]).toBeGreaterThan(40);
+    expect(translucent[0]![1]).toBeLessThan(140);
   });
 });
 
@@ -63,6 +108,17 @@ describe('цвета', () => {
     expect(resolveColor(TEST, 'gray.1', { red: 'blue' } as PaletteSwap)).toEqual([128, 128, 128]);
     expect(resolveColor(TEST, 'red.3')).toBeNull();
     expect(resolveColor(TEST, 'green.0')).toBeNull();
+  });
+
+  it('прозрачность цвета: у обычных рядов 255, у полупрозрачного — своя, с учётом подмены', () => {
+    const glass = createPalette([
+      { name: 'red', title: '', colors: ['#400000'] },
+      { name: 'mist', title: '', colors: ['#808080'], alpha: 0.5 },
+    ]);
+    expect(resolveAlpha(glass, 'red.0')).toBe(255);
+    expect(resolveAlpha(glass, 'mist.0')).toBe(128);
+    expect(resolveAlpha(glass, 'red.0', { red: 'mist' } as PaletteSwap)).toBe(128);
+    expect(resolveAlpha(glass, 'red.1')).toBeNull();
   });
 
   it('подмена применяется один раз, не по цепочке: {red→blue, blue→red} меняет их местами', () => {
@@ -110,6 +166,14 @@ describe('проверка палитры называет ряд и цвет', 
         { name: 'b', title: '', colors: ['#808080'] },
       ]),
     ).toEqual(['палитра, ряд «b»: цвет b.0 #808080 повторяет a.1']);
+  });
+
+  it('прозрачность ряда — число больше 0 и меньше 1', () => {
+    expect(check([{ name: 'a', title: '', colors: ['#101010'], alpha: 0.4 }])).toEqual([]);
+    expect(check([{ name: 'a', title: '', colors: ['#101010'], alpha: 1 }])).toEqual([
+      'палитра, ряд «a»: прозрачность 1 — нужно число больше 0 и меньше 1 (или не указывать)',
+    ]);
+    expect(check([{ name: 'a', title: '', colors: ['#101010'], alpha: 0 }])).toHaveLength(1);
   });
 
   it('палитра с ошибками не создаётся', () => {
