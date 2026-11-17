@@ -44,6 +44,23 @@ export interface WorldInfo {
    * of «the same world after a reload» compares with this, not with the running one.
    */
   opened: { tick: number; hash: string };
+  /** The villagers now (step 1.3): where they stand, step to, and where they are going. */
+  villagers: () => VillagerInfo[];
+}
+
+/** A villager as automated checks see it. */
+export interface VillagerInfo {
+  id: number;
+  sex: string;
+  /** Tile it stands on and the tile of its current step. */
+  x: number;
+  y: number;
+  toX: number;
+  toY: number;
+  action: string;
+  /** Where it walks (null — it stands). */
+  goal: { x: number; y: number } | null;
+  walked: number;
 }
 
 declare global {

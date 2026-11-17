@@ -9,17 +9,18 @@
  */
 import { createJournal, type EventJournal, emit } from './events.ts';
 import type { WorldMap } from './map.ts';
-import { generateMap } from './mapgen.ts';
+import { type GeneratedMap, generateMap } from './mapgen.ts';
 import type { MapObjects } from './objects.ts';
 import { createRng, type Rng } from './rng.ts';
 import { calendarEventsSystem } from './systems/calendarEvents.ts';
 import { createFireflies, type Fireflies, firefliesSystem } from './systems/fireflies.ts';
+import { createVillagers, settleFirstPair, type Villagers, villagersSystem } from './villagers.ts';
 
 /**
  * Named random streams, one per system. A new system adds its name to the end; streams are
  * derived from (seed, name), so adding one does not change the numbers of the others.
  */
-export const RNG_STREAMS = ['fireflies', 'map'] as const;
+export const RNG_STREAMS = ['fireflies', 'map', 'villagers'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 export interface World {
@@ -35,6 +36,8 @@ export interface World {
   map: WorldMap;
   /** Trees, bushes, boulders… standing on the map (./objects.ts). */
   objects: MapObjects;
+  /** The people of the world (./villagers.ts, step 1.3). */
+  villagers: Villagers;
 }
 
 /** A system updates one aspect of the world once per tick. */
@@ -44,12 +47,21 @@ export interface System {
 }
 
 /** Systems in the order they run every tick. The order is part of the rules: do not reorder. */
-export const SYSTEMS: readonly System[] = [calendarEventsSystem, firefliesSystem];
+export const SYSTEMS: readonly System[] = [calendarEventsSystem, firefliesSystem, villagersSystem];
 
-export function createWorld(seed: number): World {
+export interface WorldOptions {
+  /**
+   * A ready map instead of the generated one (scenario tests: a small map drawn by hand). The
+   * stream `map` is created all the same, so the other streams do not change.
+   */
+  map?: GeneratedMap;
+}
+
+/** A new world: the map from the seed, then the first two people at the camp site. */
+export function createWorld(seed: number, options: WorldOptions = {}): World {
   const rng = {} as Record<RngStream, Rng>;
   for (const stream of RNG_STREAMS) rng[stream] = createRng(seed, stream);
-  const { map, objects } = generateMap(rng.map);
+  const { map, objects } = options.map ?? generateMap(rng.map);
   const world: World = {
     seed,
     tick: 0,
@@ -58,8 +70,10 @@ export function createWorld(seed: number): World {
     fireflies: createFireflies(),
     map,
     objects,
+    villagers: createVillagers(),
   };
-  emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
+  const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
+  settleFirstPair(world, { kind: 'event', event: created.id });
   return world;
 }
 

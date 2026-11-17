@@ -9,6 +9,7 @@
  * New event types are added to `EventBody` below; `type` is a snake_case id.
  */
 import type { DayPhase, Season } from './calendar.ts';
+import type { Sex } from './villagers.ts';
 import type { World } from './world.ts';
 
 /** Why an event happened. Later steps add needs, decisions, villagers… */
@@ -25,7 +26,9 @@ export type EventBody =
   | { type: 'season_started'; season: Season; year: number }
   | { type: 'phase_started'; phase: DayPhase; day: number }
   | { type: 'fireflies_rose'; count: number }
-  | { type: 'fireflies_gone'; count: number };
+  | { type: 'fireflies_gone'; count: number }
+  /** A villager came to the world: the first two at its creation (step 1.3). */
+  | { type: 'villager_arrived'; villager: number; sex: Sex; x: number; y: number };
 
 export type EventType = EventBody['type'];
 

@@ -194,6 +194,7 @@ describe('сцена data показывает таблицы как есть', 
       'Время (GDD §2.1, §13.1)',
       'Движение (GDD §13.1)',
       'Жизнь (GDD §13.1)',
+      'Жители: ходьба, пока нет потребностей (шаг 1.3)',
       'Карта (GDD §2.2, §3.1, §3.3)',
     ]);
     const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.key, r.value]));
@@ -202,6 +203,8 @@ describe('сцена data показывает таблицы как есть', 
     expect(rows.get('life.fertileAge')).toBe('с 16 лет · по 45 лет');
     expect(rows.get('life.pregnancySeasons')).toBe('3 сезона');
     expect(rows.get('life.minYearsBetweenChildren')).toBe('2 года');
+    expect(rows.get('movement.pathSearchTiles')).toBe('4096 тайлов');
+    expect(rows.get('villagers.restTicks')).toBe('от 30 тиков · до 120 тиков');
     expect(rows.get('map.width')).toBe('64 тайла');
     expect(rows.get('map.bushes')).toBe('от 12 шт. · до 22 шт.');
     expect(rows.get('map.camp')).toBe(

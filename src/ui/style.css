@@ -787,6 +787,13 @@ button.menu-card:focus-visible {
   margin-bottom: 6px;
 }
 
+/* Debug (step 1.3, `debug=1`): what the last click on the world did. */
+.world-panel-debug {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #f9aa3c;
+}
+
 .world-panel-status {
   color: #f1e3c4;
 }

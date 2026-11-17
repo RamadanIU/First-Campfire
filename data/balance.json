@@ -6,7 +6,8 @@
     "phasePercent": { "dawn": 10, "day": 50, "dusk": 10, "night": 30 }
   },
   "movement": {
-    "walkTicksPerTile": 4
+    "walkTicksPerTile": 4,
+    "pathSearchTiles": 4096
   },
   "life": {
     "dayPercent": { "work": 55, "sleep": 30, "leisure": 15 },
@@ -14,6 +15,11 @@
     "fertileAge": { "from": 16, "to": 45 },
     "pregnancySeasons": 3,
     "minYearsBetweenChildren": 2
+  },
+  "villagers": {
+    "wanderRadius": 6,
+    "restTicks": { "min": 30, "max": 120 },
+    "giveWayTicks": 6
   },
   "map": {
     "width": 64,
