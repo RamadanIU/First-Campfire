@@ -6,7 +6,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { hashState } from '../src/sim/hash.ts';
-import { createWorld, runTicks } from '../src/sim/world.ts';
+import { loadWorld, saveWorld } from '../src/sim/save.ts';
+import { createWorld, runTicks, type World } from '../src/sim/world.ts';
 
 function hashAfter(seed: number, ticks: number): string {
   const world = createWorld(seed);
@@ -54,5 +55,29 @@ describe('детерминизм', () => {
     runTicks(world, 6_667);
     runTicks(copy, 6_667);
     expect(hashState(copy)).toBe(hashState(world));
+  });
+
+  it('загруженный мир продолжается так же, как непрерывный: 5 000 → сохранить → загрузить → ещё 5 000', () => {
+    for (const seed of [1, 42, 1_000_000]) {
+      const world = createWorld(seed);
+      runTicks(world, 5_000);
+      const result = loadWorld(saveWorld(world));
+      if (!result.ok) throw new Error(result.error.message);
+      const resumed: World = result.world;
+      runTicks(resumed, 5_000);
+      expect(resumed.tick).toBe(10_000);
+      expect(hashState(resumed), `зерно ${seed}`).toBe(hashAfter(seed, 10_000));
+    }
+  });
+
+  it('сохранение и загрузка много раз подряд не меняют историю', () => {
+    let world = createWorld(7);
+    for (const chunk of [1, 399, 1_200, 3_000, 5_400]) {
+      runTicks(world, chunk);
+      const result = loadWorld(saveWorld(world));
+      if (!result.ok) throw new Error(result.error.message);
+      world = result.world;
+    }
+    expect(hashState(world)).toBe(hashAfter(7, 10_000));
   });
 });

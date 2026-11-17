@@ -1,0 +1,397 @@
+import { describe, expect, it } from 'vitest';
+import { TICKS_PER_YEAR } from './calendar.ts';
+import { hashState } from './hash.ts';
+import {
+  dataFingerprint,
+  type LoadResult,
+  loadWorld,
+  SAVE_FORMAT,
+  SAVE_VERSION,
+  type SaveProblem,
+  saveWorld,
+} from './save.ts';
+import { createWorld, runTicks, type World } from './world.ts';
+
+function worldAt(seed: number, ticks: number): World {
+  const world = createWorld(seed);
+  runTicks(world, ticks);
+  return world;
+}
+
+function loaded(result: LoadResult): World {
+  if (!result.ok) throw new Error(`не загрузилось: ${result.error.message} ${result.error.detail}`);
+  return result.world;
+}
+
+function problemOf(result: LoadResult): SaveProblem {
+  if (result.ok) throw new Error('ожидалась ошибка, а сохранение загрузилось');
+  expect(result.error.message.length).toBeGreaterThan(10);
+  return result.error.code;
+}
+
+/** A save as parsed JSON, loosely typed: tests break it on purpose. */
+interface SaveJson {
+  version?: unknown;
+  seed: number;
+  tick: number;
+  hash?: string;
+  data?: string;
+  world?: unknown;
+}
+
+/** The world inside a parsed save, for edits. */
+const worldIn = (save: SaveJson) => save.world as World & Record<string, unknown>;
+
+/** Save text with its parsed JSON changed by `edit` (the hash is NOT recomputed). */
+function edited(text: string, edit: (save: SaveJson) => void): string {
+  const save = JSON.parse(text);
+  edit(save);
+  return JSON.stringify(save);
+}
+
+describe('сохранение и загрузка', () => {
+  it('мир → текст → мир: тот же хэш и те же данные', () => {
+    const world = worldAt(42, 7_000);
+    const copy = loaded(loadWorld(saveWorld(world)));
+    expect(hashState(copy)).toBe(hashState(world));
+    expect(copy).toEqual(world);
+  });
+
+  it('сохранение начинается с заголовка: формат, версия, зерно, тик, хэш, отпечаток таблиц', () => {
+    const world = worldAt(7, 9_000);
+    const text = saveWorld(world);
+    expect(text.startsWith(`{"format":"${SAVE_FORMAT}","version":${SAVE_VERSION},`)).toBe(true);
+    const { world: _, ...header } = JSON.parse(text);
+    expect(header).toEqual({
+      format: SAVE_FORMAT,
+      version: SAVE_VERSION,
+      seed: 7,
+      tick: 9_000,
+      hash: hashState(world),
+      data: dataFingerprint(),
+    });
+    const result = loadWorld(text);
+    expect(result.ok && result.header).toEqual(header);
+    expect(result.ok && result.warnings).toEqual([]);
+  });
+
+  it('сохранение не меняет мир и одинаково при повторе', () => {
+    const world = worldAt(3, 2_500);
+    const before = hashState(world);
+    const text = saveWorld(world);
+    expect(hashState(world)).toBe(before);
+    expect(saveWorld(world)).toBe(text);
+  });
+
+  it('открывает сохранение, которое переформатировали (отступы, переносы строк)', () => {
+    const world = worldAt(5, 1_234);
+    const pretty = JSON.stringify(JSON.parse(saveWorld(world)), null, 2);
+    expect(hashState(loaded(loadWorld(pretty)))).toBe(hashState(world));
+  });
+
+  it('типизированные массивы сохраняются байт в байт', () => {
+    const world = worldAt(1, 10) as World & Record<string, unknown>;
+    const big = new Uint16Array(70_000).map((_, i) => (i * 7919) % 65_536);
+    Object.assign(world, {
+      grid: {
+        ground: new Uint8Array([0, 1, 2, 255]),
+        clamped: new Uint8ClampedArray([0, 128, 255]),
+        height: new Int16Array([-32768, -1, 0, 32767]),
+        ids: new Int32Array([-1, 2_000_000_000]),
+        mask: new Uint32Array([0, 0xffffffff]),
+        wet: new Float32Array([0.1, -2.5, Number.NaN, 1e-30]),
+        exact: new Float64Array([Math.PI, -0, 1e300]),
+        small: new Int8Array([-128, 127]),
+        empty: new Float64Array(0),
+        // A view into the middle of a bigger buffer: only its own bytes are saved.
+        slice: new Uint16Array([9, 8, 7, 6, 5]).subarray(1, 4),
+        big,
+      },
+    });
+    const copy = loaded(loadWorld(saveWorld(world))) as World & {
+      grid: Record<string, ArrayLike<number>>;
+    };
+    expect(hashState(copy)).toBe(hashState(world));
+    const { height, slice, wet, empty } = copy.grid;
+    expect(height).toBeInstanceOf(Int16Array);
+    expect(Array.from(height!)).toEqual([-32768, -1, 0, 32767]);
+    expect(Array.from(slice!)).toEqual([8, 7, 6]);
+    expect(Number.isNaN(wet![2])).toBe(true);
+    expect(copy.grid.big).toEqual(big);
+    expect(empty).toBeInstanceOf(Float64Array);
+  });
+
+  it('число, которое не сохранить (NaN, бесконечность), — ошибка с именем поля', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const world = worldAt(1, 10) as World & Record<string, unknown>;
+      world.hunger = { level: bad };
+      expect(() => saveWorld(world)).toThrow(/поле «level»/);
+    }
+  });
+
+  it('не простые данные в мире — ошибка с путём', () => {
+    const world = worldAt(1, 10) as World & Record<string, unknown>;
+    world.villagers = [{ id: 1, memory: new Map() }];
+    expect(() => saveWorld(world)).toThrow(/villagers\.0\.memory/);
+  });
+});
+
+describe('плохие сохранения не роняют игру', () => {
+  const text = saveWorld(worldAt(9, 3_000));
+
+  it('пустое', () => {
+    expect(problemOf(loadWorld(''))).toBe('empty');
+    expect(problemOf(loadWorld('  \n '))).toBe('empty');
+  });
+
+  it('чужие файлы и чужой JSON', () => {
+    for (const alien of [
+      'привет, мир',
+      '\x89PNG\r\n\x1a\n\0\0\0\rIHDR',
+      '{"name": "другая игра", "level": 3}',
+      '[1, 2, 3]',
+      '"строка"',
+      'null',
+      '42',
+      '{"format": "some-other-game/world", "version": 1}',
+    ]) {
+      expect(problemOf(loadWorld(alien)), alien).toBe('not_save');
+    }
+  });
+
+  it('обрезанное', () => {
+    for (const length of [20, 100, Math.floor(text.length / 2), text.length - 1]) {
+      expect(problemOf(loadWorld(text.slice(0, length))), `${length} знаков`).toBe('damaged');
+    }
+  });
+
+  it('изменённое: мир не сходится с контрольной суммой', () => {
+    const changes: ((save: SaveJson) => void)[] = [
+      (save) => {
+        worldIn(save).events.list[5]!.tick += 1;
+      },
+      (save) => {
+        worldIn(save).rng.fireflies.a ^= 1;
+      },
+      (save) => {
+        worldIn(save).events.list.pop();
+      },
+      (save) => {
+        worldIn(save).extra = true;
+      },
+      (save) => {
+        save.hash = '0000000000000000';
+      },
+    ];
+    for (const change of changes) {
+      expect(problemOf(loadWorld(edited(text, change)))).toBe('damaged');
+    }
+  });
+
+  it('заголовок не совпадает с миром или неполный', () => {
+    const changes: ((save: SaveJson) => void)[] = [
+      (save) => {
+        save.tick += 1;
+      },
+      (save) => {
+        save.seed = 10;
+      },
+      (save) => {
+        delete save.hash;
+      },
+      (save) => {
+        delete save.data;
+      },
+      (save) => {
+        delete save.world;
+      },
+      (save) => {
+        save.world = [1, 2];
+      },
+      (save) => {
+        save.version = '1';
+      },
+      (save) => {
+        save.version = 0;
+      },
+      (save) => {
+        delete save.version;
+      },
+    ];
+    for (const change of changes) {
+      expect(problemOf(loadWorld(edited(text, change)))).toBe('damaged');
+    }
+  });
+
+  it('испорченный типизированный массив', () => {
+    const world = worldAt(1, 1) as World & Record<string, unknown>;
+    world.grid = new Uint16Array([1, 2, 3]);
+    const good = saveWorld(world);
+    const bad = [
+      good.replace(/"base64":"[^"]*"/, '"base64":"не base64!"'),
+      good.replace(/"base64":"[^"]*"/, '"base64":"AQID"'), // 3 bytes — not whole Uint16 values
+      good.replace('"$typed":"Uint16Array"', '"$typed":"Map"'),
+    ];
+    for (const text of bad) expect(problemOf(loadWorld(text))).toBe('damaged');
+  });
+
+  it('из более новой версии игры', () => {
+    const newer = edited(text, (save) => {
+      save.version = SAVE_VERSION + 1;
+    });
+    expect(problemOf(loadWorld(newer))).toBe('too_new');
+  });
+
+  it('из старой версии без переноса — отказ, с переносом — открывается', () => {
+    const world = worldAt(4, 500);
+    const old = saveWorld(world);
+    expect(problemOf(loadWorld(old, { version: SAVE_VERSION + 1, migrations: {} }))).toBe(
+      'too_old',
+    );
+    const result = loadWorld(old, {
+      version: SAVE_VERSION + 2,
+      migrations: {
+        [SAVE_VERSION]: (w) => ({ ...w, weather: 'ясно' }),
+        [SAVE_VERSION + 1]: (w) => ({ ...w, weather: { sky: w.weather, wind: 0 } }),
+      },
+    });
+    const upgraded = loaded(result) as World & Record<string, unknown>;
+    expect(upgraded.weather).toEqual({ sky: 'ясно', wind: 0 });
+    expect(upgraded.tick).toBe(500);
+    expect(result.ok && result.header.version).toBe(SAVE_VERSION);
+  });
+
+  it('таблицы данных изменились после сохранения — предупреждение, а не отказ', () => {
+    const other = edited(text, (save) => {
+      save.data = '0123456789abcdef';
+    });
+    const result = loadWorld(other);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.warnings.map((w) => w.code)).toEqual(['data_changed']);
+  });
+});
+
+// --- The shape of the world and the save format version -----------------------------------
+
+/**
+ * Every place in the world state with the kind of value found there: `events.list[].tick: number`.
+ * Values of the discriminating fields `type` and `kind` are part of the shape (an event type
+ * renamed is a change of format too).
+ */
+function shapeOf(value: unknown, path: string, out: Set<string>): void {
+  const at = path === '' ? '(мир)' : path;
+  if (value === null) {
+    out.add(`${at}: null`);
+  } else if (Array.isArray(value)) {
+    out.add(`${at}: array`);
+    for (const item of value) shapeOf(item, `${path}[]`, out);
+  } else if (ArrayBuffer.isView(value)) {
+    out.add(`${at}: ${value.constructor.name}`);
+  } else if (typeof value === 'object') {
+    out.add(`${at}: object`);
+    for (const [key, item] of Object.entries(value)) {
+      shapeOf(item, path === '' ? key : `${path}.${key}`, out);
+    }
+  } else if (typeof value === 'string' && /(^|\.)(type|kind)$/.test(path)) {
+    out.add(`${at} = "${value}"`);
+  } else {
+    out.add(`${at}: ${typeof value}`);
+  }
+}
+
+/** Shape of a world over its first year: sampled by day and by night, all event types included. */
+function sampleShape(): string[] {
+  const out = new Set<string>();
+  const world = createWorld(1);
+  for (let tick = 0; tick <= TICKS_PER_YEAR; tick += 50) {
+    shapeOf(world, '', out);
+    runTicks(world, 50);
+  }
+  return [...out].sort();
+}
+
+/**
+ * The shape of the world in the current save format version (SAVE_VERSION).
+ *
+ * The world changed shape (a new system, a new field, a renamed event)? Then old saves no longer
+ * fit it. Do this, in the same step:
+ *   1. raise SAVE_VERSION in ./save.ts;
+ *   2. replace this list with the new one (the failing test prints it; the PR diff shows what changed);
+ *   3. add a line to SHAPE_HISTORY below with the fingerprint the failing test prints;
+ *   4. from stage 5 — add a migration from the old version to MIGRATIONS (./save.ts) and a test.
+ */
+const CURRENT_SHAPE: string[] = [
+  '(мир): object',
+  'events.list: array',
+  'events.list[].cause.event: number',
+  'events.list[].cause.kind = "event"',
+  'events.list[].cause.kind = "rule"',
+  'events.list[].cause.rule: string',
+  'events.list[].cause: object',
+  'events.list[].count: number',
+  'events.list[].day: number',
+  'events.list[].id: number',
+  'events.list[].phase: string',
+  'events.list[].season: string',
+  'events.list[].seed: number',
+  'events.list[].tick: number',
+  'events.list[].type = "fireflies_gone"',
+  'events.list[].type = "fireflies_rose"',
+  'events.list[].type = "phase_started"',
+  'events.list[].type = "season_started"',
+  'events.list[].type = "world_created"',
+  'events.list[].type = "year_started"',
+  'events.list[].year: number',
+  'events.list[]: object',
+  'events.nextId: number',
+  'events: object',
+  'fireflies.nextId: number',
+  'fireflies.swarm: array',
+  'fireflies.swarm[].id: number',
+  'fireflies.swarm[].lit: boolean',
+  'fireflies.swarm[].prevX: number',
+  'fireflies.swarm[].prevY: number',
+  'fireflies.swarm[].vx: number',
+  'fireflies.swarm[].vy: number',
+  'fireflies.swarm[].x: number',
+  'fireflies.swarm[].y: number',
+  'fireflies.swarm[]: object',
+  'fireflies: object',
+  'rng.fireflies.a: number',
+  'rng.fireflies.b: number',
+  'rng.fireflies.c: number',
+  'rng.fireflies.d: number',
+  'rng.fireflies: object',
+  'rng: object',
+  'seed: number',
+  'tick: number',
+];
+
+/** Fingerprint of the shape of every save format version. Append only: never rewrite a line. */
+const SHAPE_HISTORY: Record<number, string> = {
+  1: '87ffb58acdf6e429', // step 0.7: calendar, journal, fireflies
+};
+
+describe('форма мира и версия формата сохранения', () => {
+  const shape = sampleShape();
+  const advice =
+    'Форма мира изменилась — старые сохранения ей не подходят. Подними SAVE_VERSION в src/sim/save.ts ' +
+    'и обнови CURRENT_SHAPE и SHAPE_HISTORY в src/sim/save.test.ts (порядок — в комментарии к CURRENT_SHAPE).';
+
+  it('мир той же формы, что записана для текущей версии', () => {
+    expect(shape, advice).toEqual(CURRENT_SHAPE);
+  });
+
+  it('отпечаток формы записан в историю под текущей версией', () => {
+    expect(
+      SHAPE_HISTORY[SAVE_VERSION],
+      `${advice}\nОтпечаток формы для версии ${SAVE_VERSION}: ${hashState(shape)}`,
+    ).toBe(hashState(CURRENT_SHAPE));
+  });
+
+  it('история версий без пропусков, у каждой версии своя форма', () => {
+    const versions = Object.keys(SHAPE_HISTORY).map(Number);
+    expect(versions).toEqual(Array.from({ length: SAVE_VERSION }, (_, i) => i + 1));
+    expect(new Set(Object.values(SHAPE_HISTORY)).size).toBe(versions.length);
+  });
+});
