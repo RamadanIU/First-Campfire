@@ -130,9 +130,9 @@ describe('сохранение и загрузка', () => {
   });
 
   it('не простые данные в мире — ошибка с путём', () => {
-    const world = worldAt(1, 10) as World & Record<string, unknown>;
-    world.villagers = [{ id: 1, memory: new Map() }];
-    expect(() => saveWorld(world)).toThrow(/villagers\.0\.memory/);
+    const world = worldAt(1, 10);
+    Object.assign(world.villagers.list[0]!, { memory: new Map() });
+    expect(() => saveWorld(world)).toThrow(/villagers\.list\.0\.memory/);
   });
 });
 
@@ -334,13 +334,18 @@ const CURRENT_SHAPE: string[] = [
   'events.list[].phase: string',
   'events.list[].season: string',
   'events.list[].seed: number',
+  'events.list[].sex: string',
   'events.list[].tick: number',
   'events.list[].type = "fireflies_gone"',
   'events.list[].type = "fireflies_rose"',
   'events.list[].type = "phase_started"',
   'events.list[].type = "season_started"',
+  'events.list[].type = "villager_arrived"',
   'events.list[].type = "world_created"',
   'events.list[].type = "year_started"',
+  'events.list[].villager: number',
+  'events.list[].x: number',
+  'events.list[].y: number',
   'events.list[].year: number',
   'events.list[]: object',
   'events.nextId: number',
@@ -385,15 +390,54 @@ const CURRENT_SHAPE: string[] = [
   'rng.map.c: number',
   'rng.map.d: number',
   'rng.map: object',
+  'rng.villagers.a: number',
+  'rng.villagers.b: number',
+  'rng.villagers.c: number',
+  'rng.villagers.d: number',
+  'rng.villagers: object',
   'rng: object',
   'seed: number',
   'tick: number',
+  'villagers.list: array',
+  'villagers.list[].action.goal.x: number',
+  'villagers.list[].action.goal.y: number',
+  'villagers.list[].action.goal: object',
+  'villagers.list[].action.kind = "idle"',
+  'villagers.list[].action.kind = "walk"',
+  'villagers.list[].action.path: array',
+  'villagers.list[].action.path[].x: number',
+  'villagers.list[].action.path[].y: number',
+  'villagers.list[].action.path[]: object',
+  'villagers.list[].action.purpose: string',
+  'villagers.list[].action.until: number',
+  'villagers.list[].action.waited: number',
+  'villagers.list[].action: object',
+  'villagers.list[].facing: string',
+  'villagers.list[].hair: number',
+  'villagers.list[].home.x: number',
+  'villagers.list[].home.y: number',
+  'villagers.list[].home: object',
+  'villagers.list[].id: number',
+  'villagers.list[].prevX: number',
+  'villagers.list[].prevY: number',
+  'villagers.list[].progress: number',
+  'villagers.list[].sex: string',
+  'villagers.list[].skin: number',
+  'villagers.list[].toX: number',
+  'villagers.list[].toY: number',
+  'villagers.list[].walked: number',
+  'villagers.list[].x: number',
+  'villagers.list[].y: number',
+  'villagers.list[]: object',
+  'villagers.nextId: number',
+  'villagers: object',
 ];
 
 /** Fingerprint of the shape of every save format version. Append only: never rewrite a line. */
 const SHAPE_HISTORY: Record<number, string> = {
   1: '87ffb58acdf6e429', // step 0.7: calendar, journal, fireflies
   2: '98f2ff92c42e9236', // step 1.1: the map (ground and object layers) and its objects
+  3: '6876adc0ecc30767', // step 1.3: villagers (walking, paths), their stream and arrival events
 };
 
 describe('форма мира и версия формата сохранения', () => {

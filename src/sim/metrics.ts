@@ -24,4 +24,9 @@ export const METRICS: readonly Metric[] = [
   mean('swarm_mean', 'Светлячков в рое: среднее', 'fireflies_rose', (e) => e.count),
   min('swarm_min', 'Светлячков в рое: меньше всего', 'fireflies_rose', (e) => e.count),
   max('swarm_max', 'Светлячков в рое: больше всего', 'fireflies_rose', (e) => e.count),
+  // Villagers (step 1.3): so far they only walk.
+  gauge('population', 'Жителей (на конец)', (world) => world.villagers.list.length),
+  gauge('walked', 'Пройдено тайлов всеми жителями (на конец)', (world) =>
+    Math.round(world.villagers.list.reduce((total, villager) => total + villager.walked, 0)),
+  ),
 ];

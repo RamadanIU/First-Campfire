@@ -8,13 +8,35 @@ const eventsOf = (list: WorldEvent[], type: WorldEvent['type']) =>
   list.filter((event) => event.type === type);
 
 describe('мир', () => {
-  it('создаётся на тике 0 с событием рождения мира', () => {
+  it('создаётся на тике 0 с событием рождения мира; следом приходят двое — по его причине', () => {
     const world = createWorld(7);
     expect(world.tick).toBe(0);
     expect(world.seed).toBe(7);
-    expect(world.events.list).toEqual([
-      { id: 1, tick: 0, type: 'world_created', seed: 7, cause: { kind: 'rule', rule: 'genesis' } },
+    const [created, ...arrived] = world.events.list;
+    expect(created).toEqual({
+      id: 1,
+      tick: 0,
+      type: 'world_created',
+      seed: 7,
+      cause: { kind: 'rule', rule: 'genesis' },
+    });
+    expect(arrived).toEqual([
+      expect.objectContaining({
+        id: 2,
+        tick: 0,
+        type: 'villager_arrived',
+        villager: 1,
+        sex: 'male',
+      }),
+      expect.objectContaining({
+        id: 3,
+        tick: 0,
+        type: 'villager_arrived',
+        villager: 2,
+        sex: 'female',
+      }),
     ]);
+    for (const event of arrived) expect(event.cause).toEqual({ kind: 'event', event: 1 });
   });
 
   it('stepWorld сдвигает тик на один, runTicks — на N', () => {

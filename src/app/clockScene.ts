@@ -143,6 +143,8 @@ function describeEvent(event: WorldEvent): string {
       return `вылетели светлячки: ${event.count}`;
     case 'fireflies_gone':
       return `светлячки исчезли: ${event.count}`;
+    case 'villager_arrived':
+      return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} (житель ${event.villager})`;
   }
 }
 
