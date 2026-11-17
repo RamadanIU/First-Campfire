@@ -1,7 +1,8 @@
 /**
  * Fireflies — a TEMPORARY test system (step 0.2) that gives the determinism tests something
- * random to chew on while the world has no villagers yet. To be removed at the stage 0 review
- * (step 0.8) if nothing needs it any more.
+ * random to chew on while the world has no villagers yet. The stage 0 review kept it: it is still
+ * the only randomness in a tick (ADR-017). To be removed at the stage 1 review (step 1.13), once
+ * villagers carry the determinism, save and stats tests — the card lists what to touch.
  *
  * When night falls a swarm rises over the meadow (its size is a normal deviate), every firefly
  * wanders by a random walk and blinks; at dawn the swarm is gone. Both events name the phase
