@@ -1,0 +1,18 @@
+{
+  "time": {
+    "ticksPerSecond": 10,
+    "ticksPerDay": 400,
+    "daysPerSeason": 3,
+    "phasePercent": { "dawn": 10, "day": 50, "dusk": 10, "night": 30 }
+  },
+  "movement": {
+    "walkTicksPerTile": 4
+  },
+  "life": {
+    "dayPercent": { "work": 55, "sleep": 30, "leisure": 15 },
+    "adultAge": 15,
+    "fertileAge": { "from": 16, "to": 45 },
+    "pregnancySeasons": 3,
+    "minYearsBetweenChildren": 2
+  }
+}

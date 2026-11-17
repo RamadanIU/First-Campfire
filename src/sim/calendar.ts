@@ -4,32 +4,23 @@
  * The world starts at tick 0 = the first moment of dawn, day 1, spring, year 1.
  * A day starts with dawn: dawn → day → dusk → night, then the next day's dawn.
  *
- * Numbers are from GDD §2.1 and §13.1. They live here as one object until step 0.5 moves them
- * into data/balance.json.
+ * The numbers (GDD §2.1, §13.1) live in data/balance.json, section `time`; here they are only
+ * read. The lists of phases and seasons are mechanics, not balance: they stay in code.
  */
+import { DATA } from '../data/index.ts';
+import { DAY_PHASES, type DayPhase } from '../data/tables.ts';
 
-export const DAY_PHASES = ['dawn', 'day', 'dusk', 'night'] as const;
-export type DayPhase = (typeof DAY_PHASES)[number];
+export { DAY_PHASES, type DayPhase };
 
 export const SEASONS = ['spring', 'summer', 'autumn', 'winter'] as const;
 export type Season = (typeof SEASONS)[number];
 
-export const TIME = {
-  /** Simulation ticks per real second at speed ×1. */
-  ticksPerSecond: 10,
-  /** One day: 400 ticks = 40 s at ×1. */
-  ticksPerDay: 400,
-  daysPerSeason: 3,
-  seasonsPerYear: 4,
-  /** Share of the day taken by each phase, in percent, in the order of DAY_PHASES. */
-  phasePercent: { dawn: 10, day: 50, dusk: 10, night: 30 },
-} as const satisfies {
-  ticksPerSecond: number;
-  ticksPerDay: number;
-  daysPerSeason: number;
-  seasonsPerYear: number;
-  phasePercent: Record<DayPhase, number>;
-};
+/**
+ * Time constants from data/balance.json: ticks per second at ×1, ticks per day, days per season,
+ * share of each phase of the day in percent; plus the number of seasons in a year (the list
+ * above).
+ */
+export const TIME = { ...DATA.balance.time, seasonsPerYear: SEASONS.length } as const;
 
 export const TICKS_PER_SEASON = TIME.ticksPerDay * TIME.daysPerSeason;
 export const TICKS_PER_YEAR = TICKS_PER_SEASON * TIME.seasonsPerYear;
@@ -43,7 +34,6 @@ export const PHASE_START: Readonly<Record<DayPhase, number>> = (() => {
     starts[phase] = Math.round((percent * TIME.ticksPerDay) / 100);
     percent += TIME.phasePercent[phase];
   }
-  if (percent !== 100) throw new Error(`Доли фаз суток в сумме дают ${percent} %, а не 100 %`);
   return starts;
 })();
 
