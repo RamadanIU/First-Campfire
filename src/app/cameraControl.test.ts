@@ -8,6 +8,7 @@ import {
   heldDirection,
   KEY_PAN_SPEED,
   PINCH_STEP,
+  TAP_SLOP,
   WHEEL_QUIET_MS,
   wheelPixels,
 } from './cameraControl.ts';
@@ -161,6 +162,45 @@ describe('жесты указателей', () => {
     for (const command of [...gestures.move(1, 100, 140, 10), ...gestures.move(2, 200, 140, 10)])
       if (command.kind === 'drag') dy += command.dy;
     expect(dy).toBe(40);
+  });
+
+  it('касание без движения — щелчок по миру: картинка не двигается, отпускание говорит где', () => {
+    const gestures = createGestures();
+    expect(gestures.down(1, 300, 200, 0)).toEqual([{ kind: 'drag', dx: 0, dy: 0 }]);
+    // A hand trembles a few pixels: still a tap, the map stays put.
+    expect(gestures.move(1, 303, 198, 40)).toEqual([]);
+    expect(gestures.move(1, 299, 204, 80)).toEqual([]);
+    expect(gestures.up(1, 120)).toEqual([
+      { kind: 'release', vx: 0, vy: 0 },
+      { kind: 'tap', x: 300, y: 200 },
+    ]);
+  });
+
+  it('ушёл дальше нескольких пикселей — уже перетаскивание: картинка догоняет весь путь, щелчка нет', () => {
+    const gestures = createGestures();
+    gestures.down(1, 300, 200, 0);
+    expect(gestures.move(1, 304, 200, 10)).toEqual([]);
+    expect(gestures.move(1, 310, 196, 20)).toEqual([{ kind: 'drag', dx: 10, dy: -4 }]);
+    expect(gestures.move(1, 311, 196, 30)).toEqual([{ kind: 'drag', dx: 1, dy: 0 }]);
+    // Back to where it was pressed: still a drag.
+    expect(gestures.move(1, 300, 200, 40)).toEqual([{ kind: 'drag', dx: -11, dy: 4 }]);
+    const commands = gestures.up(1, 200);
+    expect(commands.map((command) => command.kind)).toEqual(['release']);
+  });
+
+  it('порог щелчка — в физических пикселях экрана (на 125 % — больше)', () => {
+    const gestures = createGestures({ slop: () => TAP_SLOP * 1.25 });
+    gestures.down(1, 0, 0, 0);
+    expect(gestures.move(1, 7, 0, 10)).toEqual([]);
+    expect(gestures.move(1, 8, 0, 20)).toEqual([{ kind: 'drag', dx: 8, dy: 0 }]);
+  });
+
+  it('два пальца — никогда не щелчок, даже без движения', () => {
+    const gestures = createGestures();
+    gestures.down(1, 100, 100, 0);
+    gestures.down(2, 200, 100, 0);
+    expect(gestures.up(2, 50)).toEqual([]);
+    expect(gestures.up(1, 60).map((command) => command.kind)).toEqual(['release']);
   });
 
   it('поднял один палец из двух — не бросок; оставшийся продолжает тащить', () => {

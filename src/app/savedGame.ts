@@ -19,6 +19,7 @@ import {
   type SaveHeader,
   saveWorld,
 } from '../sim/save.ts';
+import { findVillager, orderWalk } from '../sim/villagers.ts';
 import { createWorld, runTicks, type World } from '../sim/world.ts';
 import type { LaunchParams, SlotPreset } from './params.ts';
 import { browserStorage, createSaveSlot, NO_STORAGE, type SaveSlot } from './saveSlot.ts';
@@ -31,9 +32,14 @@ export function randomSeed(random: () => number = Math.random): number {
   return 1 + Math.floor(random() * 999_999);
 }
 
-/** The world of the address: `seed=`, fast-forwarded to `ticks=`. */
+/**
+ * The world of the address: `seed=`, fast-forwarded to `ticks=`. With `go=x,y` (debug) the first
+ * villager is sent to that tile at the very start — the walk is reproducible by URL.
+ */
 export function worldFromParams(params: LaunchParams): World {
   const world = createWorld(params.seed);
+  const first = findVillager(world, 1);
+  if (params.go && first) orderWalk(world, first, params.go);
   runTicks(world, params.ticks);
   return world;
 }

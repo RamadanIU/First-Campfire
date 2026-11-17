@@ -54,6 +54,7 @@ interface Page {
     down(): Promise<void>;
     up(): Promise<void>;
     wheel(dx: number, dy: number): Promise<void>;
+    click(x: number, y: number): Promise<void>;
   };
 }
 
@@ -89,6 +90,19 @@ interface CameraState {
   offsetX: number;
   offsetY: number;
   view: { x: number; y: number; width: number; height: number };
+}
+
+/** A villager as the scene `world` tells checks (src/main.ts, VillagerInfo). */
+interface VillagerState {
+  id: number;
+  sex: string;
+  x: number;
+  y: number;
+  toX: number;
+  toY: number;
+  action: string;
+  goal: { x: number; y: number } | null;
+  walked: number;
 }
 
 interface Download {
@@ -644,6 +658,86 @@ try {
     },
     { pixelRatio: 1.25 },
   );
+
+  // Step 1.3: villagers walk; with debug=1 a click (a tap without dragging) sends the chosen
+  // villager to a tile. Seed 1: the two stand at (28, 27) and (30, 27) by the camp site, the
+  // meadow is free at (34, 29) and (26, 29), the lake's water is at (30, 33).
+  await scenario('Жители: отладочный щелчок отправляет жителя (debug=1)', async (page) => {
+    await open(page, '?scene=world&seed=1&debug=1&speed=0&zoom=2');
+    const view = await camera(page);
+    /** Where on the page (CSS px) a world point (world px) is drawn. */
+    const onPage = (x: number, y: number): Point => ({
+      x: (view.offsetX + x * view.scale) / view.pixelRatio,
+      y: (view.offsetY + y * view.scale) / view.pixelRatio,
+    });
+    const tileOnPage = (x: number, y: number) => onPage(x * 16 + 8, y * 16 + 8);
+    const people = () => page.evaluate<VillagerState[]>('window.__fc.world.villagers()');
+    const note = () => text(page, '.world-panel-debug');
+    /** Click and let a frame pass: the panel says what the click did on the next frame. */
+    const click = async (point: Point) => {
+      await page.mouse.click(point.x, point.y);
+      await page.waitForTimeout(100);
+    };
+
+    const [man, woman] = await people();
+    check(
+      man?.sex === 'male' && woman?.sex === 'female' && man.x === 28 && woman.x === 30,
+      `двое у места для стоянки: мужчина (${man?.x}, ${man?.y}), женщина (${woman?.x}, ${woman?.y})`,
+    );
+    check((await note()).includes('щелчок по жителю'), `панель: ${await note()}`);
+
+    const target = tileOnPage(34, 29);
+    await click(target);
+    const sent = (await people())[0]!;
+    check(
+      sent.action === 'walk' && sent.goal?.x === 34 && sent.goal?.y === 29,
+      `щелчок по тайлу (34, 29): мужчина идёт туда (${sent.action}, цель ${JSON.stringify(sent.goal)})`,
+    );
+    check((await note()).includes('идёт к тайлу (34, 29)'), `панель: ${await note()}`);
+
+    const water = tileOnPage(30, 33);
+    await click(water);
+    const kept = (await people())[0]!;
+    check(
+      kept.goal?.x === 34 && (await note()).includes('туда нельзя встать'),
+      `щелчок по воде (30, 33) — отказ, цель прежняя (${JSON.stringify(kept.goal)}); панель: ${await note()}`,
+    );
+
+    const her = onPage(30 * 16 + 8, 27 * 16 + 4);
+    await click(her);
+    check((await note()).includes('выбрана женщина'), `щелчок по женщине: ${await note()}`);
+    const there = tileOnPage(26, 29);
+    await click(there);
+    const herGoal = (await people())[1]!.goal;
+    check(
+      herGoal?.x === 26 && herGoal?.y === 29,
+      `теперь щелчок отправляет её: цель (${herGoal?.x}, ${herGoal?.y})`,
+    );
+
+    // A drag moves the map and sends nobody anywhere.
+    const before = await camera(page);
+    await mouseDrag(page, { x: 400, y: 300 }, { x: 500, y: 300 });
+    const after = await camera(page);
+    const goals = (await people()).map((v) => JSON.stringify(v.goal)).join(' ');
+    check(
+      after.x === before.x - 50 && goals === '{"x":34,"y":29} {"x":26,"y":29}',
+      `перетаскивание двигает карту (x ${before.x} → ${after.x}) и никого не отправляет (${goals})`,
+    );
+
+    // Unpause (×1): both walk to their tiles.
+    await page.keyboard.press('Digit1');
+    let arrived = false;
+    for (let i = 0; i < 60 && !arrived; i++) {
+      await page.waitForTimeout(100);
+      const [m, w] = await people();
+      arrived = m?.x === 34 && m.y === 29 && w?.x === 26 && w.y === 29;
+    }
+    const walked = (await people()).map((v) => v.walked.toFixed(1)).join(' и ');
+    check(
+      arrived,
+      `пошли и дошли: мужчина в (34, 29), женщина в (26, 29); пройдено ${walked} тайла`,
+    );
+  });
 } finally {
   await browser.close();
   server.close();

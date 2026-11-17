@@ -19,6 +19,8 @@ describe('parseParams', () => {
       zoom: null,
       cam: null,
       slot: null,
+      debug: [],
+      go: null,
       worldFromUrl: true,
     });
   });
@@ -68,6 +70,22 @@ describe('parseParams', () => {
     expect(parseParams('?cam=,').cam).toBeNull();
     expect(parseParams('?cam=1e3,2').cam).toBeNull();
     expect(parseParams('').cam).toBeNull();
+  });
+
+  it('reads debug: words of overlays; 1 — paths and clicks; 0 or nothing — none', () => {
+    expect(parseParams('?debug=1').debug).toEqual(['1']);
+    expect(parseParams('?debug=1,%20needs').debug).toEqual(['1', 'needs']);
+    expect(parseParams('?debug=0').debug).toEqual([]);
+    expect(parseParams('?debug=').debug).toEqual([]);
+    expect(parseParams('').debug).toEqual([]);
+  });
+
+  it('reads go: a tile x,y (whole numbers ≥ 0); malformed — none', () => {
+    expect(parseParams('?go=18,40').go).toEqual({ x: 18, y: 40 });
+    expect(parseParams('?go=18.5,40').go).toBeNull();
+    expect(parseParams('?go=-1,4').go).toBeNull();
+    expect(parseParams('?go=18').go).toBeNull();
+    expect(parseParams('').go).toBeNull();
   });
 
   it('reads the gallery sprite name', () => {

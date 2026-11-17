@@ -11,17 +11,26 @@
  *   - Objects: sorted by depth once (anchor y, then x); rebuilt only when objects appear or
  *     disappear. Each object stands on its tile, shifted by a few pixels by its id so the forest
  *     does not look planted in rows, and sways with its own phase.
+ *   - Villagers (step 1.3, ./villagers.ts): they move, so every frame they are placed between the
+ *     previous and the current tick (`alpha`) and drawn among the objects by depth — behind a
+ *     tree of the row below, in front of one of the row above. Their shadows go into the shadow
+ *     layer like everyone's (they merge with the shadows of trees instead of darkening twice):
+ *     a «live» copy of the still layer, where the last frame's villager shadows are wiped
+ *     (copied back from the still layer) and this frame's are drawn.
  *
  * Only reads the world. Draws one canvas pixel per world pixel; scaling is the caller's.
  */
 import { TILE_SIZE } from '../art/sprite.ts';
 import { type TerrainArt, terrainStateTimes } from '../art/terrain.ts';
+import { DATA } from '../data/index.ts';
+import { TIME } from '../sim/calendar.ts';
 import { chunkGrid, chunkRect, groundAt } from '../sim/map.ts';
 import { defOf, type MapObject } from '../sim/objects.ts';
 import type { World } from '../sim/world.ts';
 import { drawOrder, type Placement } from './scenery.ts';
 import type { SpriteSheet } from './spriteSheet.ts';
 import { createTerrainLayer, type TerrainLayer } from './terrainLayer.ts';
+import { strideOf, type VillagerPose, villagerPose } from './villagers.ts';
 
 /** A rectangle of the world in pixels. */
 export interface PixelRect {
@@ -39,9 +48,12 @@ export interface MapRenderer {
   prepare(): void;
   /**
    * Draw the part `view` of the map (world pixels) at presentation time `timeMs`: the view's
-   * top-left corner lands on (0, 0) of `ctx`.
+   * top-left corner lands on (0, 0) of `ctx`. Villagers stand between the previous and the
+   * current tick by `alpha` (0…1, GameLoop.alpha; 1 — exactly at the current tick).
    */
-  draw(ctx: CanvasRenderingContext2D, timeMs: number, view: PixelRect): void;
+  draw(ctx: CanvasRenderingContext2D, timeMs: number, view: PixelRect, alpha?: number): void;
+  /** Where and how every villager is drawn at `alpha` (hit tests, the debug overlay). */
+  villagers(alpha: number): VillagerPose[];
 }
 
 /** Where on its tile an object stands: the anchor's offset from the tile's top-left corner. */
@@ -112,6 +124,52 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
   shadows.width = width;
   shadows.height = height;
   const shadowCtx = shadows.getContext('2d')!;
+  // The still shadows plus this frame's villagers (see the header).
+  const live = document.createElement('canvas');
+  live.width = width;
+  live.height = height;
+  const liveCtx = live.getContext('2d')!;
+  /** Boxes of the villager shadows drawn into `live` last frame, world pixels. */
+  let patched: PixelRect[] = [];
+
+  // One frame of walking carries a villager this far: legs keep pace with the ground.
+  const walkMs = sheet.entry('man').animations.get('walk_s')?.durations[0] ?? 200;
+  const stride = strideOf(walkMs, DATA.balance.movement.walkTicksPerTile, TIME.ticksPerSecond);
+  const posesAt = (alpha: number) =>
+    world.villagers.list
+      .map((villager) => villagerPose(villager, alpha, stride))
+      .sort((a, b) => a.depth - b.depth || a.x - b.x || a.id - b.id);
+
+  /** The live shadow layer for this frame: last frame's villagers wiped, these drawn. */
+  function patchShadows(people: readonly VillagerPose[]): void {
+    for (const box of patched) {
+      liveCtx.clearRect(box.x, box.y, box.width, box.height);
+      liveCtx.drawImage(
+        shadows,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+      );
+    }
+    patched = [];
+    for (const person of people) {
+      const shadow = sheet.entry(person.sprite).shadow;
+      if (!shadow) continue;
+      sheet.drawShadow(liveCtx, person.sprite, person.x, person.y, { opaque: true });
+      // A pixel of margin around the drawn box (drawShadow rounds the corner).
+      patched.push({
+        x: Math.floor(person.x - shadow.anchor.x) - 1,
+        y: Math.floor(person.y - shadow.anchor.y) - 1,
+        width: shadow.rect.w + 2,
+        height: shadow.rect.h + 2,
+      });
+    }
+  }
 
   let shown: Shown[] = [];
   /** What the sorted list was built from: rebuild when objects appear or disappear. */
@@ -140,6 +198,9 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
     }
     builtFor = `${world.objects.nextId}/${objects.length}`;
     for (const chunk of chunks) chunk.pictures.clear();
+    liveCtx.clearRect(0, 0, width, height);
+    liveCtx.drawImage(shadows, 0, 0);
+    patched = [];
   }
 
   /** The ground of a chunk with the shadows on it, at `timeMs`. */
@@ -169,9 +230,12 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
         for (const timeMs of terrainStateTimes(art)) pictureOf(chunk, timeMs);
       }
     },
-    draw(ctx, timeMs, view) {
+    villagers: posesAt,
+    draw(ctx, timeMs, view, tickAlpha = 1) {
       if (builtFor !== `${world.objects.nextId}/${world.objects.list.length}`) rebuild();
       ctx.imageSmoothingEnabled = false;
+      const people = posesAt(tickAlpha);
+      patchShadows(people);
       const right = view.x + view.width;
       const bottom = view.y + view.height;
 
@@ -183,20 +247,29 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
 
       const alpha = ctx.globalAlpha;
       ctx.globalAlpha = alpha * sheet.shadowOpacity;
-      ctx.drawImage(
-        shadows,
-        view.x,
-        view.y,
-        view.width,
-        view.height,
-        0,
-        0,
-        view.width,
-        view.height,
-      );
+      ctx.drawImage(live, view.x, view.y, view.width, view.height, 0, 0, view.width, view.height);
       ctx.globalAlpha = alpha;
 
+      const drawPerson = (person: VillagerPose) => {
+        const entry = sheet.entry(person.sprite);
+        const left = person.x - entry.anchor.x;
+        const top = person.y - entry.anchor.y;
+        if (left >= right || top >= bottom || left + entry.width <= view.x) return;
+        if (top + entry.height <= view.y) return;
+        sheet.draw(ctx, person.sprite, person.x - view.x, person.y - view.y, {
+          animation: person.animation,
+          swap: person.swap,
+          ...(person.frame === null ? { timeMs: timeMs + person.phase } : { frame: person.frame }),
+        });
+      };
+
+      let next = 0;
       for (const item of shown) {
+        // Villagers standing behind this object are drawn before it.
+        while (next < people.length && people[next]!.depth < item.placement.y) {
+          drawPerson(people[next]!);
+          next++;
+        }
         if (
           item.left >= right ||
           item.top >= bottom ||
@@ -212,6 +285,7 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
           timeMs: timeMs + (placement.phase ?? 0),
         });
       }
+      for (; next < people.length; next++) drawPerson(people[next]!);
     },
   };
 }

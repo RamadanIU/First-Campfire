@@ -9,6 +9,8 @@
  *   - Zoom switches steps at once (src/render/camera.ts): the point under the cursor (under the
  *     fingers; the middle of the screen for keys) stays where it was.
  *   - The view never leaves the map.
+ *   - A tap — a press and release that moved less than `TAP_SLOP` — does not move the map: it is a
+ *     click on the world (step 1.3: the debug order «go there»; step 1.6 — choosing a villager).
  *
  * What a key, a wheel turn or a gesture means and how the view moves are functions without the
  * browser (tested in Node); `bindCameraInput` connects them to the page's events.
@@ -52,6 +54,11 @@ const WHEEL_PAGE_PX = 400;
 
 /** Pinch: the fingers part (or close) this many times — one zoom step. */
 export const PINCH_STEP = 1.4;
+/**
+ * A pointer that moved less than this from where it was pressed (CSS px) is a tap, not a drag:
+ * the map does not move until the pointer goes farther (then it catches up at once).
+ */
+export const TAP_SLOP = 6;
 /** Drag: the pointer's speed at release is measured over this much of its way, ms. */
 const RELEASE_WINDOW_MS = 100;
 /** Drag: a pointer that stood still this long before release does not throw the view. */
@@ -249,11 +256,13 @@ export function createWheelZoom(): (deltaPx: number, timeMs: number) => number {
   };
 }
 
-/** What pointers (mouse, fingers, pen) ask of the camera. */
+/** What pointers (mouse, fingers, pen) ask of the camera — or of the world (a tap). */
 export type GestureCommand =
   | { kind: 'drag'; dx: number; dy: number }
   | { kind: 'zoom'; by: number; x: number; y: number }
-  | { kind: 'release'; vx: number; vy: number };
+  | { kind: 'release'; vx: number; vy: number }
+  /** A press and release in one place (device pixels): a click on the world. */
+  | { kind: 'tap'; x: number; y: number };
 
 export interface Gestures {
   /** Pointers on the screen now. */
@@ -268,12 +277,18 @@ export interface Gestures {
  * Pointers → camera commands (positions in device pixels, time in ms).
  *   - One pointer drags the picture. On release, its speed over the last 100 ms throws the
  *     picture on (none if it stood still before release).
+ *   - A lone pointer that never went farther than `slop()` device pixels from where it was
+ *     pressed is a tap: the picture does not move, the release says where it was. Once it goes
+ *     farther, the picture catches up with the whole way at once (the point under it stays).
  *   - Two pointers (fingers): their midpoint drags, and when the distance between them grows
  *     (shrinks) `PINCH_STEP` times, the picture zooms a step in (out) at the midpoint.
  *   - Taking a pointer down or lifting one of several never throws the picture.
  */
-export function createGestures(): Gestures {
+export function createGestures(options: { slop?: () => number } = {}): Gestures {
+  const slop = options.slop ?? (() => TAP_SLOP);
   const pointers = new Map<number, { x: number; y: number }>();
+  /** Where a lone pointer was pressed while it may still be a tap; null — it is not. */
+  let pressed: { x: number; y: number } | null = null;
   /** Recent positions of a lone pointer, for its speed at release. */
   let trail: { x: number; y: number; t: number }[] = [];
   /** Distance between two pointers at the last zoom step (or when the second came). */
@@ -305,6 +320,8 @@ export function createGestures(): Gestures {
     },
     down(id, x, y, timeMs) {
       pointers.set(id, { x, y });
+      // Only a gesture that starts with one pointer and never gets a second may be a tap.
+      pressed = pointers.size === 1 ? { x, y } : null;
       restart(timeMs);
       // A touch stops a glide.
       return [{ kind: 'drag', dx: 0, dy: 0 }];
@@ -319,6 +336,13 @@ export function createGestures(): Gestures {
         pointer.y = y;
         trail.push({ x, y, t: timeMs });
         while (trail.length > 2 && timeMs - trail[0]!.t > RELEASE_WINDOW_MS) trail.shift();
+        if (pressed) {
+          if (Math.hypot(x - pressed.x, y - pressed.y) <= slop()) return [];
+          // Not a tap after all: the picture catches up with the whole way from the press.
+          const from = pressed;
+          pressed = null;
+          return [{ kind: 'drag', dx: x - from.x, dy: y - from.y }];
+        }
         return dx === 0 && dy === 0 ? [] : [{ kind: 'drag', dx, dy }];
       }
       const before = pair();
@@ -343,8 +367,18 @@ export function createGestures(): Gestures {
     up(id, timeMs) {
       if (!pointers.delete(id)) return [];
       if (pointers.size > 0) {
+        pressed = null;
         restart(timeMs);
         return [];
+      }
+      if (pressed) {
+        const tap = pressed;
+        pressed = null;
+        trail = [];
+        return [
+          { kind: 'release', vx: 0, vy: 0 },
+          { kind: 'tap', x: tap.x, y: tap.y },
+        ];
       }
       const last = trail.at(-1);
       const first = trail.find(
@@ -371,16 +405,18 @@ function typing(target: EventTarget | null): boolean {
 
 /**
  * Connect the camera to the page: pointers and the wheel over `canvas`, keys on `target`.
+ * `onTap` hears taps (a click without dragging) at a point of the canvas, device pixels.
  * Returns a function that disconnects.
  */
 export function bindCameraInput(
   canvas: HTMLCanvasElement,
   target: Window,
   control: CameraControl,
+  onTap?: (x: number, y: number) => void,
 ): () => void {
   canvas.style.touchAction = 'none';
   canvas.style.cursor = 'grab';
-  const gestures = createGestures();
+  const gestures = createGestures({ slop: () => TAP_SLOP * control.screen.pixelRatio });
   const wheel = createWheelZoom();
   const keys = new Set<string>();
 
@@ -396,7 +432,8 @@ export function bindCameraInput(
     for (const command of commands) {
       if (command.kind === 'drag') control.drag(command.dx, command.dy);
       else if (command.kind === 'zoom') control.zoomBy(command.by, command);
-      else control.release(command.vx, command.vy);
+      else if (command.kind === 'release') control.release(command.vx, command.vy);
+      else onTap?.(command.x, command.y);
     }
   };
 

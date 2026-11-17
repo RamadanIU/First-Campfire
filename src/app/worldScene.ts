@@ -15,10 +15,8 @@ import { hashState } from '../sim/hash.ts';
 import type { LoadWarning } from '../sim/save.ts';
 import { saveWorld } from '../sim/save.ts';
 import type { World } from '../sim/world.ts';
-import type { CameraControl } from './cameraControl.ts';
 import { dateOf, formatCount } from './dates.ts';
-import type { GameLoop } from './loop.ts';
-import { createMapView } from './mapView.ts';
+import { createMapView, type MapView } from './mapView.ts';
 import {
   type Autosave,
   createAutosave,
@@ -51,9 +49,7 @@ export function createWorldScene(context: SceneContext): Scene {
 
   const start = { tick: world.tick, hash: hashState(world) };
   const view = createMapView(context, world);
-  const panel = params.ui
-    ? createWorldPanel(ui, world, view.loop, view.camera, autosave, origin, warnings)
-    : null;
+  const panel = params.ui ? createWorldPanel(ui, world, view, autosave, origin, warnings) : null;
   // For automated checks (tools/e2e.ts): the world without reading it off the screen.
   window.__fc.world = {
     get seed() {
@@ -68,6 +64,18 @@ export function createWorldScene(context: SceneContext): Scene {
       return autosave.savedTick;
     },
     opened: start,
+    villagers: () =>
+      world.villagers.list.map((villager) => ({
+        id: villager.id,
+        sex: villager.sex,
+        x: villager.x,
+        y: villager.y,
+        toX: villager.toX,
+        toY: villager.toY,
+        action: villager.action.kind,
+        goal: villager.action.kind === 'walk' ? { ...villager.action.goal } : null,
+        walked: villager.walked,
+      })),
   };
 
   return {
@@ -85,12 +93,14 @@ export function createWorldScene(context: SceneContext): Scene {
   };
 }
 
-/** Panel of the world: the date, the zoom, how it is saved, «Save to file», «To the menu». */
+/**
+ * Panel of the world: the date, the zoom, how it is saved, «Save to file», «To the menu»; with
+ * `debug=1` — what the last debug click did.
+ */
 function createWorldPanel(
   ui: HTMLElement,
   world: World,
-  loop: GameLoop,
-  camera: CameraControl,
+  { loop, camera, debugNote }: MapView,
   autosave: Autosave,
   origin: 'url' | 'saved' | 'new',
   warnings: LoadWarning[],
@@ -106,6 +116,8 @@ function createWorldPanel(
   clock.className = 'world-panel-clock';
   const view = document.createElement('div');
   view.className = 'world-panel-camera';
+  const debugLine = document.createElement('div');
+  debugLine.className = 'world-panel-debug';
   const status = document.createElement('div');
   status.className = 'world-panel-status';
   const hint = document.createElement('div');
@@ -131,7 +143,7 @@ function createWorldPanel(
   toMenu.type = 'button';
   toMenu.textContent = 'В меню';
   buttons.append(toFile, toMenu);
-  panel.append(title, date, clock, view, status, hint, notes, buttons);
+  panel.append(title, date, clock, view, debugLine, status, hint, notes, buttons);
   ui.append(panel);
 
   const note = (text: string, kind: 'ok' | 'warn') => {
@@ -162,8 +174,15 @@ function createWorldPanel(
   let shownDate = '';
   let shownClock = '';
   let shownView = '';
+  let shownDebug = '';
+  debugLine.hidden = debugNote() === null;
   return {
     update() {
+      const debugText = debugNote();
+      if (debugText !== null && debugText !== shownDebug) {
+        shownDebug = debugText;
+        debugLine.textContent = `Отладка: ${debugText}`;
+      }
       const today = dateOf(world.tick);
       const dateText = today.charAt(0).toUpperCase() + today.slice(1);
       if (dateText !== shownDate) {

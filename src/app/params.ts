@@ -16,7 +16,8 @@ export type SlotPreset = (typeof SLOT_PRESETS)[number];
  * Launch parameters read from the page URL (?seed=42&scene=clock&ticks=3000&speed=5&frame=10&ui=0).
  * Scene-specific ones: `sprite=` (the gallery shows one sprite large), `zoom=` (zoom step of
  * pictures of the world: the camera of the world, the style sheet), `cam=` (where the camera of
- * the world looks), `slot=` (debug: a prepared autosave).
+ * the world looks), `slot=` (debug: a prepared autosave), `debug=` (debug overlays of the world),
+ * `go=` (debug: send the first villager to a tile).
  * They make every screen reproducible: the screenshot tool and bug reports
  * use the same URL to get the same picture.
  */
@@ -50,6 +51,16 @@ export interface LaunchParams {
   /** Debug: put this prepared save into the autosave slot before the scene starts. */
   slot: SlotPreset | null;
   /**
+   * Debug overlays of the world (`debug=1`; several — `debug=1,needs`): `1` — paths of villagers
+   * as lines, a click sends the chosen villager to a tile (step 1.3). Empty — none.
+   */
+  debug: readonly string[];
+  /**
+   * Debug: the first villager of a world given by the address is sent to this tile before the
+   * world runs `ticks=` — a walk (and its path with `debug=1`) reproducible by URL.
+   */
+  go: { x: number; y: number } | null;
+  /**
    * The world is given by the address (`seed=` or `ticks=`, without `slot=`): the world scene
    * shows exactly that world and neither reads nor writes the autosave.
    */
@@ -68,6 +79,8 @@ export const DEFAULT_PARAMS: LaunchParams = {
   zoom: null,
   cam: null,
   slot: null,
+  debug: [],
+  go: null,
   worldFromUrl: false,
 };
 
@@ -103,6 +116,22 @@ function parseCam(raw: string | null): { x: number; y: number } | null {
   return x == null || y == null ? null : { x, y };
 }
 
+/** `x,y` — two whole numbers ≥ 0 (a tile), or null. */
+function parseTile(raw: string | null): { x: number; y: number } | null {
+  const parts = raw?.split(',') ?? [];
+  if (parts.length !== 2) return null;
+  const [x, y] = parts.map((part) => parseInteger(part, 0));
+  return x == null || y == null ? null : { x, y };
+}
+
+/** `1`, `1,needs` — words of debug overlays; `0` or nothing — none. */
+function parseDebug(raw: string | null): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((word) => word.trim())
+    .filter((word) => word !== '' && word !== '0');
+}
+
 function parseSlot(raw: string | null): SlotPreset | null {
   const value = raw?.trim() ?? '';
   return (SLOT_PRESETS as readonly string[]).includes(value) ? (value as SlotPreset) : null;
@@ -127,6 +156,8 @@ export function parseParams(search: string): LaunchParams {
     zoom: parseZoom(query.get('zoom')),
     cam: parseCam(query.get('cam')),
     slot,
+    debug: parseDebug(query.get('debug')),
+    go: parseTile(query.get('go')),
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,
   };
 }
