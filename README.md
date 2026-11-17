@@ -47,6 +47,7 @@ npm install
 npm run dev      # игра в браузере с горячей перезагрузкой
 npm run check    # линтер, типы, тесты, дорожная карта, сборка
 npm run next     # следующий шаг дорожной карты
+npm run sim      # прогоны без графики: 100 миров по 10 лет, таблица итогов
 ```
 
 Устройство кода — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
