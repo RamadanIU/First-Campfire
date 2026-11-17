@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraLayout, screenToWorld } from '../render/camera.ts';
+import { cameraLayout, pixelScale, screenToWorld } from '../render/camera.ts';
 import {
   cameraKey,
   createCameraControl,
@@ -11,6 +11,7 @@ import {
   TAP_SLOP,
   WHEEL_QUIET_MS,
   wheelPixels,
+  ZOOM_MS,
 } from './cameraControl.ts';
 
 const MAP = { width: 1024, height: 1024 };
@@ -214,19 +215,18 @@ describe('жесты указателей', () => {
 });
 
 describe('управление камерой', () => {
-  it('без zoom= — ступень, при которой карта видна целиком, но не дальше ×1', () => {
+  it('без zoom= — ×2 «улица» (выбор владельца, ADR-022); заданная ступень — как задана', () => {
     const control = createCameraControl(MAP, { x: 600, y: 520 }, null);
     control.resize(HD);
-    expect(control.camera.zoom).toBe(1);
-    const big = createCameraControl(MAP, { x: 600, y: 520 }, null);
-    big.resize({ width: 2200, height: 2100, pixelRatio: 1 });
-    expect(big.camera.zoom).toBe(2);
+    expect(control.camera).toEqual({ x: 600, y: 520, zoom: 2 });
+    expect(control.layout.scale).toBe(2);
     // The window changes later: the zoom is the observer's, it stays.
-    big.resize(HD);
-    expect(big.camera.zoom).toBe(2);
+    control.resize({ width: 2200, height: 2100, pixelRatio: 1 });
+    expect(control.camera.zoom).toBe(2);
     const asked = createCameraControl(MAP, { x: 600, y: 520 }, 0.5);
     asked.resize(HD);
     expect(asked.camera).toEqual({ x: 512, y: 512, zoom: 0.5 });
+    expect(asked.zooming).toBe(false);
   });
 
   it('клавиши: разгон до постоянной скорости, после отпускания — плавная остановка', () => {
@@ -313,14 +313,151 @@ describe('управление камерой', () => {
     const control = createCameraControl(BIG, { x: 8000, y: 8000 }, 1);
     control.resize(HD);
     control.zoomBy(1);
+    // Where the camera comes to rest is known at once; the picture glides there.
     expect(control.camera).toEqual({ x: 8000, y: 8000, zoom: 2 });
+    run(control, ZOOM_MS);
+    expect(control.zooming).toBe(false);
     const point = screenToWorld(control.layout, 200, 600);
     control.zoomBy(1, { x: 200, y: 600 });
     expect(control.camera.zoom).toBe(4);
+    run(control, ZOOM_MS);
     expect(screenToWorld(control.layout, 200, 600)).toEqual(point);
     control.zoomBy(1, { x: 200, y: 600 }); // already the closest step
     expect(control.camera.zoom).toBe(4);
+    expect(control.zooming).toBe(false);
     expect(control.layout).toEqual(cameraLayout(control.camera, HD, BIG));
+  });
+
+  it('зум плавный: масштаб растёт кадр за кадром и приходит ровно к ступени — снова резко', () => {
+    for (const [from, by] of [
+      [2, 1],
+      [2, -1],
+      [1, -1],
+      [0.5, 1],
+    ] as const) {
+      const control = createCameraControl(BIG, { x: 8000, y: 8000 }, from);
+      control.resize(HD);
+      const at = { x: 300, y: 500 };
+      const point = screenToWorld(control.layout, at.x, at.y);
+      control.zoomBy(by, at);
+      const to = control.camera.zoom;
+      const scales = [control.layout.scale];
+      let worst = 0;
+      while (control.zooming) {
+        control.update(1000 / 60);
+        scales.push(control.layout.scale);
+        // In every frame the world point under the cursor stays under it (to a screen pixel).
+        const under = screenToWorld(control.layout, at.x, at.y);
+        worst = Math.max(
+          worst,
+          Math.hypot(under.x - point.x, under.y - point.y) * control.layout.scale,
+        );
+      }
+      // ≈ 250 ms at 60 frames a second: some 15 frames, each between the steps.
+      expect(scales.length).toBeGreaterThanOrEqual(14);
+      const inner = scales.slice(1, -1);
+      expect(inner.every((scale) => !Number.isInteger(scale * 2))).toBe(true);
+      const growing = by > 0;
+      for (let i = 1; i < scales.length; i++) {
+        if (growing) expect(scales[i]!).toBeGreaterThan(scales[i - 1]!);
+        else expect(scales[i]!).toBeLessThan(scales[i - 1]!);
+      }
+      // The end is the step exactly: the crisp picture of the step, not a curve's end.
+      expect(scales.at(-1)).toBe(pixelScale(to, 1));
+      expect(control.layout).toEqual(cameraLayout(control.camera, HD, BIG));
+      expect(worst).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('зум идёт столько же при любой частоте кадров', () => {
+    for (const fps of [30, 60, 144]) {
+      const control = createCameraControl(BIG, { x: 8000, y: 8000 }, 2);
+      control.resize(HD);
+      control.zoomBy(1);
+      run(control, ZOOM_MS - 20, fps);
+      expect(control.zooming).toBe(true);
+      run(control, 40, fps);
+      expect(control.zooming).toBe(false);
+    }
+  });
+
+  it('второй щелчок колеса посреди зума — без скачка: дальше от того, что на экране', () => {
+    const control = createCameraControl(BIG, { x: 8000, y: 8000 }, 1);
+    control.resize(HD);
+    const at = { x: 900, y: 200 };
+    const point = screenToWorld(control.layout, at.x, at.y);
+    control.zoomBy(1, at);
+    run(control, ZOOM_MS / 2);
+    const halfway = control.layout.scale;
+    expect(halfway).toBeGreaterThan(1);
+    expect(halfway).toBeLessThan(2);
+    control.zoomBy(1, at);
+    expect(control.camera.zoom).toBe(4);
+    // The next frame goes on from the picture on screen.
+    control.update(1000 / 60);
+    expect(control.layout.scale).toBeGreaterThan(halfway);
+    expect(control.layout.scale).toBeLessThan(halfway * 1.3);
+    run(control, ZOOM_MS);
+    expect(control.layout.scale).toBe(4);
+    const under = screenToWorld(control.layout, at.x, at.y);
+    expect(Math.hypot(under.x - point.x, under.y - point.y) * 4).toBeLessThanOrEqual(1);
+  });
+
+  it('перетаскивание посреди зума — картинка едет за пальцем, зум доходит до ступени', () => {
+    const control = createCameraControl(BIG, { x: 8000, y: 8000 }, 2);
+    control.resize(HD);
+    control.zoomBy(1, { x: 640, y: 360 });
+    run(control, 100);
+    const grabbed = screenToWorld(control.layout, 400, 300);
+    control.drag(60, 40);
+    const under = screenToWorld(control.layout, 460, 340);
+    expect(
+      Math.hypot(under.x - grabbed.x, under.y - grabbed.y) * control.layout.scale,
+    ).toBeLessThanOrEqual(1);
+    run(control, ZOOM_MS);
+    expect(control.zooming).toBe(false);
+    expect(control.layout).toEqual(cameraLayout(control.camera, HD, BIG));
+    // Rest: the point the zoom held, moved with the finger (60, 40 screen px at the scale then).
+    expect(control.camera.zoom).toBe(4);
+  });
+
+  it('отдаление у края карты — без скачка: картинка плавно приходит к краю', () => {
+    const LAND = { width: 4096, height: 4096 };
+    // At ×2 near the top-left corner; zooming out at the far corner of the screen would take
+    // the view beyond the map — the edges hold it, and the picture glides to them.
+    const control = createCameraControl(LAND, { x: 330, y: 200 }, 2);
+    control.resize(HD);
+    control.zoomBy(-1, { x: 1200, y: 700 });
+    let previous = control.layout;
+    let frames = 0;
+    while (control.zooming) {
+      control.update(1000 / 60);
+      frames++;
+      const { layout } = control;
+      // Never beyond the map's edges, and no jump of the picture between frames.
+      expect(layout.offsetX).toBeLessThanOrEqual(0);
+      expect(layout.offsetY).toBeLessThanOrEqual(0);
+      expect(Math.abs(layout.offsetX - previous.offsetX)).toBeLessThan(80);
+      expect(Math.abs(layout.offsetY - previous.offsetY)).toBeLessThan(80);
+      previous = layout;
+    }
+    expect(frames).toBeGreaterThan(10);
+    expect(control.camera).toEqual({ x: 640, y: 360, zoom: 1 });
+    expect(control.layout).toEqual(cameraLayout(control.camera, HD, LAND));
+    expect(control.layout.offsetX).toBe(0);
+    expect(control.layout.offsetY).toBe(0);
+  });
+
+  it('изменение окна посреди зума — сразу ступень', () => {
+    const control = createCameraControl(BIG, { x: 8000, y: 8000 }, 2);
+    control.resize(HD);
+    control.zoomBy(1);
+    run(control, 50);
+    expect(control.zooming).toBe(true);
+    const window = { width: 1000, height: 700, pixelRatio: 1 };
+    control.resize(window);
+    expect(control.zooming).toBe(false);
+    expect(control.layout).toEqual(cameraLayout(control.camera, window, BIG));
   });
 
   it('экран с дробным масштабом: скорость клавиш — в CSS-пикселях, масштаб — целый', () => {

@@ -49,6 +49,9 @@ function waterGroups(world: World): number {
   return groups;
 }
 
+// Checks that look at every tile or object of a hundred maps collect what is wrong and compare
+// the list once: a separate expect per tile is the same check, but ten times slower (seconds).
+
 describe('гарантии генератора карты на зёрнах 1…100', () => {
   it('есть вода, она связна по сторонам тайлов (без стыков только углами)', () => {
     for (const world of WORLDS) {
@@ -57,6 +60,7 @@ describe('гарантии генератора карты на зёрнах 1�
       const water = counts.shallow_water! + counts.deep_water!;
       expect(water, `зерно ${world.seed}`).toBeGreaterThanOrEqual(60);
       expect(waterGroups(world), `зерно ${world.seed}: вода одним водоёмом`).toBe(1);
+      const corners: string[] = [];
       for (let y = 0; y + 1 < map.height; y++) {
         for (let x = 0; x + 1 < map.width; x++) {
           const a = isWater(map, x, y);
@@ -64,21 +68,24 @@ describe('гарантии генератора карты на зёрнах 1�
           const c = isWater(map, x, y + 1);
           const d = isWater(map, x + 1, y + 1);
           const cornerOnly = (a && d && !b && !c) || (b && c && !a && !d);
-          expect(cornerOnly, `зерно ${world.seed}: вода касается углом у (${x}, ${y})`).toBe(false);
+          if (cornerOnly) corners.push(`(${x}, ${y})`);
         }
       }
+      expect(corners, `зерно ${world.seed}: вода касается только углом`).toEqual([]);
     }
   });
 
   it('глубокая вода не касается суши и лежит заводями не уже двух тайлов', () => {
     for (const world of WORLDS) {
       const { map } = world;
+      const ashore: string[] = [];
+      const lonely: string[] = [];
       for (let y = 0; y < map.height; y++) {
         for (let x = 0; x < map.width; x++) {
           if (!isDeep(world, x, y)) continue;
           for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
-              expect(isWater(map, x + dx, y + dy), `зерно ${world.seed}: (${x}, ${y})`).toBe(true);
+              if (!isWater(map, x + dx, y + dy)) ashore.push(`(${x}, ${y})`);
             }
           }
           const pooled = [
@@ -98,9 +105,11 @@ describe('гарантии генератора карты на зёрнах 1�
               return inside(map, px, py) && isDeep(world, px, py);
             }),
           );
-          expect(pooled, `зерно ${world.seed}: одиночная глубина у (${x}, ${y})`).toBe(true);
+          if (!pooled) lonely.push(`(${x}, ${y})`);
         }
       }
+      expect(ashore, `зерно ${world.seed}: глубина касается суши`).toEqual([]);
+      expect(lonely, `зерно ${world.seed}: одиночная глубина`).toEqual([]);
     }
   });
 
@@ -146,15 +155,20 @@ describe('гарантии генератора карты на зёрнах 1�
   it('объекты стоят на суше по одному на тайл; слой объектов совпадает со списком', () => {
     for (const world of WORLDS) {
       const { map, objects } = world;
+      const wrong: string[] = [];
       let previous = 0;
       for (const object of objects.list) {
-        expect(object.id).toBeGreaterThan(previous);
+        const at = `#${object.id} ${object.def} (${object.x}, ${object.y})`;
+        if (object.id <= previous) wrong.push(`${at}: номер не растёт`);
         previous = object.id;
-        expect(inside(map, object.x, object.y)).toBe(true);
-        expect(isWater(map, object.x, object.y), `зерно ${world.seed}: #${object.id}`).toBe(false);
-        expect(map.object[tileIndex(map, object.x, object.y)]).toBe(object.id);
-        expect(defOf(object).states).toContain(object.state);
+        if (!inside(map, object.x, object.y)) wrong.push(`${at}: за краем карты`);
+        else if (isWater(map, object.x, object.y)) wrong.push(`${at}: в воде`);
+        else if (map.object[tileIndex(map, object.x, object.y)] !== object.id)
+          wrong.push(`${at}: в слое объектов другой номер`);
+        if (!defOf(object).states.includes(object.state))
+          wrong.push(`${at}: неизвестное состояние «${object.state}»`);
       }
+      expect(wrong, `зерно ${world.seed}`).toEqual([]);
       expect(objects.nextId).toBe(previous + 1);
       expect(map.object.filter((id) => id !== 0).length).toBe(objects.list.length);
     }
