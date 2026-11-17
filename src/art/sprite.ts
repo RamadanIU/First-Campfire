@@ -42,8 +42,27 @@ export const DEFAULT_FRAME_MS = 100;
  * - `tile` — a 16×16 map tile, anchored at its top-left corner; the gallery shows it tiled 3×3.
  * - `object` — anything standing on the map: trees, bushes, buildings, items.
  * - `character` — people and animals.
+ * - `icon` — signs drawn over the world: thought bubbles above heads (GDD §10.6).
  */
-export type SpriteKind = 'tile' | 'object' | 'character';
+export type SpriteKind = 'tile' | 'object' | 'character' | 'icon';
+
+/** The palette colour of shadows under objects: a translucent ramp (docs/ART.md, «Тени»). */
+export const SHADOW_COLOR: ColorName = 'shadow.0';
+
+/**
+ * A soft shadow under a sprite (GDD §10.1): a flat ellipse on the ground, drawn before every
+ * object so that it never covers anything standing. The ellipse is `width`×`height` pixels,
+ * centred horizontally on the anchor shifted by `x`, its middle row on the anchor's line
+ * shifted by `y`. Light falls from the upper left, so shadows lean slightly right and down.
+ */
+export interface ShadowDef {
+  readonly width: number;
+  readonly height: number;
+  /** Horizontal shift of the centre from the anchor, px (default 0). */
+  readonly x?: number;
+  /** Vertical shift of the centre from the anchor, px (default 0). */
+  readonly y?: number;
+}
 
 export interface AnimationDef {
   /** Frames as text grids. To hold a pose longer, give it a longer `frameMs` or repeat it. */
@@ -75,6 +94,8 @@ export interface SpriteDef {
   readonly animations: Readonly<Record<string, AnimationDef>>;
   /** Named recolours shown in the gallery, e.g. skin tones: `{ dark: { skin_light: 'skin_dark' } }`. */
   readonly variants?: Readonly<Record<string, PaletteSwap>>;
+  /** Soft shadow on the ground under the sprite; tiles and icons have none. */
+  readonly shadow?: ShadowDef;
 }
 
 /** Identity function: gives a sprite file type checking and editor hints. */
@@ -126,7 +147,7 @@ export function usedRamps(def: SpriteDef): Set<string> {
 }
 
 const ID = /^[a-z][a-z0-9_]*$/;
-const KINDS: readonly SpriteKind[] = ['tile', 'object', 'character'];
+const KINDS: readonly SpriteKind[] = ['tile', 'object', 'character', 'icon'];
 
 function isWholeNumber(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
@@ -245,6 +266,25 @@ export function validateSprite(def: SpriteDef, palette: Palette): string[] {
     }
   }
 
+  if (def.shadow !== undefined) {
+    const { width, height, x = 0, y = 0 } = def.shadow;
+    if (def.kind === 'tile' || def.kind === 'icon') {
+      add(`тень: у вида «${def.kind}» тени не бывает`);
+    } else if (
+      !isWholeNumber(width, 1, MAX_SPRITE_SIZE) ||
+      !isWholeNumber(height, 1, MAX_SPRITE_SIZE)
+    ) {
+      add(`тень: размер ${width}×${height} — нужны целые числа от 1 до ${MAX_SPRITE_SIZE}`);
+    } else if (
+      !isWholeNumber(x, -MAX_SPRITE_SIZE, MAX_SPRITE_SIZE) ||
+      !isWholeNumber(y, -MAX_SPRITE_SIZE, MAX_SPRITE_SIZE)
+    ) {
+      add(`тень: сдвиг (${x}, ${y}) — нужны целые числа`);
+    } else if (height > width) {
+      add(`тень ${width}×${height}: тень лежит на земле — она шире, чем выше`);
+    }
+  }
+
   // Variants: valid swaps that actually change something in this sprite.
   const ramps = usedRamps(def);
   for (const [name, swap] of Object.entries(def.variants ?? {})) {
@@ -259,6 +299,34 @@ export function validateSprite(def: SpriteDef, palette: Palette): string[] {
     }
   }
   return problems;
+}
+
+/**
+ * The shadow's pixels: a crisp ellipse, symmetric left-right and top-bottom. `mask[y][x]` is
+ * true inside. Pixel centres within the ellipse are inside, so a 12×4 shadow has rows of
+ * 8, 12, 12 and 8 pixels.
+ */
+export function shadowMask(width: number, height: number): boolean[][] {
+  const rx = width / 2;
+  const ry = height / 2;
+  return Array.from({ length: height }, (_, y) =>
+    Array.from({ length: width }, (_, x) => {
+      const dx = (x + 0.5 - rx) / rx;
+      const dy = (y + 0.5 - ry) / ry;
+      return dx * dx + dy * dy <= 1;
+    }),
+  );
+}
+
+/**
+ * Where the shadow's top-left pixel lies relative to the sprite's anchor, px. Used to place
+ * the shadow image so that it does not depend on the sprite's size.
+ */
+export function shadowOrigin(shadow: ShadowDef): { x: number; y: number } {
+  return {
+    x: (shadow.x ?? 0) - Math.floor(shadow.width / 2),
+    y: (shadow.y ?? 0) - Math.floor(shadow.height / 2),
+  };
 }
 
 /** Problems of a whole set of sprites that single-sprite checks cannot see: duplicate names. */

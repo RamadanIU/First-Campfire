@@ -29,12 +29,14 @@ const KIND_TITLE: Record<SpriteKind, string> = {
   tile: 'Тайлы',
   object: 'Объекты',
   character: 'Персонажи',
+  icon: 'Значки',
 };
 
 const KIND_NAME: Record<SpriteKind, string> = {
   tile: 'тайл',
   object: 'объект',
   character: 'персонаж',
+  icon: 'значок',
 };
 
 /** Overview: how a tile is repeated to check its seams. */

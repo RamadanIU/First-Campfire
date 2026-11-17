@@ -124,3 +124,25 @@ describe('сборка атласа', () => {
     expect([...atlas.pixels.subarray(at, at + 4)]).toEqual([0, 0, 255, 255]);
   });
 });
+
+describe('тени в атласе', () => {
+  const GLASS = createPalette([
+    { name: 'red', title: '', colors: ['#400000', '#ff0000'] },
+    { name: 'shadow', title: '', colors: ['#101020'], alpha: 0.5 },
+  ]);
+
+  it('тень лежит в том же атласе отдельной картинкой и не считается кадром', () => {
+    const post = { ...solid('post', 2, 3), shadow: { width: 6, height: 2 } };
+    const atlas = buildAtlas([post, solid('other', 3, 1)], GLASS);
+    expect(atlas.frameCount).toBe(2);
+    const entry = atlas.sprites.get('post')!;
+    expect(entry.shadow).toMatchObject({ anchor: { x: 3, y: 1 }, alpha: 128 });
+    const { rect } = entry.shadow!;
+    expect([rect.w, rect.h]).toEqual([6, 2]);
+    const frame = entry.animations.get('idle')!.frames[0]!;
+    expect(overlaps(rect, frame, 0)).toBe(false);
+    const at = ((rect.y + 1) * atlas.width + rect.x) * 4;
+    expect([...atlas.pixels.subarray(at, at + 4)]).toEqual([16, 16, 32, 255]);
+    expect(atlas.sprites.get('other')!.shadow).toBeNull();
+  });
+});
