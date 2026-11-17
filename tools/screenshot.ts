@@ -20,30 +20,10 @@
  * Playwright and Chromium are preinstalled in Claude Code cloud sessions and are
  * deliberately NOT in package.json (a second copy would not find the browser).
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { createRequire } from 'node:module';
-import type { AddressInfo } from 'node:net';
-import { extname, join, normalize, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
-
-const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
-const DIST = join(ROOT, 'dist');
-
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.map': 'application/json',
-  '.wasm': 'application/wasm',
-  '.ogg': 'audio/ogg',
-  '.mp3': 'audio/mpeg',
-};
+import { buildGame, chromium, hasBuild, ROOT, serveGame } from './browser.ts';
 
 function fail(message: string): never {
   console.error(`✗ ${message}`);
@@ -89,26 +69,13 @@ const outDir = values.out
 
 if (!values['no-build']) {
   console.log('Сборка…');
-  execFileSync('npm', ['run', 'build', '--silent'], { cwd: ROOT, stdio: 'inherit' });
+  buildGame();
 }
-if (!existsSync(join(DIST, 'index.html'))) fail('Нет dist/index.html — сборка не выполнена');
+if (!hasBuild()) fail('Нет dist/index.html — сборка не выполнена');
 
-const server = createServer((request, response) => {
-  const path = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
-  const file = normalize(join(DIST, path.endsWith('/') ? `${path}index.html` : path));
-  if (!file.startsWith(DIST) || !existsSync(file)) {
-    response.writeHead(404).end('not found');
-    return;
-  }
-  response.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
-  response.end(readFileSync(file));
-});
-await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
-// Resolved through NODE_PATH, hence require() rather than import.
-const { chromium } = createRequire(import.meta.url)('playwright');
-const browser = await chromium.launch();
+const server = await serveGame();
+const { origin } = server;
+const browser = await chromium().launch();
 const failures: string[] = [];
 mkdirSync(outDir, { recursive: true });
 

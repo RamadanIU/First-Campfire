@@ -11,6 +11,7 @@
  * saved, «Save to file», «To the menu». A save that cannot be opened shows the title screen
  * with the reason and the offer of a new world.
  */
+import { hashState } from '../sim/hash.ts';
 import type { LoadWarning } from '../sim/save.ts';
 import { saveWorld } from '../sim/save.ts';
 import type { World } from '../sim/world.ts';
@@ -48,6 +49,20 @@ export function createWorldScene(context: SceneContext): Scene {
 
   const view = createClockView(context, world);
   const panel = params.ui ? createWorldPanel(ui, world, autosave, origin, warnings) : null;
+  // For automated checks (tools/e2e.ts): the world without reading it off the screen.
+  window.__fc.world = {
+    get seed() {
+      return world.seed;
+    },
+    get tick() {
+      return world.tick;
+    },
+    hash: () => hashState(world),
+    origin,
+    get savedTick() {
+      return autosave.savedTick;
+    },
+  };
 
   return {
     update(elapsedMs) {

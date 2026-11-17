@@ -44,7 +44,7 @@ describe('слот автосохранения', () => {
 
   it('переполнение: размер сохранения в сообщении', () => {
     const quota = Object.assign(new Error('full'), { name: 'QuotaExceededError' });
-    const result = createSaveSlot(storageThatThrows(quota)).write('x'.repeat(900_000));
+    const result = createSaveSlot(storageThatThrows(quota)).write('x'.repeat(1_800_000));
     expect(!result.ok && result.message).toBe(
       'Хранилище браузера переполнено (сохранение — 1,7 МБ): автосохранение не записано. Сохраните мир в файл.',
     );
@@ -58,9 +58,9 @@ describe('слот автосохранения', () => {
     expect(() => slot.clear()).not.toThrow();
   });
 
-  it('размер сохранения — в КБ или МБ, как в хранилище (два байта на знак)', () => {
+  it('размер сохранения — в КБ или МБ, примерно как у файла (знак — байт)', () => {
     expect(storedSize(10)).toBe('1 КБ');
-    expect(storedSize(8_000)).toBe('16 КБ');
-    expect(storedSize(900_000)).toBe('1,7 МБ');
+    expect(storedSize(16_384)).toBe('16 КБ');
+    expect(storedSize(1_800_000)).toBe('1,7 МБ');
   });
 });

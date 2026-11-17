@@ -3,7 +3,8 @@
  * comes back to (step 0.7, ADR-016).
  *
  * localStorage is synchronous, so the world can still be saved while the tab is closing. It
- * holds about 5 MB per site; a world of 200 game years is ≈ 1.7 MB of save text. The browser may
+ * holds about 5 million characters per site (Chromium: 5 242 880); a world of 200 game years is
+ * ≈ 1.7 million characters of save text. The browser may
  * also refuse storage altogether (private mode, blocked site data): then the slot is
  * `available: false` and the game runs without autosave, offering to save to a file.
  *
@@ -37,10 +38,13 @@ export interface SaveSlot {
 export const NO_STORAGE =
   'Браузер не даёт игре хранилище (частный режим или запрет данных сайтов) — автосохранения не будет. Сохраняйте мир в файл.';
 
-/** Size of a string in the storage: «1,7 МБ», «16 КБ». */
+/**
+ * Size of save text for people: «1,7 МБ», «16 КБ» — about the size of the same save as a file
+ * (save text is almost all Latin letters and digits: a byte each). Browsers limit localStorage
+ * in characters: Chromium takes ≈ 5,2 million, i.e. «5 МБ» in these units.
+ */
 export function storedSize(length: number): string {
-  // localStorage keeps strings as UTF-16: two bytes a character.
-  const kilobytes = (length * 2) / 1024;
+  const kilobytes = length / 1024;
   return kilobytes < 1024
     ? `${Math.max(1, Math.round(kilobytes))} КБ`
     : `${(kilobytes / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ`;

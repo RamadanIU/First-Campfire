@@ -4,14 +4,28 @@ import { PRESENTATION_FPS } from './app/scene.ts';
 import { formatIssue } from './data/schema.ts';
 
 /**
- * Hook for automated checks (tools/screenshot.ts): `ready` flips to true once the
- * requested frame is on screen, `errors` collects everything that went wrong.
+ * Hook for automated checks (tools/screenshot.ts, tools/e2e.ts): `ready` flips to true once the
+ * requested frame is on screen, `errors` collects everything that went wrong, `world` — the
+ * world the scene `world` runs (so checks need not read it off the screen).
  */
 interface DebugHook {
   ready: boolean;
   scene: string;
   frame: number;
   errors: string[];
+  world?: WorldInfo;
+}
+
+/** What the scene `world` tells automated checks about its world. */
+export interface WorldInfo {
+  seed: number;
+  tick: number;
+  /** Fingerprint of the world state (src/sim/hash.ts) — computed on request, it is not free. */
+  hash: () => string;
+  /** Where the world came from: the autosave slot, the address, or new. */
+  origin: 'saved' | 'url' | 'new';
+  /** Tick of the last autosave; null — none. */
+  savedTick: number | null;
 }
 
 declare global {
