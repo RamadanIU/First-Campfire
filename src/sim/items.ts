@@ -284,7 +284,8 @@ export function takeItem(world: World, villager: Villager, item: Item, count: nu
 export function dropLoad(world: World, villager: Villager): void {
   const load = villager.load;
   if (!load) return;
-  let first = true;
+  // The stack keeps its id where it lies on its own, not where it tops up another one.
+  let kept = false;
   while (load.count > 0) {
     const tile = nearestTile(
       world.map,
@@ -293,15 +294,16 @@ export function dropLoad(world: World, villager: Villager): void {
       (x, y) => roomAt(world, x, y, load.resource) > 0,
     );
     if (!tile) throw new Error(`Некуда положить ношу жителя #${villager.id}`);
+    const fresh: boolean = !kept && itemAt(world, tile.x, tile.y) === undefined;
     load.count -= lay(
       world,
       load.resource,
       load.count,
       tile.x,
       tile.y,
-      first ? load.id : undefined,
+      fresh ? load.id : undefined,
     );
-    first = false;
+    kept ||= fresh;
   }
   villager.load = null;
 }

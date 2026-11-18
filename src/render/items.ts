@@ -12,7 +12,8 @@
  *     head with raised arms, recoloured to the carrier's skin; its anchor on the line of the
  *     shoulders), or else its icon over the head; bobbing with the steps (./villagers.ts).
  *
- * Depth: like an object's (the anchor's y): a villager on the same tile is drawn in front.
+ * Depth: like an object's (the anchor's y): a villager on the same tile is drawn in front. Only the
+ * heaps of the pile cast a shadow; a stack or an icon lying on the ground is flat.
  */
 import { TILE_SIZE } from '../art/sprite.ts';
 import { DATA } from '../data/index.ts';
@@ -55,6 +56,8 @@ export interface ItemPose {
   readonly y: number;
   /** Drawing order among objects and villagers (compare with their anchor y). */
   readonly depth: number;
+  /** Casts a shadow: a heap of the pile does; a stack lying loose is flat (docs/ART.md, «Предметы»). */
+  readonly shadow: boolean;
 }
 
 /** Cheap deterministic hash → [0, 1) of a tile. Presentation only. */
@@ -78,7 +81,9 @@ export function itemPoses(item: Item): ItemPose[] {
   if (item.place === 'ground') {
     const x = baseX + Math.floor(hash(item.x, item.y) * (2 * SHIFT.x + 1)) - SHIFT.x;
     const y = baseY + Math.floor(hash(item.y, item.x) * (2 * SHIFT.y + 1)) - SHIFT.y;
-    return [{ id: item.id, sprite: resource.sprite, animation: undefined, x, y, depth: y }];
+    return [
+      { id: item.id, sprite: resource.sprite, animation: undefined, x, y, depth: y, shadow: false },
+    ];
   }
   const step = pileStep(item.count, resource.stack);
   if (resource.pile !== null) {
@@ -90,6 +95,7 @@ export function itemPoses(item: Item): ItemPose[] {
         x: baseX,
         y: baseY,
         depth: baseY,
+        shadow: true,
       },
     ];
   }
@@ -100,6 +106,7 @@ export function itemPoses(item: Item): ItemPose[] {
     x: baseX + dx,
     y: baseY + dy,
     depth: baseY,
+    shadow: false,
   }));
 }
 

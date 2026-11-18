@@ -194,8 +194,10 @@ describe('сцена data показывает таблицы как есть', 
       states: 'ripe → empty',
       place: 'опушка · вес 1',
       harvest: 'Ягоды · 4 рациона → empty',
+      litter: '—',
     });
     expect(rows.find((r) => r.id === 'oak')!.harvest).toBe('—');
+    expect(rows.find((r) => r.id === 'oak')!.litter).toBe('Ветки · до 3 · раз в 10 сут');
     // What is gathered and eaten on the spot is food.
     for (const def of DATA.objects.records) {
       if (def.harvest) expect(DATA.resources.get(def.harvest.food).category, def.id).toBe('food');

@@ -289,7 +289,7 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
       ctx.imageSmoothingEnabled = false;
       const people = posesAt(tickAlpha);
       const things = itemsNear(view);
-      patchShadows([...things, ...people]);
+      patchShadows([...things.filter((thing) => thing.shadow), ...people]);
       // Villagers and items, by depth: a villager in front of an item on its own tile.
       type Figure =
         | { person: VillagerPose; depth: number; x: number }
