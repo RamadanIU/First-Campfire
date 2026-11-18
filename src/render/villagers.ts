@@ -12,6 +12,8 @@
  *     `strideTiles` (half a tile — at the pace of the sprite's 200 ms frames at ×1), so at ×20
  *     the legs keep pace with the ground and on pause they stop mid-stride (BACKLOG, 0.4).
  *   - Standing: the breathing `idle_*`, each villager with its own phase.
+ *   - Asleep (step 1.5): `man_asleep` / `woman_asleep` — lying on the ground, breathing slowly; the
+ *     same swaps. A bubble of sleep floats over the head (./mapRenderer.ts, `drawSigns`).
  *   - Depth: like an object's (anchor y), a little in front of the low flowers and grass of its
  *     own tile (they stand up to 2 px lower), never in front of anything of the row below.
  */
@@ -45,9 +47,12 @@ const DEPTH_AHEAD = 2.5;
 /** Frames of the walking cycle (docs/ART.md: stride, passing, other stride, passing). */
 const WALK_FRAMES = 4;
 
+/** Sprites of a villager: standing and walking, or asleep on the ground (step 1.5). */
+export type VillagerSprite = 'man' | 'woman' | 'man_asleep' | 'woman_asleep';
+
 export interface VillagerPose {
   readonly id: number;
-  readonly sprite: 'man' | 'woman';
+  readonly sprite: VillagerSprite;
   readonly swap: PaletteSwap;
   /** The feet (sprite anchor), whole world pixels. */
   readonly x: number;
@@ -60,6 +65,8 @@ export interface VillagerPose {
   /** Drawing order among the objects (compare with their anchor y). */
   readonly depth: number;
   readonly walking: boolean;
+  /** Asleep (step 1.5): lying, with a bubble of sleep over the head. */
+  readonly asleep: boolean;
 }
 
 export function spriteOf(villager: Villager): 'man' | 'woman' {
@@ -99,20 +106,22 @@ export function villagerPose(villager: Villager, alpha: number, strideTiles: num
   const x = villager.prevX + (now.x - villager.prevX) * alpha;
   const y = villager.prevY + (now.y - villager.prevY) * alpha;
   const walking = now.x !== villager.prevX || now.y !== villager.prevY;
+  const asleep = villager.action.kind === 'sleep' && !walking;
   const feetY = Math.round(y * TILE_SIZE + FEET.y);
   // The distance at the drawn moment: the last tick's way is covered by alpha.
   const lastStep = Math.hypot(now.x - villager.prevX, now.y - villager.prevY);
   const walked = Math.max(0, villager.walked - (1 - alpha) * lastStep);
   return {
     id: villager.id,
-    sprite: spriteOf(villager),
+    sprite: asleep ? `${spriteOf(villager)}_asleep` : spriteOf(villager),
     swap: swapOf(villager),
     x: Math.round(x * TILE_SIZE + FEET.x),
     y: feetY,
-    animation: `${walking ? 'walk' : 'idle'}_${villager.facing}`,
+    animation: asleep ? 'idle' : `${walking ? 'walk' : 'idle'}_${villager.facing}`,
     frame: walking ? walkFrame(walked, strideTiles) : null,
     phase: (villager.id * 617) % 1600,
     depth: feetY + DEPTH_AHEAD,
     walking,
+    asleep,
   };
 }

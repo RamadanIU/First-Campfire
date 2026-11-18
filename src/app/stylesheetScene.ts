@@ -84,6 +84,17 @@ export const STILL: Placement[] = [
   // The camp.
   { sprite: 'lean_to', x: 128, y: 130 },
   { sprite: 'bed', x: 98, y: 136 },
+  // Asleep (step 1.5): a man on the bed, a woman on the bare ground by the lean-to.
+  { sprite: 'man_asleep', x: 98, y: 137, swap: { hair_brown: 'hair_chestnut' } },
+  { sprite: 'bubble_sleep', x: 95, y: 128, over: true },
+  {
+    sprite: 'woman_asleep',
+    x: 104,
+    y: 116,
+    swap: { skin_light: 'skin_olive', hair_brown: 'hair_blond' },
+    phase: 400,
+  },
+  { sprite: 'bubble_sleep', x: 101, y: 107, over: true, phase: 300 },
   { sprite: 'branch_pile', x: 198, y: 136 },
   { sprite: 'campfire', x: 168, y: 154, animation: 'burning' },
   // The river banks.

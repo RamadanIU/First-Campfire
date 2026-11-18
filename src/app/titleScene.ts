@@ -2,6 +2,7 @@ import { PALETTE } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { prepareTerrain, TERRAIN_LOOKS, terrainGrid } from '../art/terrain.ts';
+import { lightGain, NIGHT_LIGHT, ringLevel } from '../render/lighting.ts';
 import { createScenery, type Placement } from '../render/scenery.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { createTerrainLayer } from '../render/terrainLayer.ts';
@@ -14,7 +15,8 @@ import { createTitleMenu } from './titleMenu.ts';
  * pixels stay square and crisp. Night is a light filter over the picture: everything is dimmed
  * to blue, and around the fire lies a warm circle of light in stepped rings — pixel-art
  * lighting (GDD §10.1: «ночью — круги тёплого света»). The flames are their own light and are
- * drawn after the filter. Real day and night of the world arrive in stage 1 (1.5, 1.9).
+ * drawn after the filter. The night and the rings are those of the world (src/render/lighting.ts,
+ * step 1.5).
  *
  * Over the picture — the menu (./titleMenu.ts, step 0.7): continue the saved world, start a new
  * one, load one from a file. `ui=0` hides all of it: the picture alone.
@@ -69,15 +71,9 @@ const STILL: Placement[] = [
 ];
 const FLAMES: Placement = { sprite: 'campfire', x: FIRE.x, y: FIRE.y, animation: 'burning' };
 
-/** Night: every colour is multiplied by this (dim and blue). */
-const NIGHT = [0.26, 0.31, 0.52] as const;
-/** Firelight at full strength (warm, a little brighter than day). */
-const FIRELIGHT = [1.18, 0.98, 0.74] as const;
 /** Radius of the light around the fire, px, and how much it flickers. */
 const LIGHT_RADIUS = 62;
 const FLICKER = 4;
-/** Light comes in this many stepped rings — pixel-art lighting, no smooth gradient. */
-const LIGHT_STEPS = 4;
 
 /** Cheap deterministic hash → [0, 1). Presentation only; the simulation has its own RNG. */
 function hash(a: number, b = 0): number {
@@ -86,13 +82,9 @@ function hash(a: number, b = 0): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Strength of the firelight 0…1 at a pixel, in LIGHT_STEPS steps. */
+/** Strength of the firelight 0…1 at a pixel, in stepped rings (src/render/lighting.ts). */
 export function firelight(x: number, y: number, radius: number): number {
-  const dx = x + 0.5 - FIRE.x;
-  // The light lies on the ground: the circle is squashed in depth (¾ view).
-  const dy = (y + 0.5 - (FIRE.y - 6)) * 1.5;
-  const near = 1 - Math.sqrt(dx * dx + dy * dy) / radius;
-  return near <= 0 ? 0 : Math.ceil(near * LIGHT_STEPS) / LIGHT_STEPS;
+  return ringLevel(x + 0.5 - FIRE.x, y + 0.5 - (FIRE.y - 6), radius);
 }
 
 export function createTitleScene({ canvas, ui, params }: SceneContext): Scene {
@@ -135,12 +127,9 @@ export function createTitleScene({ canvas, ui, params }: SceneContext): Scene {
     const px = image.data;
     for (let y = 0; y < VIEW_H; y++) {
       for (let x = 0; x < VIEW_W; x++) {
-        const level = firelight(x, y, radius);
+        const gain = lightGain(NIGHT_LIGHT, firelight(x, y, radius));
         const at = (y * VIEW_W + x) * 4;
-        for (let c = 0; c < 3; c++) {
-          const gain = NIGHT[c]! + (FIRELIGHT[c]! - NIGHT[c]!) * level;
-          px[at + c] = px[at + c]! * gain;
-        }
+        for (let c = 0; c < 3; c++) px[at + c] = px[at + c]! * gain[c]!;
       }
     }
     ctx.putImageData(image, 0, 0);

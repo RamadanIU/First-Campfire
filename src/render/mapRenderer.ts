@@ -18,6 +18,9 @@
  *     a «live» copy of the still layer, where the last frame's villager shadows are wiped
  *     (copied back from the still layer) and this frame's are drawn.
  *
+ * Signs (step 1.5) — bubbles of sleep over the sleepers — are drawn separately (`drawSigns`), after
+ * the light of the time of day: they stay readable at night.
+ *
  * Only reads the world. Draws one canvas pixel per world pixel; scaling is the caller's.
  */
 import { TILE_SIZE } from '../art/sprite.ts';
@@ -52,9 +55,17 @@ export interface MapRenderer {
    * current tick by `alpha` (0…1, GameLoop.alpha; 1 — exactly at the current tick).
    */
   draw(ctx: CanvasRenderingContext2D, timeMs: number, view: PixelRect, alpha?: number): void;
+  /**
+   * Signs over the world, drawn after the light of the time of day (they are not lit): a bubble of
+   * sleep over every sleeper (step 1.5). Same arguments as `draw`.
+   */
+  drawSigns(ctx: CanvasRenderingContext2D, timeMs: number, view: PixelRect, alpha?: number): void;
   /** Where and how every villager is drawn at `alpha` (hit tests, the debug overlay). */
   villagers(alpha: number): VillagerPose[];
 }
+
+/** Where the bubble of sleep floats: its tail tip from a sleeper's anchor, px (over the head). */
+export const SLEEP_BUBBLE = { sprite: 'bubble_sleep', x: -3, y: -9 } as const;
 
 /** Where on its tile an object stands: the anchor's offset from the tile's top-left corner. */
 const ANCHOR = { x: TILE_SIZE / 2, y: TILE_SIZE - 3 } as const;
@@ -231,6 +242,21 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
       }
     },
     villagers: posesAt,
+    drawSigns(ctx, timeMs, view, tickAlpha = 1) {
+      for (const person of posesAt(tickAlpha)) {
+        if (!person.asleep) continue;
+        const x = person.x + SLEEP_BUBBLE.x - view.x;
+        const y = person.y + SLEEP_BUBBLE.y - view.y;
+        if (
+          x < -TILE_SIZE ||
+          y < -TILE_SIZE ||
+          x > view.width + TILE_SIZE ||
+          y > view.height + TILE_SIZE
+        )
+          continue;
+        sheet.draw(ctx, SLEEP_BUBBLE.sprite, x, y, { timeMs: timeMs + person.phase });
+      }
+    },
     draw(ctx, timeMs, view, tickAlpha = 1) {
       if (builtFor !== `${world.objects.nextId}/${world.objects.list.length}`) rebuild();
       ctx.imageSmoothingEnabled = false;

@@ -11,8 +11,8 @@
  *   - The goal — the corners of its tile.
  *   - The chosen villager — a small arrow above the head.
  *   - A refused order — a red cross on the tile.
- *   - Needs (`debug=needs`): three bars over the head — satiety (berry red), thirst (water blue),
- *     health (leaf green); full bar — no need, empty — at zero.
+ *   - Needs (`debug=needs`): four bars over the head — satiety (berry red), thirst (water blue),
+ *     sleep (bone white, step 1.5), health (leaf green); full bar — no need, empty — at zero.
  *
  * Colours are the palette's (src/art/palette.ts).
  */
@@ -29,6 +29,7 @@ export const OVERLAY_COLORS = {
   refused: color('berry.1'),
   food: color('berry.1'),
   water: color('water.3'),
+  sleep: color('bone.2'),
   health: color('leaf.4'),
   empty: color('ui.1'),
 } as const;
@@ -36,7 +37,7 @@ export const OVERLAY_COLORS = {
 /** The bars of needs: inner width and the height of one bar, px. */
 export const NEED_BARS = { width: 12, bar: 2 } as const;
 /** Height of the whole box of bars with its dark frame and separators, px. */
-export const NEED_BARS_HEIGHT = 3 * NEED_BARS.bar + 4;
+export const NEED_BARS_HEIGHT = 4 * NEED_BARS.bar + 5;
 
 /** Filled pixels of a bar for a value 0…100: never empty above zero, never full below 100. */
 export function barFill(value: number, width: number = NEED_BARS.width): number {
@@ -182,7 +183,7 @@ export function drawRefused(ctx: CanvasRenderingContext2D, view: PixelRect, tile
 }
 
 /**
- * Bars of needs over a villager's head (`debug=needs`): satiety, thirst, health, top to bottom,
+ * Bars of needs over a villager's head (`debug=needs`): satiety, thirst, sleep, health, top to bottom,
  * in a dark frame whose lower edge is 2 px above `top` (the top of its sprite, world pixels).
  */
 export function drawNeeds(
@@ -190,7 +191,7 @@ export function drawNeeds(
   view: PixelRect,
   x: number,
   top: number,
-  values: { food: number; water: number; health: number },
+  values: { food: number; water: number; sleep: number; health: number },
 ): void {
   const { width, bar } = NEED_BARS;
   const left = Math.round(x) - Math.floor(width / 2) - 1;
@@ -200,6 +201,7 @@ export function drawNeeds(
   const rows = [
     [values.food, OVERLAY_COLORS.food],
     [values.water, OVERLAY_COLORS.water],
+    [values.sleep, OVERLAY_COLORS.sleep],
     [values.health, OVERLAY_COLORS.health],
   ] as const;
   rows.forEach(([value, color], i) => {
