@@ -815,7 +815,7 @@ try {
       const panel = () => text(page, '.world-panel-needs');
       const first = await panel();
       check(
-        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · здоровье 100/.test(first) &&
+        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · сон \d+ · здоровье 100/.test(first) &&
           first.includes('женщина (житель 2)'),
         `панель: ${first}`,
       );
