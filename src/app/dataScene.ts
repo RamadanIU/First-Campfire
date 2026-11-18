@@ -127,6 +127,8 @@ export interface ObjectRow {
   readonly place: string;
   /** «Ягоды · 4 рациона → empty» — food gathered from it and its state once picked clean. */
   readonly harvest: string;
+  /** «Ветки · до 3 · раз в 10 сут» — what falls from it (step 1.7). */
+  readonly litter: string;
 }
 
 const PLACE_NAME: Readonly<Record<ObjectPlace, string>> = DATA_SCENE.places;
@@ -145,6 +147,14 @@ export function objectRows(data: GameData): ObjectRow[] {
       def.harvest === null
         ? DATA_SCENE.none
         : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, DATA_SCENE.unitRations)} → ${def.harvest.empty}`,
+    litter:
+      def.litter === null
+        ? DATA_SCENE.none
+        : DATA_SCENE.litter(
+            data.resources.get(def.litter.resource).name,
+            def.litter.max,
+            formatNumber(def.litter.everyDays),
+          ),
   }));
 }
 
@@ -369,9 +379,10 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
         row.states,
         row.place,
         row.harvest,
+        row.litter,
         row.sprite,
       ]),
-      ['picture', 'name', '', 'id', '', '', 'id'],
+      ['picture', 'name', '', 'id', '', '', '', 'id'],
     ),
   );
   root.append(things);

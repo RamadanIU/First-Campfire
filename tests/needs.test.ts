@@ -351,7 +351,8 @@ describe('выбор: нужда² × доступность', () => {
 
 describe('двое встречаются лоб в лоб', () => {
   it('в кольце из двух проходов: один уступает и обходит, оба доходят', () => {
-    const RING = ['.............', '.TTTTTTTTTTT.', '.............'];
+    // Boulders, not trees: no branches fall, so nobody leaves the way to carry them (step 1.7).
+    const RING = ['.............', '.ooooooooooo.', '.............'];
     const world = worldOn(RING, [
       { x: 3, y: 0 },
       { x: 10, y: 0 },

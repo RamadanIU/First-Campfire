@@ -13,6 +13,7 @@
  * The order here is the order of columns and of the console table.
  */
 import { TIME } from './calendar.ts';
+import { countAll, inPile } from './items.ts';
 import { count, gauge, type Metric, max, mean, min, sum } from './stats.ts';
 
 export const METRICS: readonly Metric[] = [
@@ -48,6 +49,15 @@ export const METRICS: readonly Metric[] = [
   count('fainted', 'Обмороков от недосыпа', 'villager_fainted'),
   gauge('berries_left', 'Ягод на кустах (на конец), рационов', (world) =>
     world.objects.list.reduce((total, object) => total + object.stock, 0),
+  ),
+  // Items (step 1.7): branches fall under trees, the villagers carry them to the pile.
+  gauge('branches_made', 'Упало веток всего (на конец)', (world) => world.items.made),
+  gauge('branches_pile', 'Веток в куче у стоянки (на конец)', (world) => inPile(world, 'branches')),
+  gauge('branches_loose', 'Стопок веток на земле вне кучи (на конец)', (world) =>
+    world.items.list.reduce((n, item) => n + (item.place === 'ground' ? 1 : 0), 0),
+  ),
+  gauge('items_lost', 'Предметов потеряно или лишних (ошибка, на конец)', (world) =>
+    Math.abs(Object.values(countAll(world)).reduce((total, n) => total + n, 0) - world.items.made),
   ),
 ];
 

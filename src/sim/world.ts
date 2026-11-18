@@ -8,6 +8,14 @@
  * every system in the fixed order of SYSTEMS; systems see the new tick.
  */
 import { createJournal, type EventJournal, emit } from './events.ts';
+import {
+  type Camp,
+  createCamp,
+  createItems,
+  type Items,
+  litterSystem,
+  scatterLitter,
+} from './items.ts';
 import { lifeSystem } from './life.ts';
 import type { WorldMap } from './map.ts';
 import { type GeneratedMap, generateMap } from './mapgen.ts';
@@ -21,7 +29,7 @@ import { createVillagers, settleFirstPair, type Villagers, villagersSystem } fro
  * Named random streams, one per system. A new system adds its name to the end; streams are
  * derived from (seed, name), so adding one does not change the numbers of the others.
  */
-export const RNG_STREAMS = ['fireflies', 'map', 'villagers', 'minds'] as const;
+export const RNG_STREAMS = ['fireflies', 'map', 'villagers', 'minds', 'items'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 export interface World {
@@ -39,6 +47,10 @@ export interface World {
   objects: MapObjects;
   /** The people of the world (./villagers.ts, step 1.3), their needs and health (step 1.4). */
   villagers: Villagers;
+  /** The camp: its middle and the place of the pile (./items.ts, step 1.7). */
+  camp: Camp;
+  /** Things lying on tiles — on the ground and in the pile (./items.ts, step 1.7). */
+  items: Items;
 }
 
 /** A system updates one aspect of the world once per tick. */
@@ -49,13 +61,15 @@ export interface System {
 
 /**
  * Systems in the order they run every tick. The order is part of the rules: do not reorder.
- * Life (needs, health, death — ./life.ts) goes before the villagers act.
+ * Life (needs, health, death — ./life.ts) goes before the villagers act; litter (branches falling
+ * from trees, ./items.ts — step 1.7) comes last.
  */
 export const SYSTEMS: readonly System[] = [
   calendarEventsSystem,
   firefliesSystem,
   lifeSystem,
   villagersSystem,
+  litterSystem,
 ];
 
 export interface WorldOptions {
@@ -66,7 +80,10 @@ export interface WorldOptions {
   map?: GeneratedMap;
 }
 
-/** A new world: the map from the seed, then the first two people at the camp site. */
+/**
+ * A new world: the map from the seed, the camp (./items.ts), the first two people at it, the
+ * branches that fell before the world began.
+ */
 export function createWorld(seed: number, options: WorldOptions = {}): World {
   const rng = {} as Record<RngStream, Rng>;
   for (const stream of RNG_STREAMS) rng[stream] = createRng(seed, stream);
@@ -80,9 +97,12 @@ export function createWorld(seed: number, options: WorldOptions = {}): World {
     map,
     objects,
     villagers: createVillagers(),
+    camp: createCamp(map, objects),
+    items: createItems(),
   };
   const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
   settleFirstPair(world, { kind: 'event', event: created.id });
+  scatterLitter(world);
   return world;
 }
 

@@ -47,7 +47,20 @@
     "halfAvailabilityTiles": 60,
     "jitterPercent": 10,
     "reservePoints": 25,
-    "retryTicks": 400
+    "retryTicks": 400,
+    "haulUtility": 0.2,
+    "workRetryTicks": 100
+  },
+  "items": {
+    "pileRadius": 1,
+    "pileOffset": 2,
+    "pickUpTicks": 8,
+    "putDownTicks": 8,
+    "gatherTiles": 8,
+    "maxLoose": 120,
+    "litterSpacing": 2,
+    "startLitter": 40,
+    "litterCheckTicks": 10
   },
   "map": {
     "width": 64,

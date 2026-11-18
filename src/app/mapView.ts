@@ -2,6 +2,7 @@ import { PALETTE, toHex } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { prepareTerrain, TERRAIN_LOOKS } from '../art/terrain.ts';
+import { DATA } from '../data/index.ts';
 import { drawPicture, pixelScale, screenToWorld, ZOOMS } from '../render/camera.ts';
 import {
   drawChosen,
@@ -26,6 +27,9 @@ import { bindCameraInput, type CameraControl, createCameraControl } from './came
 import { bindSpeedKeys } from './controls.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
+
+/** The name of a resource for the words of the panel (data/resources.json). */
+const resourceName = (id: string): string => DATA.resources.get(id).name;
 
 /**
  * The view of a running world: its map (src/render/mapRenderer.ts, step 1.1) seen through the
@@ -356,7 +360,7 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     },
   };
   const needsNotes = (): string[] => {
-    const lines = world.villagers.list.map(needsLine);
+    const lines = world.villagers.list.map((villager) => needsLine(villager, resourceName));
     for (const event of world.events.list) {
       if (event.type !== 'villager_died') continue;
       const day = Math.floor(event.tick / TIME.ticksPerDay) + 1;

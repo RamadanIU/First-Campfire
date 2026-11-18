@@ -1,10 +1,30 @@
 [
-  { "id": "oak", "name": "Дуб", "sprite": "tree", "walkable": false, "states": ["grown"], "place": "forest", "weight": 56, "harvest": null },
-  { "id": "birch", "name": "Берёза", "sprite": "birch", "walkable": false, "states": ["grown"], "place": "forest", "weight": 26, "harvest": null },
-  { "id": "oak_young", "name": "Молодой дуб", "sprite": "tree_young", "walkable": false, "states": ["grown"], "place": "forest", "weight": 16, "harvest": null },
-  { "id": "stump", "name": "Пень", "sprite": "stump", "walkable": false, "states": ["old"], "place": "forest", "weight": 2, "harvest": null },
-  { "id": "berry_bush", "name": "Малина", "sprite": "berry_bush", "walkable": false, "states": ["ripe", "empty"], "place": "edge", "weight": 1, "harvest": { "food": "berries", "rations": 4, "empty": "empty" } },
-  { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1, "harvest": null },
-  { "id": "flowers", "name": "Цветы", "sprite": "flowers", "walkable": true, "states": ["bloom"], "place": "meadow", "weight": 4, "harvest": null },
-  { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5, "harvest": null }
+  { "id": "oak", "name": "Дуб", "sprite": "tree", "walkable": false, "states": ["grown"], "place": "forest", "weight": 56, "harvest": null, "litter": { "resource": "branches", "max": 3, "everyDays": 10 } },
+  { "id": "birch", "name": "Берёза", "sprite": "birch", "walkable": false, "states": ["grown"], "place": "forest", "weight": 26, "harvest": null, "litter": { "resource": "branches", "max": 3, "everyDays": 10 } },
+  {
+    "id": "oak_young",
+    "name": "Молодой дуб",
+    "sprite": "tree_young",
+    "walkable": false,
+    "states": ["grown"],
+    "place": "forest",
+    "weight": 16,
+    "harvest": null,
+    "litter": { "resource": "branches", "max": 2, "everyDays": 20 }
+  },
+  { "id": "stump", "name": "Пень", "sprite": "stump", "walkable": false, "states": ["old"], "place": "forest", "weight": 2, "harvest": null, "litter": null },
+  {
+    "id": "berry_bush",
+    "name": "Малина",
+    "sprite": "berry_bush",
+    "walkable": false,
+    "states": ["ripe", "empty"],
+    "place": "edge",
+    "weight": 1,
+    "harvest": { "food": "berries", "rations": 4, "empty": "empty" },
+    "litter": null
+  },
+  { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1, "harvest": null, "litter": null },
+  { "id": "flowers", "name": "Цветы", "sprite": "flowers", "walkable": true, "states": ["bloom"], "place": "meadow", "weight": 4, "harvest": null, "litter": null },
+  { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5, "harvest": null, "litter": null }
 ]

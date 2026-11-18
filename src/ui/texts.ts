@@ -126,14 +126,53 @@ const WALKS_TO = {
   drink: 'идёт к воде',
 } as const;
 
-/** What a villager is doing, in words. */
-export function doingOf(villager: Villager): string {
+/**
+ * Words for a resource a villager handles (step 1.7): «идёт за ветками» (`with` — after «за»),
+ * «несёт 6 веток» (`forms` — after a number). The names of resources are content
+ * (data/resources.json, «Ветки»); a resource without words here is named by its name.
+ */
+const HANDLED: Readonly<Record<string, { with: string; what: string; forms: Forms }>> = {
+  branches: { with: 'ветками', what: 'ветки', forms: ['ветку', 'ветки', 'веток'] },
+};
+
+function handled(resource: string, name: (resource: string) => string) {
+  const words = HANDLED[resource];
+  if (words) return words;
+  const what = name(resource).toLowerCase();
+  return { with: what, what, forms: [what, what, what] as Forms };
+}
+
+/** «6 веток» — how many of a resource, in words. */
+export function resourceCount(
+  resource: string,
+  count: number,
+  name: (resource: string) => string,
+): string {
+  return `${count} ${plural(count, handled(resource, name).forms)}`;
+}
+
+/**
+ * What a villager is doing, in words. `name` — the name of a resource (data/resources.json; the
+ * module does not load the tables).
+ */
+export function doingOf(villager: Villager, name: (resource: string) => string): string {
   const action = villager.action;
   switch (action.kind) {
     case 'idle':
       return 'отдыхает';
     case 'walk':
+      if (action.purpose === 'fetch' && action.source?.kind === 'item') {
+        return `идёт за ${handled(action.source.resource, name).with}`;
+      }
+      if (action.purpose === 'carry' && villager.load) {
+        return `несёт ${resourceCount(villager.load.resource, villager.load.count, name)} в кучу`;
+      }
+      if (action.purpose === 'fetch' || action.purpose === 'carry') return 'носит в кучу';
       return WALKS_TO[action.purpose];
+    case 'pick_up':
+      return `подбирает ${handled(action.resource, name).what}`;
+    case 'put_down':
+      return `складывает ${handled(action.resource, name).what} в кучу`;
     case 'eat':
       return 'ест ягоды';
     case 'drink':
@@ -152,9 +191,9 @@ export const SCALE_NAME = {
 } as const;
 
 /** A line of the debug panel for a villager (`debug=needs`): doing what, its scales. */
-export function needsLine(villager: Villager): string {
+export function needsLine(villager: Villager, name: (resource: string) => string): string {
   const round = (value: number) => Math.round(value);
-  return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
+  return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager, name)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
 }
 
 export const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
@@ -493,6 +532,8 @@ export const DATA_SCENE = {
   spoilsNever: 'не портится',
   spoilsDays: (days: string) => `${days} сут`,
   weight: (place: string, weight: number) => `${place} · вес ${weight}`,
+  litter: (resource: string, max: number, days: string) =>
+    `${resource} · до ${max} · раз в ${days} сут`,
   title: 'Таблицы данных',
   intro: (
     tables: number,
@@ -514,7 +555,7 @@ export const DATA_SCENE = {
   groundHeads: ['', 'Название · id', 'Проходима', 'Скорость', 'Тиков на тайл', 'Вид'],
   objects: (file: string) => `Объекты карты — ${file}`,
   objectsMeta:
-    'Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное); еда — что с него собирают и съедают на месте (шаг 1.4).',
+    'Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное); еда — что с него собирают и съедают на месте (шаг 1.4); роняет — что падает с него на соседний свободный тайл и как часто (шаг 1.7).',
   objectHeads: [
     '',
     'Название · id',
@@ -522,6 +563,7 @@ export const DATA_SCENE = {
     'Состояния',
     'Место · вес',
     'Еда на нём',
+    'Роняет',
     'Спрайт',
   ],
   balance: (file: string) => `Баланс — ${file}`,

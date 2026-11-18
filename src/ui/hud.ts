@@ -19,6 +19,7 @@
  * it (the scene does not create the panel). The panel only reads the world; what it changes is
  * the observer's: the speed, the camera, the choice.
  */
+import { DATA } from '../data/index.ts';
 import { calendarAt, type DayPhase } from '../sim/calendar.ts';
 import type { Tile } from '../sim/path.ts';
 import { findVillager } from '../sim/villagers.ts';
@@ -26,6 +27,9 @@ import type { World } from '../sim/world.ts';
 import { dateOf, shortDateOf } from './dates.ts';
 import { createFeed, type FeedEntry } from './feed.ts';
 import { capitalize, deathNote, doingOf, HUD, SCALE_NAME, speedName } from './texts.ts';
+
+/** The name of a resource for the words of the panel (data/resources.json). */
+const resourceName = (id: string): string => DATA.resources.get(id).name;
 
 /** The speeds of the buttons and their keys (src/app/controls.ts). */
 const SPEED_BUTTONS = [
@@ -285,7 +289,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
     }
     cardScales.hidden = false;
     setText(cardTitle, HUD.cardTitle(villager.sex, id));
-    setText(cardDoing, capitalize(doingOf(villager)));
+    setText(cardDoing, capitalize(doingOf(villager, resourceName)));
     for (const scale of scales) {
       const value = Math.round(
         scale.key === 'health' ? villager.health : villager.needs[scale.key],

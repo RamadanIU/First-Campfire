@@ -21,6 +21,11 @@
  *     the villager is back (there and back, plus the meal) and there is room to top it up, that
  *     need is met first — one drinks before walking far for berries.
  *
+ * Work (step 1.7): carrying things lying loose to the pile at the camp — `ai.haulUtility` ×
+ * availability of the nearest loose item whose resource has room in the pile. It beats rest, so
+ * free time goes to work, and loses to a pressing need. A search in vain is not repeated for
+ * `ai.workRetryTicks`.
+ *
  * Where: food is a bush (an object with `harvest` in data/objects.json) that still has some, and
  * the villager stands on a tile beside it — on one of its four sides, facing it; water is drunk
  * from a tile beside the water, the same way. The spot must be free of other villagers and not
@@ -28,6 +33,7 @@
  */
 import { DATA } from '../data/index.ts';
 import { calendarAt } from './calendar.ts';
+import { type Item, itemAt, pileHasRoom } from './items.ts';
 import { inside, isWater } from './map.ts';
 import {
   FULL,
@@ -175,12 +181,100 @@ export function findSource(
   return found;
 }
 
-/** Is the source still there for a villager standing on (x, y): beside it, with food left? */
+/**
+ * Is the source still there for a villager standing on (x, y): beside it, with food left; on the
+ * item's tile, the item still lying loose there; on the tile of the pile.
+ */
 export function canUse(world: World, source: Source, x: number, y: number): boolean {
+  if (source.kind === 'item') {
+    const item = itemAt(world, x, y);
+    return source.x === x && source.y === y && item?.id === source.item && item.place === 'ground';
+  }
+  if (source.kind === 'pile') return source.x === x && source.y === y;
   if (Math.abs(source.x - x) + Math.abs(source.y - y) !== 1) return false;
   if (source.kind === 'water') return isWater(world.map, source.x, source.y);
   const object = objectAt(world.map, world.objects, source.x, source.y);
   return object !== undefined && object.id === source.object && object.stock > 0;
+}
+
+/** Marks of tiles with loose items to carry, reused by every search (not part of the world). */
+let looseMarks: { size: number; stamp: number; at: Uint32Array } | null = null;
+
+export interface LooseOptions {
+  /** Only items of this resource (gathering an armful); otherwise any with room in the pile. */
+  resource?: string;
+  /** Do not look farther than this, tiles of grass. */
+  maxCost?: number;
+}
+
+/** Does anything lie loose on the ground that the pile has room for? */
+export function anyLoose(world: World): boolean {
+  const room = new Map<string, boolean>();
+  for (const item of world.items.list) {
+    if (item.place !== 'ground') continue;
+    let fits = room.get(item.resource);
+    if (fits === undefined) {
+      fits = pileHasRoom(world, item.resource);
+      room.set(item.resource, fits);
+    }
+    if (fits) return true;
+  }
+  return false;
+}
+
+/**
+ * The nearest loose item (lying on the ground, not in the pile) that `villager` could carry to the
+ * pile: its resource has room there, nobody else stands on it or walks to it. The villager stands
+ * on the item's tile to pick it up. Null — none within reach.
+ */
+export function searchLoose(
+  world: World,
+  villager: Villager,
+  { resource, maxCost }: LooseOptions = {},
+): Found | null {
+  const { map } = world;
+  const size = map.width * map.height;
+  if (looseMarks === null || looseMarks.size !== size || looseMarks.stamp >= 0xfffffff0) {
+    looseMarks = { size, stamp: 0, at: new Uint32Array(size) };
+  }
+  looseMarks.stamp += 1;
+  const { stamp, at } = looseMarks;
+  const room = new Map<string, boolean>();
+  let any = false;
+  for (const item of world.items.list) {
+    if (item.place !== 'ground') continue;
+    if (resource !== undefined && item.resource !== resource) continue;
+    let fits = room.get(item.resource);
+    if (fits === undefined) {
+      fits = pileHasRoom(world, item.resource);
+      room.set(item.resource, fits);
+    }
+    if (!fits) continue;
+    at[item.y * map.width + item.x] = stamp;
+    any = true;
+  }
+  if (!any) return null;
+  const result = findNearest(
+    world.map,
+    world.objects,
+    { x: villager.x, y: villager.y },
+    (x, y) =>
+      at[y * map.width + x] === stamp &&
+      !isTaken(world, x, y, villager) &&
+      !isGoalOfAnother(world, { x, y }, villager),
+    {
+      avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+      ...(maxCost === undefined ? {} : { maxCost }),
+    },
+  );
+  if (!result.ok) return null;
+  const item = itemAt(world, result.tile.x, result.tile.y) as Item;
+  return {
+    source: { kind: 'item', item: item.id, resource: item.resource, x: item.x, y: item.y },
+    goal: result.tile,
+    path: result.path,
+    cost: result.cost,
+  };
 }
 
 /** Availability of a source `cost` tiles of grass away: 1 beside it, ½ at the half distance. */
@@ -206,8 +300,15 @@ export const ACTIVITIES: readonly { readonly id: ActivityId; readonly need: Meal
   { id: 'drink', need: 'water' },
 ];
 
-/** What the mind chose: rest on, sleep where it stands, or go and meet a need. */
-export type Choice = { kind: 'rest'; utility: number } | { kind: 'sleep'; utility: number } | Trip;
+/** What the mind chose: rest on, sleep where it stands, go and meet a need, or go and haul. */
+export type Choice =
+  | { kind: 'rest'; utility: number }
+  | { kind: 'sleep'; utility: number }
+  | Trip
+  | Haul;
+
+/** A choice to walk to a loose item and carry it to the pile (step 1.7). */
+export type Haul = { kind: 'haul'; utility: number } & Found;
 
 /** A choice to walk to a source and eat or drink there. */
 export type Trip = { kind: ActivityId; need: Meal; utility: number } & Found;
@@ -226,7 +327,7 @@ export function sleepWish(world: World, villager: Villager): number {
 
 /** A scored option of one decision (the debug view and tests read them). */
 export interface Considered {
-  kind: 'rest' | 'sleep' | ActivityId;
+  kind: 'rest' | 'sleep' | 'haul' | ActivityId;
   /** Utility with the jitter; for an activity not looked into — its upper bound. */
   utility: number;
   /** Was the source searched for (false — it could not win anyway)? */
@@ -254,6 +355,8 @@ export function choose(world: World, villager: Villager, considered?: Considered
   const sleep = sleepWish(world, villager) * noise();
   considered?.push({ kind: 'sleep', utility: sleep, searched: false, nowhere: false });
   if (sleep > best.utility) best = { kind: 'sleep', utility: sleep };
+  // Work (step 1.7): its draw comes after the others', so theirs did not change with it.
+  const work = DATA.balance.ai.haulUtility * noise();
   // The most promising first: once an upper bound cannot beat the best, neither can the rest.
   options.sort((a, b) => b.ceiling - a.ceiling || a.order - b.order);
   for (const option of options) {
@@ -276,7 +379,10 @@ export function choose(world: World, villager: Villager, considered?: Considered
     const search = searchSource(world, villager, option.need, {
       maxCost: reachFor(option.ceiling, best.utility),
     });
-    villager.nowhere[option.need] = search.ok ? 0 : world.tick;
+    // Too far only because sleep is wanted more (dusk, night) is no search in vain: by morning the
+    // source is worth the way again, so it is not forgotten for a day.
+    const inVain = !search.ok && !(search.reason === 'too_far' && best.kind === 'sleep');
+    villager.nowhere[option.need] = inVain ? world.tick : 0;
     const utility = search.ok ? option.ceiling * availability(search.cost) : 0;
     considered?.push({
       kind: option.id,
@@ -289,8 +395,43 @@ export function choose(world: World, villager: Villager, considered?: Considered
       best = { kind: option.id, need: option.need, utility, ...found };
     }
   }
-  if (best.kind === 'rest' || best.kind === 'sleep') return best;
+  best = haul(world, villager, work, best, considered) ?? best;
+  if (best.kind === 'rest' || best.kind === 'sleep' || best.kind === 'haul') return best;
   return precaution(world, villager, best, considered) ?? best;
+}
+
+/**
+ * Work (step 1.7): carry a loose item to the pile, if it beats `best` — `ceiling` (the utility of
+ * work with its jitter) × availability of the nearest such item. Searched only if it could win,
+ * and not again for `ai.workRetryTicks` after a search in vain. Null — not chosen.
+ */
+function haul(
+  world: World,
+  villager: Villager,
+  ceiling: number,
+  best: Choice,
+  considered?: Considered[],
+): Haul | null {
+  if (ceiling <= best.utility) {
+    considered?.push({ kind: 'haul', utility: ceiling, searched: false, nowhere: false });
+    return null;
+  }
+  const vain = villager.noWork;
+  if (!anyLoose(world)) {
+    // Nothing lies loose that the pile has room for: no work at all, nothing to search.
+    considered?.push({ kind: 'haul', utility: 0, searched: false, nowhere: true });
+    return null;
+  }
+  if (vain > 0 && world.tick - vain < DATA.balance.ai.workRetryTicks) {
+    considered?.push({ kind: 'haul', utility: 0, searched: false, nowhere: true });
+    return null;
+  }
+  const found = searchLoose(world, villager, { maxCost: reachFor(ceiling, best.utility) });
+  villager.noWork = found ? 0 : world.tick;
+  const utility = found ? ceiling * availability(found.cost) : 0;
+  considered?.push({ kind: 'haul', utility, searched: true, nowhere: found === null });
+  if (!found || utility <= best.utility) return null;
+  return { kind: 'haul', utility, ...found };
 }
 
 /**
