@@ -3,6 +3,7 @@ import type { CameraInfo } from './app/mapView.ts';
 import { parseParams } from './app/params.ts';
 import { PRESENTATION_FPS } from './app/scene.ts';
 import { formatIssue } from './data/schema.ts';
+import { START } from './ui/texts.ts';
 
 /**
  * Hook for automated checks (tools/screenshot.ts, tools/e2e.ts): `ready` flips to true once the
@@ -106,7 +107,7 @@ async function start() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     hook.errors.push(message);
-    showProblem(ui, 'Игра не запустилась', message);
+    showProblem(ui, START.failed, message);
     hook.ready = true;
     return;
   }
@@ -119,8 +120,7 @@ async function start() {
   }
   const scene = (factory ?? SCENES[DEFAULT_SCENE]!)({ canvas, ui, params });
   // References from the tables to sprites and looks of the ground: a broken one is shown on top.
-  if (brokenRefs.length > 0)
-    showProblem(ui, 'Битые ссылки в таблицах данных', brokenRefs.join('\n'));
+  if (brokenRefs.length > 0) showProblem(ui, START.brokenRefs, brokenRefs.join('\n'));
 
   // The canvas is as large as the physical screen (device pixels): with a fractional
   // devicePixelRatio (Windows 125 %) a canvas of CSS pixels would be stretched by the browser into

@@ -13,6 +13,7 @@ import {
 } from '../data/tables.ts';
 import { createSpriteSheet, type SpriteSheet } from '../render/spriteSheet.ts';
 import { DAYS_PER_YEAR, TICKS_PER_SEASON, TICKS_PER_YEAR } from '../sim/calendar.ts';
+import { DATA_SCENE, FORMS, plural } from '../ui/texts.ts';
 import { checkDataRefs } from './dataRefs.ts';
 import type { Scene, SceneContext } from './scene.ts';
 
@@ -30,36 +31,13 @@ const SCALE = 3;
 /** Resources are shown lying on a tile of grass, as they will lie in the world. */
 const GROUND = 'grass';
 
-const CATEGORY_TITLE: Record<ResourceCategory, string> = {
-  food: 'Еда',
-  material: 'Материалы',
-  product: 'Изделия',
-};
-
-/** Russian plural forms for units of the balance: one, few, many. */
-const UNIT_FORMS: Readonly<Record<string, readonly [string, string, string]>> = {
-  тиков: ['тик', 'тика', 'тиков'],
-  лет: ['год', 'года', 'лет'],
-  сезонов: ['сезон', 'сезона', 'сезонов'],
-  тайлов: ['тайл', 'тайла', 'тайлов'],
-  рационов: ['рацион', 'рациона', 'рационов'],
-  пунктов: ['пункт', 'пункта', 'пунктов'],
-};
-
-function plural(value: number, forms: readonly [string, string, string]): string {
-  if (!Number.isInteger(value)) return forms[1];
-  const tens = value % 100;
-  const ones = value % 10;
-  if (ones === 1 && tens !== 11) return forms[0];
-  if (ones >= 2 && ones <= 4 && (tens < 12 || tens > 14)) return forms[1];
-  return forms[2];
-}
+const CATEGORY_TITLE: Record<ResourceCategory, string> = DATA_SCENE.categories;
 
 /** «400 тиков», «2 года», «10 %», «×1,1». */
 export function withUnit(value: number, unit: string | null): string {
   if (unit === null) return formatNumber(value);
   if (unit === '×') return `×${formatNumber(value)}`;
-  const forms = UNIT_FORMS[unit];
+  const forms = DATA_SCENE.units[unit];
   return `${formatNumber(value)} ${forms ? plural(value, forms) : unit}`;
 }
 
@@ -102,10 +80,12 @@ export function resourceGroups(data: GameData): ResourceGroup[] {
         sprite: resource.sprite,
         stack:
           category === 'food'
-            ? `${resource.stack} ${plural(resource.stack, ['рацион', 'рациона', 'рационов'])}`
-            : `${resource.stack} шт.`,
+            ? `${resource.stack} ${plural(resource.stack, FORMS.ration)}`
+            : DATA_SCENE.pieces(resource.stack),
         spoils:
-          resource.spoilDays === null ? 'не портится' : `${formatNumber(resource.spoilDays)} сут`,
+          resource.spoilDays === null
+            ? DATA_SCENE.spoilsNever
+            : DATA_SCENE.spoilsDays(formatNumber(resource.spoilDays)),
         era: String(resource.era),
       })),
   })).filter((group) => group.rows.length > 0);
@@ -127,12 +107,12 @@ export function terrainRows(data: GameData): TerrainRow[] {
     id: terrain.id,
     name: terrain.name,
     look: terrain.look,
-    walkable: terrain.walkable ? 'да' : 'нет',
-    speed: terrain.speed === null ? '—' : withUnit(terrain.speed, '×'),
+    walkable: terrain.walkable ? DATA_SCENE.yes : DATA_SCENE.no,
+    speed: terrain.speed === null ? DATA_SCENE.none : withUnit(terrain.speed, '×'),
     ticksPerTile:
       terrain.speed === null
-        ? '—'
-        : withUnit(Math.round((walk / terrain.speed) * 10) / 10, 'тиков'),
+        ? DATA_SCENE.none
+        : withUnit(Math.round((walk / terrain.speed) * 10) / 10, DATA_SCENE.unitTicks),
   }));
 }
 
@@ -149,12 +129,7 @@ export interface ObjectRow {
   readonly harvest: string;
 }
 
-const PLACE_NAME: Readonly<Record<ObjectPlace, string>> = {
-  forest: 'лес',
-  edge: 'опушка',
-  scatter: 'россыпь',
-  meadow: 'луг',
-};
+const PLACE_NAME: Readonly<Record<ObjectPlace, string>> = DATA_SCENE.places;
 
 /** Objects of the map (data/objects.json), in the order of the file. */
 export function objectRows(data: GameData): ObjectRow[] {
@@ -162,13 +137,14 @@ export function objectRows(data: GameData): ObjectRow[] {
     id: def.id,
     name: def.name,
     sprite: def.sprite,
-    walkable: def.walkable ? 'да' : 'нет',
+    walkable: def.walkable ? DATA_SCENE.yes : DATA_SCENE.no,
     states: def.states.join(' → '),
-    place: def.place === null ? '—' : `${PLACE_NAME[def.place]} · вес ${def.weight}`,
+    place:
+      def.place === null ? DATA_SCENE.none : DATA_SCENE.weight(PLACE_NAME[def.place], def.weight),
     harvest:
       def.harvest === null
-        ? '—'
-        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, 'рационов')} → ${def.harvest.empty}`,
+        ? DATA_SCENE.none
+        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, DATA_SCENE.unitRations)} → ${def.harvest.empty}`,
   }));
 }
 
@@ -327,18 +303,18 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
   const objects = objectRows(DATA);
   const balance = balanceGroups(DATA);
   const numbers = balance.reduce((n, group) => n + group.rows.length, 0);
-  root.innerHTML = `<header class="gallery-head"><h1>Таблицы данных</h1><p>Содержание игры живёт в файлах <b>data/*.json</b>, а не в коде: новая строка в таблице — новый ресурс на этой странице. ${Object.keys(TABLES).length} таблицы · ${DATA.resources.records.length} ресурсов · ${terrain.length} типов земли · ${objects.length} видов объектов карты · ${numbers} параметров баланса. Все таблицы проверены при загрузке${refProblems.length === 0 ? ', ссылки на спрайты и виды земли — тоже' : ''}.</p></header>`;
+  root.innerHTML = `<header class="gallery-head"><h1>${DATA_SCENE.title}</h1><p>${DATA_SCENE.intro(Object.keys(TABLES).length, DATA.resources.records.length, terrain.length, objects.length, numbers, refProblems.length === 0)}</p></header>`;
 
   if (refProblems.length > 0) {
     const box = document.createElement('div');
     box.className = 'problems';
-    box.textContent = `Битые ссылки в таблицах (${refProblems.length}):\n${refProblems.join('\n')}`;
+    box.textContent = DATA_SCENE.brokenRefs(refProblems.length, refProblems.join('\n'));
     root.append(box);
   }
 
   // Resources.
   const resources = document.createElement('section');
-  resources.innerHTML = `<h2>Ресурсы — ${TABLES.resources.file}</h2><p class="meta">Значок — спрайт ресурса: так стопка лежит на земле. Стопка — сколько лежит на одном тайле и сколько уносят руки; еда считается в рационах (еда взрослого на сутки). Портится — под навесом; под дождём втрое быстрее.</p>`;
+  resources.innerHTML = `<h2>${DATA_SCENE.resources(TABLES.resources.file)}</h2><p class="meta">${DATA_SCENE.resourcesMeta}</p>`;
   const columns = document.createElement('div');
   columns.className = 'data-columns';
   for (const group of groups) {
@@ -346,7 +322,7 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
     block.innerHTML = `<h3>${escapeHtml(group.title)} · ${group.rows.length}</h3>`;
     block.append(
       table(
-        ['', 'Название · id · эпоха', 'Стопка', 'Портится'],
+        DATA_SCENE.resourceHeads,
         group.rows.map((row) => [
           known.has(row.sprite) ? itemIcon(sheet, row.sprite) : '?',
           named(row.name, `${row.id} · ${row.era}`),
@@ -363,10 +339,10 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
 
   // Ground.
   const ground = document.createElement('section');
-  ground.innerHTML = `<h2>Земля — ${TABLES.terrain.file}</h2><p class="meta">Скорость — относительно травы; тиков на тайл — сколько идёт взрослый (${withUnit(DATA.balance.movement.walkTicksPerTile, 'тиков')} по траве, balance.json). Вид — как земля нарисована (тайлы и переходы, src/art/terrain.ts).</p>`;
+  ground.innerHTML = `<h2>${DATA_SCENE.ground(TABLES.terrain.file)}</h2><p class="meta">${DATA_SCENE.groundMeta(withUnit(DATA.balance.movement.walkTicksPerTile, DATA_SCENE.unitTicks))}</p>`;
   ground.append(
     table(
-      ['', 'Название · id', 'Проходима', 'Скорость', 'Тиков на тайл', 'Вид'],
+      DATA_SCENE.groundHeads,
       terrain.map((row) => [
         groundTile(sheet, row.look),
         named(row.name, row.id),
@@ -382,10 +358,10 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
 
   // Objects of the map.
   const things = document.createElement('section');
-  things.innerHTML = `<h2>Объекты карты — ${TABLES.objects.file}</h2><p class="meta">Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное); еда — что с него собирают и съедают на месте (шаг 1.4).</p>`;
+  things.innerHTML = `<h2>${DATA_SCENE.objects(TABLES.objects.file)}</h2><p class="meta">${DATA_SCENE.objectsMeta}</p>`;
   things.append(
     table(
-      ['', 'Название · id', 'Проходим', 'Состояния', 'Место · вес', 'Еда на нём', 'Спрайт'],
+      DATA_SCENE.objectHeads,
       objects.map((row) => [
         objectPicture(sheet, row.sprite, row.states.split(' → ')[0]!),
         named(row.name, row.id),
@@ -402,7 +378,7 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
 
   // Balance.
   const numbersSection = document.createElement('section');
-  numbersSection.innerHTML = `<h2>Баланс — ${TABLES.balance.file}</h2><p class="meta">Числа GDD §2.1 и §13.1; карта — §2.2 и §3.1; потребности и выбор действия — §4.2, §13.2 и §2.3. Ядро симуляции берёт время отсюда: сезон — ${withUnit(TICKS_PER_SEASON, 'тиков')}, год — ${withUnit(TICKS_PER_YEAR, 'тиков')} (${DAYS_PER_YEAR} сут, ${formatNumber(TICKS_PER_YEAR / DATA.balance.time.ticksPerSecond / 60)} мин на ×1).</p>`;
+  numbersSection.innerHTML = `<h2>${DATA_SCENE.balance(TABLES.balance.file)}</h2><p class="meta">${DATA_SCENE.balanceMeta(withUnit(TICKS_PER_SEASON, DATA_SCENE.unitTicks), withUnit(TICKS_PER_YEAR, DATA_SCENE.unitTicks), DAYS_PER_YEAR, formatNumber(TICKS_PER_YEAR / DATA.balance.time.ticksPerSecond / 60))}</p>`;
   const balanceColumns = document.createElement('div');
   balanceColumns.className = 'data-columns';
   for (const group of balance) {
@@ -410,7 +386,7 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
     block.innerHTML = `<h3>${escapeHtml(group.title)}</h3>`;
     block.append(
       table(
-        ['Что', 'Значение', 'Поле'],
+        DATA_SCENE.balanceHeads,
         group.rows.map((row) => [row.doc, row.value, row.key]),
         ['', '', 'id'],
       ),
@@ -422,8 +398,7 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
 
   const howTo = document.createElement('p');
   howTo.className = 'meta how-to';
-  howTo.textContent =
-    'Как добавить ресурс: строка в data/resources.json (и, если нужен новый значок, файл src/art/sprites/<id>.ts) → npm test проверит таблицу и ссылку на спрайт. Подробно — docs/ARCHITECTURE.md, «Таблицы данных».';
+  howTo.textContent = DATA_SCENE.howTo;
   root.append(howTo);
   ui.replaceChildren(root);
 

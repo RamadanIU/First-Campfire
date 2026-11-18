@@ -17,7 +17,8 @@ export type SlotPreset = (typeof SLOT_PRESETS)[number];
  * Scene-specific ones: `sprite=` (the gallery shows one sprite large), `zoom=` (zoom step of
  * pictures of the world: the camera of the world, the style sheet), `cam=` (where the camera of
  * the world looks), `slot=` (debug: a prepared autosave), `debug=` (debug overlays of the world),
- * `go=` (debug: send the first villager to a tile), `light=0` (the world without the light of the
+ * `go=` (debug: send the first villager to a tile), `select=` (the chosen villager), `menu=1` (the
+ * menu «Мир» of the observer's panel open), `light=0` (the world without the light of the
  * time of day).
  * They make every screen reproducible: the screenshot tool and bug reports
  * use the same URL to get the same picture.
@@ -68,6 +69,10 @@ export interface LaunchParams {
    * world runs `ticks=` — a walk (and its path with `debug=1`) reproducible by URL.
    */
   go: { x: number; y: number } | null;
+  /** The villager chosen at the start (step 1.6: its frame and card); null — none. */
+  select: number | null;
+  /** The menu «Мир» of the observer's panel is open at the start (step 1.6). */
+  menu: boolean;
   /**
    * The world is given by the address (`seed=` or `ticks=`, without `slot=`): the world scene
    * shows exactly that world and neither reads nor writes the autosave.
@@ -90,6 +95,8 @@ export const DEFAULT_PARAMS: LaunchParams = {
   slot: null,
   debug: [],
   go: null,
+  select: null,
+  menu: false,
   worldFromUrl: false,
 };
 
@@ -168,6 +175,8 @@ export function parseParams(search: string): LaunchParams {
     slot,
     debug: parseDebug(query.get('debug')),
     go: parseTile(query.get('go')),
+    select: parseInteger(query.get('select'), 1),
+    menu: query.get('menu') === '1',
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,
   };
 }

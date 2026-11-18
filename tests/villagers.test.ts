@@ -204,7 +204,7 @@ describe('детерминизм с жителями', () => {
         if (tick === 700) orderWalk(world, world.villagers.list[0]!, { x: 10, y: 10 });
         if (tick === saveAt) {
           const loaded = loadWorld(saveWorld(world));
-          if (!loaded.ok) throw new Error(loaded.error.message);
+          if (!loaded.ok) throw new Error(JSON.stringify(loaded.error));
           world = loaded.world;
         }
         stepWorld(world);

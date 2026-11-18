@@ -7,6 +7,7 @@
  */
 import { hashState } from '../../src/sim/hash.ts';
 import type { Metric, MetricKind, MetricValue } from '../../src/sim/stats.ts';
+import { FORMS, plural } from '../../src/ui/texts.ts';
 import type { WorldRun } from './run.ts';
 
 /** Columns that depend on the machine and its load, not on the world. */
@@ -380,9 +381,9 @@ export function formatReport(
   const { worlds, speed, params } = summary;
   const out: string[] = [];
   const what = params.load
-    ? `мир из сохранения + ${params.years} ${plural(params.years, 'год', 'года', 'лет')}`
-    : `${worlds.total} ${plural(worlds.total, 'мир', 'мира', 'миров')} × ` +
-      `${params.years} ${plural(params.years, 'год', 'года', 'лет')}`;
+    ? `мир из сохранения + ${params.years} ${plural(params.years, FORMS.year)}`
+    : `${worlds.total} ${plural(worlds.total, FORMS.world)} × ` +
+      `${params.years} ${plural(params.years, FORMS.year)}`;
   out.push(
     `Готово за ${formatNumber(summary.seconds)} с: ${what} · ${formatNumber(speed.ticks)} тиков · ` +
       `${formatNumber(speed.yearsPerSecond)} игровых лет/с (${formatNumber(speed.ticksPerSecond)} тиков/с, ` +
@@ -422,14 +423,4 @@ export function formatReport(
   out.push('');
   out.push(`Итоги: ${files.join(', ')}`);
   return out.join('\n');
-}
-
-/** Russian noun form for a count: 1 мир, 2 мира, 5 миров. */
-export function plural(n: number, one: string, few: string, many: string): string {
-  const tens = Math.abs(n) % 100;
-  const units = tens % 10;
-  if (tens >= 11 && tens <= 14) return many;
-  if (units === 1) return one;
-  if (units >= 2 && units <= 4) return few;
-  return many;
 }

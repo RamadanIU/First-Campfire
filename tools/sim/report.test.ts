@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { count, gauge, type Metric, mean } from '../../src/sim/stats.ts';
+import { FORMS, plural } from '../../src/ui/texts.ts';
 import {
   aggregate,
   dropColumns,
   fingerprint,
   formatNumber,
   formatReport,
-  plural,
   type RunMeta,
   summarize,
   TIMING_COLUMNS,
@@ -247,9 +247,7 @@ describe('итоги прогона: консоль', () => {
   });
 
   it('окончания', () => {
-    expect(
-      [1, 2, 5, 11, 21, 22, 100, 112].map((n) => `${n} ${plural(n, 'мир', 'мира', 'миров')}`),
-    ).toEqual([
+    expect([1, 2, 5, 11, 21, 22, 100, 112].map((n) => `${n} ${plural(n, FORMS.world)}`)).toEqual([
       '1 мир',
       '2 мира',
       '5 миров',

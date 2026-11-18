@@ -6,6 +6,7 @@ import { lightGain, NIGHT_LIGHT, ringLevel } from '../render/lighting.ts';
 import { createScenery, type Placement } from '../render/scenery.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { createTerrainLayer } from '../render/terrainLayer.ts';
+import { MENU } from '../ui/texts.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 import { createTitleMenu } from './titleMenu.ts';
 
@@ -112,8 +113,8 @@ export function createTitleScene({ canvas, ui, params }: SceneContext): Scene {
     ui.innerHTML = `
       <div class="title-screen">
         <div class="title">
-          <h1>ПЕРВЫЙ КОСТЁР</h1>
-          <p>симулятор эволюции цивилизации</p>
+          <h1>${MENU.gameTitle}</h1>
+          <p>${MENU.gameTagline}</p>
         </div>
       </div>
       <div class="build">v${__APP_VERSION__}</div>`;

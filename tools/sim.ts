@@ -23,12 +23,12 @@ import { Worker } from 'node:worker_threads';
 import { calendarAt, TICKS_PER_YEAR } from '../src/sim/calendar.ts';
 import { METRICS } from '../src/sim/metrics.ts';
 import { loadWorld } from '../src/sim/save.ts';
+import { FORMS, loadErrorText, loadWarningText, plural } from '../src/ui/texts.ts';
 import { ArgsError, parseSimArgs, type SimOptions, USAGE } from './sim/args.ts';
 import {
   formatNumber,
   formatReport,
   type LoadInfo,
-  plural,
   summarize,
   worldsCsv,
   yearsCsv,
@@ -63,7 +63,8 @@ function openSave(file: string): { text: string; info: LoadInfo; warnings: strin
   }
   const result = loadWorld(text);
   if (!result.ok) {
-    const { message, detail } = result.error;
+    const { detail } = result.error;
+    const message = loadErrorText(result.error);
     console.error(`✗ --load: «${file}» не открылся. ${message}${detail ? `\n  ${detail}` : ''}`);
     process.exit(2);
   }
@@ -72,7 +73,7 @@ function openSave(file: string): { text: string; info: LoadInfo; warnings: strin
   return {
     text,
     info: { file, seed, tick, dataChanged },
-    warnings: result.warnings.map((warning) => warning.message),
+    warnings: result.warnings.map(loadWarningText),
   };
 }
 
@@ -82,7 +83,7 @@ const seedsText = save ? String(save.info.seed) : options.seedsText;
 const { years, threads } = options;
 const fromTick = save?.info.tick ?? 0;
 const totalYears = seeds.length * years;
-const yearsText = `${years} ${plural(years, 'год', 'года', 'лет')}`;
+const yearsText = `${years} ${plural(years, FORMS.year)}`;
 if (save) {
   const date = calendarAt(save.info.tick);
   console.log(
@@ -93,7 +94,7 @@ if (save) {
   for (const warning of save.warnings) console.log(`⚠ ${warning}`);
 } else {
   console.log(
-    `Прогон без графики: ${seeds.length} ${plural(seeds.length, 'мир', 'мира', 'миров')} ` +
+    `Прогон без графики: ${seeds.length} ${plural(seeds.length, FORMS.world)} ` +
       `(зёрна ${seedsText}) × ${yearsText} ` +
       `= ${formatNumber(years * TICKS_PER_YEAR)} тиков на мир · потоков: ${threads}`,
   );

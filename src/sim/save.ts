@@ -78,10 +78,35 @@ export interface SaveHeader {
  */
 export type SaveProblem = 'empty' | 'not_save' | 'damaged' | 'too_new' | 'too_old';
 
+/**
+ * What exactly is damaged in a `damaged` save:
+ * - `unreadable` — reading failed in a way no check foresaw;
+ * - `cut` — the text is not JSON, but it starts as our save (cut short or garbled);
+ * - `no_version` — no number of the format version;
+ * - `no_world` — no world in it;
+ * - `no_header` — the header lacks fields;
+ * - `header_mismatch` — the header and the world disagree (seed, tick);
+ * - `hash_mismatch` — the world was changed or spoiled (its fingerprint does not match).
+ */
+export type DamageReason =
+  | 'unreadable'
+  | 'cut'
+  | 'no_version'
+  | 'no_world'
+  | 'no_header'
+  | 'header_mismatch'
+  | 'hash_mismatch';
+
+/**
+ * Why a save did not open. The simulation knows no interface: the words for the player are
+ * chosen by the code (src/ui/texts.ts, `loadErrorText`).
+ */
 export interface LoadError {
   code: SaveProblem;
-  /** For the player, in Russian: what is wrong. */
-  message: string;
+  /** `damaged` — what exactly; null for other codes. */
+  reason: DamageReason | null;
+  /** `too_new`, `too_old` — the format version of the save and the one this game reads. */
+  versions: { found: number; current: number } | null;
   /** Technical detail for reports and the console; may be empty. */
   detail: string;
 }
@@ -89,7 +114,6 @@ export interface LoadError {
 /** Not a reason to refuse a save, but worth telling: `data_changed` — the tables changed. */
 export interface LoadWarning {
   code: 'data_changed';
-  message: string;
 }
 
 export type LoadResult =
@@ -257,14 +281,16 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-function problem(code: SaveProblem, message: string, detail = ''): LoadResult {
-  return { ok: false, error: { code, message, detail } };
+function problem(
+  code: SaveProblem,
+  detail = '',
+  versions: LoadError['versions'] = null,
+): LoadResult {
+  return { ok: false, error: { code, reason: null, versions, detail } };
 }
 
-const NOT_SAVE = 'Это не сохранение «Первого костра».';
-
-function damaged(reason: string, detail = ''): LoadResult {
-  return problem('damaged', `Сохранение повреждено: ${reason}.`, detail);
+function damaged(reason: DamageReason, detail = ''): LoadResult {
+  return { ok: false, error: { code: 'damaged', reason, versions: null, detail } };
 }
 
 const SAVE_START = `{"format":"${SAVE_FORMAT}"`;
@@ -290,12 +316,12 @@ export function loadWorld(text: string, rules: SaveRules = CURRENT_RULES): LoadR
     return readSave(text, rules);
   } catch (error) {
     // Something no check foresaw: still not a crash of the game.
-    return damaged('не удалось прочитать', error instanceof Error ? error.message : String(error));
+    return damaged('unreadable', error instanceof Error ? error.message : String(error));
   }
 }
 
 function readSave(text: string, rules: SaveRules): LoadResult {
-  if (text.trim() === '') return problem('empty', 'Сохранение пустое.');
+  if (text.trim() === '') return problem('empty');
 
   let parsed: unknown;
   try {
@@ -303,65 +329,54 @@ function readSave(text: string, rules: SaveRules): LoadResult {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return looksLikeSave(text)
-      ? damaged('файл обрезан или испорчен', detail)
-      : problem('not_save', NOT_SAVE, `это не текст JSON: ${detail}`);
+      ? damaged('cut', detail)
+      : problem('not_save', `not JSON: ${detail}`);
   }
   if (!isRecord(parsed) || parsed.format !== SAVE_FORMAT) {
     const format = isRecord(parsed) ? parsed.format : undefined;
     return problem(
       'not_save',
-      NOT_SAVE,
-      format === undefined ? 'нет отметки формата' : `формат «${String(format)}»`,
+      format === undefined ? 'no "format" field' : `format "${String(format)}"`,
     );
   }
 
   const { version, seed, tick, hash, data, world } = parsed;
   if (!isCount(version) || version < 1) {
-    return damaged('нет номера версии', `version: ${JSON.stringify(version)}`);
+    return damaged('no_version', `version: ${JSON.stringify(version)}`);
   }
   if (version > rules.version) {
-    return problem(
-      'too_new',
-      `Сохранение сделано более новой версией игры (формат ${version}, а эта версия понимает до ${rules.version}).`,
-    );
+    return problem('too_new', '', { found: version, current: rules.version });
   }
-  if (!isRecord(world)) return damaged('в нём нет мира');
+  if (!isRecord(world)) return damaged('no_world');
   if (typeof hash !== 'string' || typeof data !== 'string' || !isCount(seed) || !isCount(tick)) {
-    return damaged('не хватает заголовка', 'нужны поля seed, tick, hash, data');
+    return damaged('no_header', 'needs seed, tick, hash, data');
   }
   if (world.seed !== seed || world.tick !== tick) {
     return damaged(
-      'заголовок не совпадает с миром',
-      `заголовок: зерно ${seed}, тик ${tick}; мир: зерно ${String(world.seed)}, тик ${String(world.tick)}`,
+      'header_mismatch',
+      `header: seed ${seed}, tick ${tick}; world: seed ${String(world.seed)}, tick ${String(world.tick)}`,
     );
   }
   const actual = hashState(world);
   if (actual !== hash) {
-    return damaged(
-      'данные мира изменены или испорчены (не сходится контрольная сумма)',
-      `ожидался хэш ${hash}, получен ${actual}`,
-    );
+    return damaged('hash_mismatch', `expected hash ${hash}, got ${actual}`);
   }
 
   let upgraded = world;
   for (let from = version; from < rules.version; from++) {
     const migrate = rules.migrations[from];
     if (!migrate) {
-      return problem(
-        'too_old',
-        `Сохранение сделано старой версией игры (формат ${version}, а эта версия — ${rules.version}): с тех пор мир устроен иначе, и перенести его нельзя.`,
-        `нет переноса с формата ${from} на ${from + 1}`,
-      );
+      return problem('too_old', `no migration from format ${from} to ${from + 1}`, {
+        found: version,
+        current: rules.version,
+      });
     }
     upgraded = migrate(upgraded);
   }
 
   const warnings: LoadWarning[] = [];
   if (data !== dataFingerprint()) {
-    warnings.push({
-      code: 'data_changed',
-      message: 'Числа в таблицах данных изменились после сохранения — мир продолжится по новым.',
-    });
+    warnings.push({ code: 'data_changed' });
   }
   const header: SaveHeader = { format: SAVE_FORMAT, version, seed, tick, hash, data };
   return { ok: true, world: upgraded as unknown as World, header, warnings };

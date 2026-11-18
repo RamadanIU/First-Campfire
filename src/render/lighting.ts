@@ -93,7 +93,7 @@ export interface Haze {
 function paletteColor(name: string): Rgb {
   const [ramp, shade] = name.split('.');
   const color = PALETTE.ramps.get(ramp!)?.[Number(shade)];
-  if (!color) throw new Error(`Нет цвета палитры «${name}»`);
+  if (!color) throw new Error(`No palette colour "${name}"`);
   return color;
 }
 

@@ -21,8 +21,9 @@ import {
 } from '../sim/save.ts';
 import { findVillager, orderWalk } from '../sim/villagers.ts';
 import { createWorld, runTicks, type World } from '../sim/world.ts';
+import { SAVE_TEXT } from '../ui/texts.ts';
 import type { LaunchParams, SlotPreset } from './params.ts';
-import { browserStorage, createSaveSlot, NO_STORAGE, type SaveSlot } from './saveSlot.ts';
+import { browserStorage, createSaveSlot, type SaveSlot } from './saveSlot.ts';
 
 /** Largest seed the player can type in «New world». */
 export const MAX_SEED = 999_999_999;
@@ -59,7 +60,7 @@ export function applySlotPreset(slot: SaveSlot, preset: SlotPreset, params: Laun
       return;
     }
     case 'alien':
-      slot.write('{"app":"заметки","notes":["купить хлеба","позвонить маме"]}');
+      slot.write('{"app":"notes","notes":["buy bread","call mum"]}');
       return;
     case 'newer':
       slot.write(
@@ -158,7 +159,7 @@ export function createAutosave(world: World, slot: SaveSlot, options: AutosaveOp
   const enabled = options.enabled && slot.available;
   let savedTick = options.savedTick;
   let triedTick = savedTick;
-  let error: string | null = options.enabled && !slot.available ? NO_STORAGE : null;
+  let error: string | null = options.enabled && !slot.available ? SAVE_TEXT.noStorage : null;
   const yearIndex = (tick: number) => Math.floor(tick / TICKS_PER_YEAR);
 
   const save = (): boolean => {
@@ -169,7 +170,7 @@ export function createAutosave(world: World, slot: SaveSlot, options: AutosaveOp
     try {
       text = saveWorld(world);
     } catch (problem) {
-      error = `Мир не сохранился: ${problem instanceof Error ? problem.message : String(problem)}.`;
+      error = SAVE_TEXT.notSaved(problem instanceof Error ? problem.message : String(problem));
       return false;
     }
     const result = slot.write(text);

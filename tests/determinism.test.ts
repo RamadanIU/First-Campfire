@@ -64,7 +64,7 @@ describe('детерминизм', () => {
       const world = createWorld(seed);
       runTicks(world, 5_000);
       const result = loadWorld(saveWorld(world));
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
       const resumed: World = result.world;
       runTicks(resumed, 5_000);
       expect(resumed.tick).toBe(10_000);
@@ -77,7 +77,7 @@ describe('детерминизм', () => {
     for (const chunk of [1, 399, 1_200, 3_000, 5_400]) {
       runTicks(world, chunk);
       const result = loadWorld(saveWorld(world));
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
       world = result.world;
     }
     expect(hashState(world)).toBe(hashAfter(7, 10_000));

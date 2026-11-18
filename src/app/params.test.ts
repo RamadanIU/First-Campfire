@@ -22,8 +22,20 @@ describe('parseParams', () => {
       slot: null,
       debug: [],
       go: null,
+      select: null,
+      menu: false,
       worldFromUrl: true,
     });
+  });
+
+  it('reads select (a villager id ≥ 1) and menu=1 (step 1.6)', () => {
+    expect(parseParams('?select=2').select).toBe(2);
+    expect(parseParams('?select=0').select).toBeNull();
+    expect(parseParams('?select=x').select).toBeNull();
+    expect(parseParams('').select).toBeNull();
+    expect(parseParams('?menu=1').menu).toBe(true);
+    expect(parseParams('?menu=0').menu).toBe(false);
+    expect(parseParams('').menu).toBe(false);
   });
 
   it('a world given by seed= or ticks= comes from the address, unless slot= prepares a save', () => {

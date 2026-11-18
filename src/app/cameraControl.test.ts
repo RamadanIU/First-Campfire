@@ -5,6 +5,7 @@ import {
   createCameraControl,
   createGestures,
   createWheelZoom,
+  FLY_MS,
   heldDirection,
   KEY_PAN_SPEED,
   PINCH_STEP,
@@ -469,5 +470,68 @@ describe('управление камерой', () => {
     const cssShifted = ((control.camera.x - 8000) * 2) / 1.25;
     expect(cssShifted).toBeGreaterThan(KEY_PAN_SPEED * 0.9);
     expect(cssShifted).toBeLessThan(KEY_PAN_SPEED);
+  });
+});
+
+describe('полёт камеры к точке (шаг 1.6: щелчок по событию)', () => {
+  it(`долетает за FLY_MS плавно, без рывков, и встаёт точно в точку`, () => {
+    const control = createCameraControl(MAP, { x: 200, y: 200 }, 2);
+    control.resize(HD);
+    control.flyTo({ x: 700, y: 600 });
+    expect(control.flying).toBe(true);
+    const xs: number[] = [];
+    for (let t = 0; t < FLY_MS; t += 1000 / 60) {
+      control.update(1000 / 60);
+      xs.push(control.camera.x);
+    }
+    run(control, 100);
+    expect(control.flying).toBe(false);
+    expect(control.camera).toMatchObject({ x: 700, y: 600, zoom: 2 });
+    // Monotonic, slow at the start and at the end, fastest in the middle.
+    const steps = xs.slice(1).map((x, i) => x - xs[i]!);
+    expect(steps.every((step) => step >= 0)).toBe(true);
+    const middle = steps[Math.floor(steps.length / 2)]!;
+    expect(steps[0]!).toBeLessThan(middle / 4);
+    expect(steps[steps.length - 2]!).toBeLessThan(middle / 4);
+  });
+
+  it('точку у края карты — насколько пускает край; ступень не меняется', () => {
+    const control = createCameraControl(MAP, { x: 512, y: 512 }, 2);
+    control.resize(HD);
+    control.flyTo({ x: 0, y: 1024 });
+    run(control, FLY_MS + 50);
+    const clamped = cameraLayout({ x: 0, y: 1024, zoom: 2 }, HD, MAP);
+    expect(control.layout.offsetX).toBe(clamped.offsetX);
+    expect(control.layout.offsetY).toBe(clamped.offsetY);
+    expect(control.camera.zoom).toBe(2);
+  });
+
+  it('перетаскивание, клавиши и зум останавливают полёт там, где он есть', () => {
+    for (const interrupt of [
+      (c: ReturnType<typeof createCameraControl>) => c.drag(5, 0),
+      (c: ReturnType<typeof createCameraControl>) => c.hold({ x: 1, y: 0 }),
+      (c: ReturnType<typeof createCameraControl>) => c.zoomBy(1),
+    ]) {
+      const control = createCameraControl(MAP, { x: 200, y: 200 }, 2);
+      control.resize(HD);
+      control.flyTo({ x: 800, y: 800 });
+      run(control, FLY_MS / 2);
+      interrupt(control);
+      expect(control.flying).toBe(false);
+      control.hold({ x: 0, y: 0 });
+      run(control, FLY_MS);
+      expect(control.camera.x).toBeLessThan(700);
+    }
+  });
+
+  it('полёт во время зума: зум сразу встаёт на ступень, картинка резкая', () => {
+    const control = createCameraControl(MAP, { x: 512, y: 512 }, 2);
+    control.resize(HD);
+    control.zoomBy(1);
+    run(control, ZOOM_MS / 3);
+    expect(control.zooming).toBe(true);
+    control.flyTo({ x: 400, y: 400 });
+    expect(control.zooming).toBe(false);
+    expect(control.layout.scale).toBe(pixelScale(4, 1));
   });
 });

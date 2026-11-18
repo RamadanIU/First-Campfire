@@ -2,6 +2,7 @@ import { PALETTE, type PaletteSwap, parseColorName, toHex } from '../art/palette
 import { SPRITES } from '../art/registry.ts';
 import { SHADOW_COLOR } from '../art/sprite.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
+import { PALETTE_SCENE } from '../ui/texts.ts';
 import type { Scene, SceneContext } from './scene.ts';
 
 /**
@@ -55,20 +56,20 @@ export function createPaletteScene({ canvas, ui, params }: SceneContext): Scene 
   const root = document.createElement('div');
   root.className = `gallery palette${params.ui ? '' : ' bare'}`;
   root.style.background = background;
-  root.innerHTML = `<header class="gallery-head"><h1>Мастер-палитра</h1><p>${total - service} цветов мира + цвет тени + служебные · ${PALETTE.defs.length} рядов, в каждом цвета идут от тёмного к светлому · под образцом — имя цвета, код и сколько спрайтов его используют</p></header>`;
+  root.innerHTML = `<header class="gallery-head"><h1>${PALETTE_SCENE.title}</h1><p>${PALETTE_SCENE.intro(total - service, PALETTE.defs.length)}</p></header>`;
 
   const table = document.createElement('div');
   table.className = 'ramps';
   for (const ramp of PALETTE.defs) {
     const row = document.createElement('div');
     row.className = 'ramp';
-    const alpha =
-      ramp.alpha === undefined ? '' : ` · прозрачность ${Math.round(ramp.alpha * 100)} %`;
+    const alpha = ramp.alpha === undefined ? '' : PALETTE_SCENE.alpha(Math.round(ramp.alpha * 100));
     const swatches = ramp.colors
       .map((hex, shade) => {
         const name = `${ramp.name}.${shade}`;
         const count = used.get(name) ?? 0;
-        const note = SERVICE.has(ramp.name) && ramp.name === 'ui' ? 'экраны' : String(count);
+        const note =
+          SERVICE.has(ramp.name) && ramp.name === 'ui' ? PALETTE_SCENE.screens : String(count);
         return `<figure class="swatch-card${count === 0 && ramp.name !== 'ui' ? ' unused' : ''}"><i style="background:${hex}${ramp.alpha === undefined ? '' : `;opacity:${ramp.alpha}`}"></i><figcaption>.${shade}<br>${hex}<br><b>${note}</b></figcaption></figure>`;
       })
       .join('');
@@ -86,11 +87,11 @@ export function createPaletteScene({ canvas, ui, params }: SceneContext): Scene 
   );
   const people = document.createElement('section');
   people.className = 'recolour';
-  people.innerHTML = `<h2>Перекраска жителей: ${skins.length} тонов кожи × ${hairs.length} цветов волос — один рисунок, подмена рядов палитры</h2>`;
+  people.innerHTML = `<h2>${PALETTE_SCENE.people(skins.length, hairs.length)}</h2>`;
   const grid = document.createElement('table');
   /** Short Russian name of a ramp: «волосы рыжие» → «рыжие». */
   const short = (ramp: string) =>
-    escapeHtml(PALETTE.defs.find((def) => def.name === ramp)!.title.replace(/^(кожа|волосы) /, ''));
+    escapeHtml(PALETTE_SCENE.shortRamp(PALETTE.defs.find((def) => def.name === ramp)!.title));
   grid.innerHTML = `<thead><tr><th></th>${hairs.map((hair) => `<th>${short(hair)}</th>`).join('')}</tr></thead>`;
   const body = document.createElement('tbody');
   for (const skin of skins) {

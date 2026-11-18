@@ -11,6 +11,7 @@ import {
   validateSpriteSet,
 } from '../art/sprite.ts';
 import { createSpriteSheet, type SpriteSheet } from '../render/spriteSheet.ts';
+import { GALLERY } from '../ui/texts.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 
 /**
@@ -26,21 +27,8 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
  * rescales it and pixels stay crisp.
  */
 
-const KIND_TITLE: Record<SpriteKind, string> = {
-  tile: 'Тайлы',
-  object: 'Объекты',
-  item: 'Предметы',
-  character: 'Персонажи',
-  icon: 'Значки',
-};
-
-const KIND_NAME: Record<SpriteKind, string> = {
-  tile: 'тайл',
-  object: 'объект',
-  item: 'предмет',
-  character: 'персонаж',
-  icon: 'значок',
-};
+const KIND_TITLE: Record<SpriteKind, string> = GALLERY.kinds;
+const KIND_NAME: Record<SpriteKind, string> = GALLERY.kind;
 
 /** Overview: how a tile is repeated to check its seams. */
 const TILE_REPEAT = 3;
@@ -83,18 +71,7 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function seconds(ms: number): string {
-  return `${(ms / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} с`;
-}
-
-function plural(count: number, one: string, few: string, many: string): string {
-  const tens = count % 100;
-  const units = count % 10;
-  if (tens >= 11 && tens <= 14) return many;
-  if (units === 1) return one;
-  if (units >= 2 && units <= 4) return few;
-  return many;
-}
+const seconds = GALLERY.seconds;
 
 /** Caption lines for a recolour: `skin_light →` / `skin_dark`. */
 function describeSwap(swap: PaletteSwap): string {
@@ -117,9 +94,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
   for (const { file, sprite } of SPRITE_FILES) {
     const own = validateSprite(sprite, palette);
     if (file !== sprite.name) {
-      own.push(
-        `спрайт «${sprite.name}»: лежит в файле ${file}.ts — имя файла должно совпадать с именем`,
-      );
+      own.push(GALLERY.wrongFile(sprite.name, file));
     }
     problems.push(...own);
     if (own.length === 0 && !sprites.some((s) => s.name === sprite.name)) sprites.push(sprite);
@@ -131,9 +106,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
   let single =
     params.sprite === null ? null : (sprites.find((s) => s.name === params.sprite) ?? null);
   if (params.sprite !== null && !single) {
-    problems.push(
-      `Нет спрайта «${params.sprite}». Есть: ${sprites.map((s) => s.name).join(', ') || 'ни одного'}`,
-    );
+    problems.push(GALLERY.noSprite(params.sprite, sprites.map((s) => s.name).join(', ')));
     single = null;
   }
   for (const problem of problems) console.error(problem);
@@ -240,9 +213,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
       .map(([name, animation]) => {
         const count = animation.frames.length;
         const total = frameDurations(animation).reduce((sum, ms) => sum + ms, 0);
-        return count === 1
-          ? `${name}: 1 кадр`
-          : `${name}: ${count} ${plural(count, 'кадр', 'кадра', 'кадров')}, цикл ${seconds(total)}`;
+        return count === 1 ? GALLERY.oneFrame(name) : GALLERY.frames(name, count, seconds(total));
       })
       .join(' · ');
   }
@@ -293,7 +264,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
       element(
         'h2',
         '',
-        `Атлас: ${sheet.atlas.width}×${sheet.atlas.height}, ${sheet.atlas.frameCount} ${plural(sheet.atlas.frameCount, 'кадр', 'кадра', 'кадров')} всех спрайтов на одном холсте, ×2`,
+        GALLERY.atlas(sheet.atlas.width, sheet.atlas.height, sheet.atlas.frameCount),
       ),
       view,
     );
@@ -322,7 +293,14 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
       element(
         'p',
         'meta',
-        `${def.name} · ${KIND_NAME[def.kind]} · ${def.width}×${def.height} · привязка (${def.anchor.x}, ${def.anchor.y}) · ряды палитры: ${ramps}`,
+        GALLERY.details(
+          def.name,
+          KIND_NAME[def.kind],
+          `${def.width}×${def.height}`,
+          def.anchor.x,
+          def.anchor.y,
+          ramps,
+        ),
       ),
     );
 
@@ -336,7 +314,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
     );
     const main = element('div', 'figures');
     main.append(
-      figure(def, { scale: big, anchor: true }, `×${big}, крестик — точка привязки`),
+      figure(def, { scale: big, anchor: true }, GALLERY.anchorCaption(big)),
       figure(def, { scale: 4 }, '×4'),
       figure(def, { scale: 2 }, '×2'),
       figure(def, { scale: 1 }, '×1'),
@@ -352,27 +330,28 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
       const durations = frameDurations(animation);
       const total = durations.reduce((sum, ms) => sum + ms, 0);
       const count = animation.frames.length;
-      const isDefault = name === defaultAnimation(def) ? ', по умолчанию' : '';
-      const timing =
-        count === 1
-          ? '1 кадр, неподвижный'
-          : `${count} ${plural(count, 'кадр', 'кадра', 'кадров')}, цикл ${seconds(total)}`;
-      root.append(element('h2', '', `Анимация «${escapeHtml(name)}»${isDefault}: ${timing}`));
+      const isDefault = name === defaultAnimation(def) ? GALLERY.isDefault : '';
+      const timing = count === 1 ? GALLERY.still : GALLERY.timing(count, seconds(total));
+      root.append(element('h2', '', GALLERY.animation(escapeHtml(name), isDefault, timing)));
       const strip = element('div', 'figures');
       durations.forEach((ms, index) => {
         strip.append(
-          figure(def, { scale: 4, animation: name, frame: index }, `${index + 1} · ${ms} мс`),
+          figure(
+            def,
+            { scale: 4, animation: name, frame: index },
+            GALLERY.frameCaption(index + 1, ms),
+          ),
         );
       });
-      if (count > 1) strip.append(figure(def, { scale: 4, animation: name }, 'вместе'));
+      if (count > 1) strip.append(figure(def, { scale: 4, animation: name }, GALLERY.together));
       root.append(strip);
     }
 
     const variants = Object.entries(def.variants ?? {});
     if (variants.length > 0) {
-      root.append(element('h2', '', 'Перекраска (подмена рядов палитры)'));
+      root.append(element('h2', '', GALLERY.swaps));
       const row = element('div', 'figures top');
-      row.append(figure(def, { scale: 4 }, 'основной'));
+      row.append(figure(def, { scale: 4 }, GALLERY.base));
       for (const [name, swap] of variants) {
         row.append(
           figure(
@@ -385,7 +364,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
       root.append(row);
     }
 
-    root.append(element('h2', '', 'Легенда'));
+    root.append(element('h2', '', GALLERY.legend));
     const rows = Object.entries(def.legend).map(([symbol, name]) => {
       const [ramp = '', shade = '0'] = name.split('.');
       const rgb = palette.ramps.get(ramp)?.[Number(shade)];
@@ -411,7 +390,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
         'gallery-head',
         single
           ? `<h1>${escapeHtml(single.title)}</h1>`
-          : `<h1>Галерея спрайтов</h1><p>${count} ${plural(count, 'спрайт', 'спрайта', 'спрайтов')} · атлас ${sheet.atlas.width}×${sheet.atlas.height} собран за ${buildMs.toFixed(1)} мс · ?scene=gallery&amp;sprite=имя — один спрайт крупно</p>`,
+          : `<h1>${GALLERY.title}</h1><p>${GALLERY.intro(count, sheet.atlas.width, sheet.atlas.height, buildMs.toFixed(1))}</p>`,
       ),
     );
     if (problems.length > 0) {
@@ -419,7 +398,7 @@ export function createGalleryScene({ canvas, ui, params }: SceneContext): Scene 
         element(
           'pre',
           'problems',
-          `Ошибки в спрайтах:\n${problems.map((problem) => escapeHtml(problem)).join('\n')}`,
+          `${GALLERY.problems}:\n${problems.map((problem) => escapeHtml(problem)).join('\n')}`,
         ),
       );
     }

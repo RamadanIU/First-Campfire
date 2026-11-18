@@ -83,7 +83,7 @@ describe('мир из сохранения', () => {
     const world = createWorld(seed);
     runTicks(world, ticks);
     const result = loadWorld(saveWorld(world));
-    if (!result.ok) throw new Error(result.error.message);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
     return result.world;
   }
 
