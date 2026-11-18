@@ -121,7 +121,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
 
   // ── The top bar ──
   const phaseIcon = h('span', 'hud-icon');
-  const date = h('span', 'hud-date');
+  const date = h('span', 'hud-bar-date');
   const when = h('div', 'hud-when', phaseIcon, date);
   const peopleCount = h('span', 'hud-count');
   const people = h('div', 'hud-people', source.icon('hud_people', 2), peopleCount);
@@ -132,7 +132,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   speeds.setAttribute('aria-label', HUD.speedLabel);
   for (const { speed, key } of SPEED_BUTTONS) {
     const label = speed === 0 ? h('span', 'hud-pause-glyph') : speedName(speed);
-    const control = button('hud-speed', HUD.speedTitle(speed, key), label);
+    const control = button('hud-speed-button', HUD.speedTitle(speed, key), label);
     control.dataset.speed = String(speed);
     if (speed === 0) control.setAttribute('aria-label', speedName(0));
     control.addEventListener('click', () => {

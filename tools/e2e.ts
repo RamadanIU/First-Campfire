@@ -856,12 +856,14 @@ try {
     await open(page, '?scene=world&seed=1&speed=0&zoom=2');
     const tick = () => page.evaluate<number>('window.__fc.world.tick');
     const active = () =>
-      page.evaluate<string>("document.querySelector('.hud-speed.active')?.dataset.speed ?? ''");
-    const speedButton = (speed: number) => `.hud-speed[data-speed="${speed}"]`;
+      page.evaluate<string>(
+        "document.querySelector('.hud-speed-button.active')?.dataset.speed ?? ''",
+      );
+    const speedButton = (speed: number) => `.hud-speed-button[data-speed="${speed}"]`;
     check(
-      (await text(page, '.hud-date')) === 'Год 1 · весна · день 1 из 3' &&
+      (await text(page, '.hud-bar-date')) === 'Год 1 · весна · день 1 из 3' &&
         (await text(page, '.hud-count')) === '2',
-      `верхняя полоса: «${await text(page, '.hud-date')}», жителей ${await text(page, '.hud-count')}`,
+      `верхняя полоса: «${await text(page, '.hud-bar-date')}», жителей ${await text(page, '.hud-count')}`,
     );
     check((await active()) === '0', `speed=0 — нажата пауза (${await active()})`);
 
