@@ -410,12 +410,14 @@ const CURRENT_SHAPE: string[] = [
   'tick: number',
   'villagers.list: array',
   'villagers.list[].action.bush: number',
+  'villagers.list[].action.fainted: boolean',
   'villagers.list[].action.goal.x: number',
   'villagers.list[].action.goal.y: number',
   'villagers.list[].action.goal: object',
   'villagers.list[].action.kind = "drink"',
   'villagers.list[].action.kind = "eat"',
   'villagers.list[].action.kind = "idle"',
+  'villagers.list[].action.kind = "sleep"',
   'villagers.list[].action.kind = "walk"',
   'villagers.list[].action.next: number',
   'villagers.list[].action.path: array',
@@ -444,15 +446,18 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].home: object',
   'villagers.list[].id: number',
   'villagers.list[].needs.food: number',
+  'villagers.list[].needs.sleep: number',
   'villagers.list[].needs.water: number',
   'villagers.list[].needs: object',
   'villagers.list[].nowhere.food: number',
+  'villagers.list[].nowhere.sleep: number',
   'villagers.list[].nowhere.water: number',
   'villagers.list[].nowhere: object',
   'villagers.list[].prevX: number',
   'villagers.list[].prevY: number',
   'villagers.list[].progress: number',
   'villagers.list[].ranOut.food: number',
+  'villagers.list[].ranOut.sleep: number',
   'villagers.list[].ranOut.water: number',
   'villagers.list[].ranOut: object',
   'villagers.list[].sex: string',
@@ -473,6 +478,7 @@ const SHAPE_HISTORY: Record<number, string> = {
   2: '98f2ff92c42e9236', // step 1.1: the map (ground and object layers) and its objects
   3: '6876adc0ecc30767', // step 1.3: villagers (walking, paths), their stream and arrival events
   4: '1af16d6fbdb44747', // step 1.4: needs, health, eating and drinking, berries on bushes, minds
+  5: '5daf554442d2bbea', // step 1.5: sleep (need, action, faint); fireflies over the map
 };
 
 describe('форма мира и версия формата сохранения', () => {

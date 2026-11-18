@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { PHASE_START, TICKS_PER_YEAR, tickAt } from './calendar.ts';
 import { findEvent, type WorldEvent } from './events.ts';
-import { FIELD } from './systems/fireflies.ts';
+import { groundAt } from './map.ts';
+import { defOf, objectAt } from './objects.ts';
+import { canFlyOver } from './systems/fireflies.ts';
 import { createWorld, runTicks, stepWorld } from './world.ts';
 
 const eventsOf = (list: WorldEvent[], type: WorldEvent['type']) =>
@@ -81,8 +83,8 @@ describe('светлячки (проверочная система)', () => {
     expect(world.fireflies.swarm).toHaveLength(0);
     stepWorld(world); // night falls
     const swarm = world.fireflies.swarm.length;
-    expect(swarm).toBeGreaterThanOrEqual(6);
-    expect(swarm).toBeLessThanOrEqual(24);
+    expect(swarm).toBeGreaterThanOrEqual(16);
+    expect(swarm).toBeLessThanOrEqual(64);
     runTicks(world, tickAt(2) - world.tick); // next dawn
     expect(world.fireflies.swarm).toHaveLength(0);
   });
@@ -104,7 +106,7 @@ describe('светлячки (проверочная система)', () => {
     });
   });
 
-  it('летают внутри луга, двигаются и мигают', () => {
+  it('летают над картой — над травой и у воды, не над лесом и глубокой водой; двигаются и мигают', () => {
     const world = createWorld(5);
     runTicks(world, PHASE_START.night);
     const start = world.fireflies.swarm.map((fly) => [fly.x, fly.y]);
@@ -113,10 +115,11 @@ describe('светлячки (проверочная система)', () => {
       const lit = world.fireflies.swarm.map((fly) => fly.lit);
       stepWorld(world);
       world.fireflies.swarm.forEach((fly, index) => {
-        expect(fly.x).toBeGreaterThanOrEqual(0);
-        expect(fly.x).toBeLessThanOrEqual(FIELD.width);
-        expect(fly.y).toBeGreaterThanOrEqual(0);
-        expect(fly.y).toBeLessThanOrEqual(FIELD.height);
+        expect(canFlyOver(world, fly.x, fly.y)).toBe(true);
+        const tile = groundAt(world.map, Math.floor(fly.x), Math.floor(fly.y));
+        expect(tile).not.toBe('deep_water');
+        const object = objectAt(world.map, world.objects, Math.floor(fly.x), Math.floor(fly.y));
+        expect(object === undefined || defOf(object).place !== 'forest').toBe(true);
         if (fly.lit !== lit[index]) blinks++;
       });
     }

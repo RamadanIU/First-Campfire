@@ -17,7 +17,8 @@ export type SlotPreset = (typeof SLOT_PRESETS)[number];
  * Scene-specific ones: `sprite=` (the gallery shows one sprite large), `zoom=` (zoom step of
  * pictures of the world: the camera of the world, the style sheet), `cam=` (where the camera of
  * the world looks), `slot=` (debug: a prepared autosave), `debug=` (debug overlays of the world),
- * `go=` (debug: send the first villager to a tile).
+ * `go=` (debug: send the first villager to a tile), `light=0` (the world without the light of the
+ * time of day).
  * They make every screen reproducible: the screenshot tool and bug reports
  * use the same URL to get the same picture.
  */
@@ -32,6 +33,11 @@ export interface LaunchParams {
   frame: number | null;
   /** Show the DOM interface layer. */
   ui: boolean;
+  /**
+   * Light of the time of day over the world (step 1.5); `light=0` — the picture as drawn, as by
+   * day, at any hour (comparing frames pixel for pixel, looking at the art).
+   */
+  light: boolean;
   /** Fast-forward the world to this tick before the first frame. */
   ticks: number;
   /** Initial game speed: 0 (pause), 1, 2, 5 or 20. */
@@ -75,6 +81,7 @@ export const DEFAULT_PARAMS: LaunchParams = {
   scene: 'title',
   frame: null,
   ui: true,
+  light: true,
   ticks: 0,
   speed: 1,
   sprite: null,
@@ -152,6 +159,7 @@ export function parseParams(search: string): LaunchParams {
     scene: scene ? scene : DEFAULT_PARAMS.scene,
     frame: parseInteger(query.get('frame'), 0),
     ui: query.get('ui') !== '0',
+    light: query.get('light') !== '0',
     ticks: ticks ?? DEFAULT_PARAMS.ticks,
     speed: parseSpeed(query.get('speed')) ?? DEFAULT_PARAMS.speed,
     sprite: sprite ? sprite : DEFAULT_PARAMS.sprite,

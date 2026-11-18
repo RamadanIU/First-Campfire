@@ -291,13 +291,13 @@ describe('выбор: нужда² × доступность', () => {
     '~.............................................',
   ];
 
-  function villagerAt(needs: { food: number; water: number }) {
+  function villagerAt(needs: { food: number; water: number; sleep?: number }) {
     const world = worldOn(FAR, [
       { x: 1, y: 0 },
       { x: 1, y: 1 },
     ]);
     const villager = world.villagers.list[0]!;
-    villager.needs = { ...needs };
+    villager.needs = { sleep: FULL, ...needs };
     return { world, villager };
   }
 

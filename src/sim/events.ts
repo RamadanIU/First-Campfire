@@ -41,6 +41,11 @@ export type EventBody =
    */
   | { type: 'need_ran_out'; villager: number; need: Need }
   /**
+   * A villager fainted from want of sleep (step 1.5): it falls where it stands and lies until
+   * `sleeping.faintWakePoints`. The cause is the event of its sleep running out.
+   */
+  | { type: 'villager_fainted'; villager: number; sex: Sex; x: number; y: number }
+  /**
    * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
    * out first. Could food and water be reached from where it died (`foodReachable`,
    * `waterReachable`)? Death of a need that could be met is a mistake of the mind (GDD §15.2).

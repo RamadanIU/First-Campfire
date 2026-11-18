@@ -1,3 +1,5 @@
+import { PALETTE } from '../art/palette.ts';
+import { brightness, daylightAt, lit, skyAt } from '../render/lighting.ts';
 import {
   calendarAt,
   DAY_PHASES,
@@ -7,7 +9,7 @@ import {
   TIME,
 } from '../sim/calendar.ts';
 import { type Cause, type DeathReason, findEvent, type WorldEvent } from '../sim/events.ts';
-import { FIELD } from '../sim/systems/fireflies.ts';
+import type { Need } from '../sim/needs.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../sim/world.ts';
 import { bindSpeedKeys } from './controls.ts';
 import { SEASON_NAME } from './dates.ts';
@@ -24,7 +26,8 @@ import type { Scene, SceneContext } from './scene.ts';
  * The same view shows the saved world of the scene `world` (step 0.7) until the map of stage 1
  * replaces it: `createClockView(context, world)`.
  *
- * Colours here are temporary, like the title screen's; the master palette arrives in step 0.4.
+ * Colours are the palette's lit by the world's light of the time of day (src/render/lighting.ts,
+ * step 1.5): the sky, the land, the sun and the moon.
  */
 const VIEW_W = 240;
 const VIEW_H = 135;
@@ -53,27 +56,7 @@ const PHASE_CAME: Record<DayPhase, string> = {
   night: 'наступила ночь',
 };
 
-/** Sky colours through the day: [tick of day, zenith, horizon]. Tick 400 repeats tick 0. */
-const SKY: [number, string, string][] = [
-  [0, '#1d2452', '#563f6e'],
-  [18, '#3f4f92', '#e2918c'],
-  [40, '#6a98d6', '#f4cf98'],
-  [80, '#4a8fdc', '#b9def3'],
-  [200, '#4a8fdc', '#b9def3'],
-  [240, '#5b84c6', '#f3c07a'],
-  [262, '#433f84', '#e2775a'],
-  [280, '#1c2148', '#4a3162'],
-  [310, '#0b1026', '#1c2b4e'],
-  [385, '#0b1026', '#1c2b4e'],
-  [400, '#1d2452', '#563f6e'],
-];
-
-type Rgb = [number, number, number];
-
-function parseHex(hex: string): Rgb {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
+type Rgb = readonly [number, number, number];
 
 function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -83,34 +66,31 @@ function css([r, g, b]: Rgb, alpha = 1): string {
   return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${alpha})`;
 }
 
-const SKY_RGB = SKY.map(([tick, zenith, horizon]) => ({
-  tick,
-  zenith: parseHex(zenith),
-  horizon: parseHex(horizon),
-}));
-
-function skyAt(tickOfDay: number): { zenith: Rgb; horizon: Rgb } {
-  for (let i = 1; i < SKY_RGB.length; i++) {
-    const to = SKY_RGB[i]!;
-    if (tickOfDay <= to.tick) {
-      const from = SKY_RGB[i - 1]!;
-      const t = (tickOfDay - from.tick) / (to.tick - from.tick);
-      return {
-        zenith: mixRgb(from.zenith, to.zenith, t),
-        horizon: mixRgb(from.horizon, to.horizon, t),
-      };
-    }
-  }
-  return SKY_RGB[0]!;
+/** A colour of the palette by name. */
+function paletteRgb(name: string): Rgb {
+  const [ramp, shade] = name.split('.');
+  return PALETTE.ramps.get(ramp!)![Number(shade)]!;
 }
 
-/** Daylight, 0 (night) … 1 (day), smooth through dawn and dusk. */
+/** Colours of the picture by day — the palette; the light of the moment tints them. */
+const COLORS = {
+  forest: paletteRgb('leaf.1'),
+  meadow: paletteRgb('grass.2'),
+  tuft: paletteRgb('grass.3'),
+  sun: paletteRgb('fire.3'),
+  lowSun: paletteRgb('fire.2'),
+  moon: paletteRgb('bone.2'),
+  moonShade: paletteRgb('bone.1'),
+  star: paletteRgb('bone.2'),
+  dimStar: paletteRgb('stone.3'),
+  firefly: paletteRgb('fire.3'),
+  glow: paletteRgb('leaf.4'),
+  dark: paletteRgb('leaf.0'),
+} as const;
+
+/** Daylight, 0 (night) … 1 (day), smooth through dawn and dusk — of the world's light. */
 function daylight(tickOfDay: number): number {
-  const { day, dusk, night } = PHASE_START;
-  if (tickOfDay < day) return tickOfDay / day;
-  if (tickOfDay < dusk) return 1;
-  if (tickOfDay < night) return 1 - (tickOfDay - dusk) / (night - dusk);
-  return 0;
+  return brightness(daylightAt(tickOfDay));
 }
 
 /** Cheap deterministic hash → [0, 1). Presentation only; the sim has its own RNG. */
@@ -146,18 +126,30 @@ function describeEvent(event: WorldEvent): string {
     case 'villager_arrived':
       return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} (житель ${event.villager})`;
     case 'need_ran_out':
-      return `житель ${event.villager} ${event.need === 'food' ? 'голодает' : 'мучается жаждой'}`;
+      return `житель ${event.villager} ${RAN_OUT[event.need]}`;
+    case 'villager_fainted':
+      return `${event.sex === 'male' ? 'упал' : 'упала'} без сил житель ${event.villager}`;
     case 'villager_died':
       return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager}: ${DIED_OF[event.reason]}`;
   }
 }
 
 const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
+const RAN_OUT: Record<Need, string> = {
+  food: 'голодает',
+  water: 'мучается жаждой',
+  sleep: 'валится с ног от усталости',
+};
+const NEED_GONE: Record<Need, string> = {
+  food: 'кончилась сытость',
+  water: 'кончилась вода',
+  sleep: 'кончились силы — не спал',
+};
 
 function describeCause(world: World, cause: Cause): string {
   if (cause.kind === 'rule') return cause.rule === 'genesis' ? 'начало всего' : 'ход времени';
   if (cause.kind === 'need') {
-    return `у жителя ${cause.villager} ${cause.need === 'food' ? 'кончилась сытость' : 'кончилась вода'}`;
+    return `у жителя ${cause.villager} ${NEED_GONE[cause.need]}`;
   }
   const source = findEvent(world, cause.event);
   return source ? `#${source.id} ${describeEvent(source)}` : `#${cause.event}`;
@@ -232,7 +224,7 @@ export function createClockView({ canvas, ui, params }: SceneContext, world: Wor
         const x = Math.floor(hash(i, params.seed) * viewW);
         const y = Math.floor(hash(i, params.seed + 1) * (horizon - 20));
         if (hash(i, Math.floor(frame / 6) + i) < 0.2) continue; // twinkle
-        px(x, y, 1, 1, css(hash(i, 7) > 0.8 ? [255, 255, 255] : [159, 176, 216], starAlpha));
+        px(x, y, 1, 1, css(hash(i, 7) > 0.8 ? COLORS.star : COLORS.dimStar, starAlpha));
       }
     }
   }
@@ -249,22 +241,23 @@ export function createClockView({ canvas, ui, params }: SceneContext, world: Wor
       const { x, y } = arc(progress);
       // Low sun is bigger-looking and redder: rosy dawn, golden hour.
       const low = 1 - Math.min(1, Math.sin(Math.PI * progress) * 2.5);
-      disc(x, y, 9, css(mixRgb([255, 236, 170], [255, 140, 70], low), 0.12));
-      disc(x, y, 6, css(mixRgb([255, 236, 170], [255, 150, 80], low), 0.3));
-      disc(x, y, 4, css(mixRgb([255, 246, 204], [255, 178, 96], low)));
+      const sun = mixRgb(COLORS.sun, COLORS.lowSun, low);
+      disc(x, y, 9, css(sun, 0.12));
+      disc(x, y, 6, css(sun, 0.3));
+      disc(x, y, 4, css(mixRgb(COLORS.sun, sun, 0.6)));
     } else {
       const { x, y } = arc((time - night) / (TIME.ticksPerDay - night));
-      disc(x, y, 7, 'rgba(220,228,255,0.1)');
-      disc(x, y, 4, '#e8ecf4');
-      px(x - 2, y - 2, 2, 2, '#c5cbdb');
-      px(x + 1, y + 1, 2, 1, '#c5cbdb');
-      px(x - 1, y + 2, 1, 1, '#c5cbdb');
+      disc(x, y, 7, css(COLORS.moon, 0.1));
+      disc(x, y, 4, css(COLORS.moon));
+      px(x - 2, y - 2, 2, 2, css(COLORS.moonShade));
+      px(x + 1, y + 1, 2, 1, css(COLORS.moonShade));
+      px(x - 1, y + 2, 1, 1, css(COLORS.moonShade));
     }
   }
 
   function drawLand(time: number) {
-    const light = daylight(time);
-    const forest = css(mixRgb([13, 26, 28], [44, 84, 52], light));
+    const light = daylightAt(time);
+    const forest = css(lit(COLORS.forest, light));
     for (let x = 0; x < viewW; x += 5) {
       const h = 9 + Math.floor(hash(x, params.seed + 2) * 15);
       for (let row = 0; row < h; row++) {
@@ -272,8 +265,8 @@ export function createClockView({ canvas, ui, params }: SceneContext, world: Wor
         px(x + 2 - half, horizon - h + row, half * 2 + 1, 1, forest);
       }
     }
-    px(0, horizon, viewW, viewH - horizon, css(mixRgb([19, 33, 28], [86, 140, 64], light)));
-    const tuft = css(mixRgb([26, 46, 36], [110, 170, 78], light));
+    px(0, horizon, viewW, viewH - horizon, css(lit(COLORS.meadow, light)));
+    const tuft = css(lit(COLORS.tuft, light));
     const tufts = Math.round((viewW * (viewH - horizon)) / 40);
     for (let i = 0; i < tufts; i++) {
       const x = Math.floor(hash(i, 11) * viewW);
@@ -290,15 +283,16 @@ export function createClockView({ canvas, ui, params }: SceneContext, world: Wor
     for (const fly of world.fireflies.swarm) {
       const fx = fly.prevX + (fly.x - fly.prevX) * alpha;
       const fy = fly.prevY + (fly.y - fly.prevY) * alpha;
-      const x = Math.round(left + (fx / FIELD.width) * width);
-      const y = Math.round(top + (fy / FIELD.height) * height);
+      // The map squeezed into the strip of meadow (the fireflies live on the map, step 1.5).
+      const x = Math.round(left + (fx / world.map.width) * width);
+      const y = Math.round(top + (fy / world.map.height) * height);
       if (fly.lit) {
-        disc(x, y, 2, 'rgba(200,255,120,0.12)');
-        px(x - 1, y, 3, 1, 'rgba(210,255,130,0.35)');
-        px(x, y - 1, 1, 3, 'rgba(210,255,130,0.35)');
-        px(x, y, 1, 1, '#eaff9a');
+        disc(x, y, 2, css(COLORS.glow, 0.12));
+        px(x - 1, y, 3, 1, css(COLORS.glow, 0.35));
+        px(x, y - 1, 1, 3, css(COLORS.glow, 0.35));
+        px(x, y, 1, 1, css(COLORS.firefly));
       } else {
-        px(x, y, 1, 1, 'rgba(120,140,60,0.5)');
+        px(x, y, 1, 1, css(COLORS.dark, 0.5));
       }
     }
   }

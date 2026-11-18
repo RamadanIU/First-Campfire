@@ -13,6 +13,7 @@ describe('parseParams', () => {
       scene: 'title',
       frame: 10,
       ui: false,
+      light: true,
       ticks: 0,
       speed: 1,
       sprite: null,
@@ -70,6 +71,12 @@ describe('parseParams', () => {
     expect(parseParams('?cam=,').cam).toBeNull();
     expect(parseParams('?cam=1e3,2').cam).toBeNull();
     expect(parseParams('').cam).toBeNull();
+  });
+
+  it('reads light: on by default, light=0 turns the light of the time of day off', () => {
+    expect(parseParams('').light).toBe(true);
+    expect(parseParams('?light=0').light).toBe(false);
+    expect(parseParams('?light=1').light).toBe(true);
   });
 
   it('reads debug: words of overlays; 1 — paths and clicks; 0 or nothing — none', () => {

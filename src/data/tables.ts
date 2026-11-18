@@ -72,6 +72,15 @@ function need(doc: string, death: string) {
   );
 }
 
+/** A number per phase of the day: dawn, day, dusk, night. */
+function phases(doc: string, unit: string, min: number, max: number) {
+  const value = (phase: string) => num({ min, max, ...(unit ? { unit } : {}), doc: phase });
+  return obj(
+    { dawn: value('рассвет'), day: value('день'), dusk: value('закат'), night: value('ночь') },
+    { doc },
+  );
+}
+
 /** «From … to …» counts: the generator picks a number in between. */
 function range(doc: string, min: number, max: number) {
   return obj(
@@ -209,6 +218,12 @@ const balanceSchema = obj({
     {
       food: need('Сытость', 'голод'),
       water: need('Жажда (100 — напился)', 'жажда'),
+      sleep: obj(
+        {
+          emptyDays: num({ min: 0.1, max: 100, unit: 'сут', doc: 'от 100 до 0 за (не во сне)' }),
+        },
+        { doc: 'Сон (100 — выспался); на нуле не смерть, а обморок' },
+      ),
       healDays: num({
         min: 0.1,
         max: 100,
@@ -218,6 +233,33 @@ const balanceSchema = obj({
     },
     {
       doc: 'Потребности: шкалы 0–100, 100 — нужды нет (GDD §4.2; сытость и жажда — вдесятеро дольше, решение владельца, ADR-024)',
+    },
+  ),
+  sleeping: obj(
+    {
+      fillDays: num({
+        min: 0.01,
+        max: 10,
+        unit: 'сут',
+        doc: 'Сон на лежанке (×1) восполняет шкалу от 0 до 100 за столько суток',
+      }),
+      groundFactor: num({
+        min: 0.01,
+        max: 2,
+        unit: '×',
+        doc: 'Сон на голой земле восполняет шкалу медленнее лежанки во столько раз (GDD §4.2: ×0,5)',
+      }),
+      faintWakePoints: num({
+        min: 1,
+        max: 100,
+        unit: 'пунктов',
+        doc: 'Упавший в обморок от недосыпа лежит, пока шкала сна не поднимется до стольких пунктов',
+      }),
+      factor: phases('Желание спать: нужда² умножается на', '×', 0, 20),
+      wish: phases('…и к нему прибавляется (ночью — хочется спать, даже выспавшись)', '', 0, 5),
+    },
+    {
+      doc: 'Сон: полезность «спать» = нужда² × множитель фазы суток + прибавка фазы (GDD §4.2)',
     },
   ),
   eating: obj(

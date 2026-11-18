@@ -24,7 +24,15 @@
   "needs": {
     "food": { "emptyDays": 25, "deathDays": 40 },
     "water": { "emptyDays": 15, "deathDays": 20 },
+    "sleep": { "emptyDays": 1.5 },
     "healDays": 2
+  },
+  "sleeping": {
+    "fillDays": 0.25,
+    "groundFactor": 0.5,
+    "faintWakePoints": 50,
+    "factor": { "dawn": 0.5, "day": 0.5, "dusk": 1, "night": 2 },
+    "wish": { "dawn": 0, "day": 0, "dusk": 0, "night": 0.5 }
   },
   "eating": {
     "rationPoints": 40,

@@ -3,9 +3,9 @@
  * writes to the journal when a need runs out and when someone dies (GDD §4.2, §4.3).
  *
  * Every tick, for every villager (./needs.ts — the arithmetic):
- *   - satiety and thirst fall; a need that reaches zero is an event `need_ran_out` caused by the
+ *   - satiety, thirst and sleep fall (sleep comes back while asleep); a need that reaches zero is an event `need_ran_out` caused by the
  *     need itself — the villager starts to starve or to thirst;
- *   - a need at zero harms health, health heals while nothing is at zero;
+ *   - hunger or thirst at zero harms health (sleep at zero fells — ./villagers.ts), and health heals while nothing is at zero;
  *   - health at zero is death: an event `villager_died` with what it died of (`reason` — the need
  *     that ran out first, its event is the cause) and whether food and water could be reached from
  *     where it died; then the villager leaves the world.
@@ -15,15 +15,15 @@
  */
 import { type DeathReason, emit } from './events.ts';
 import { findSource } from './minds.ts';
-import { liveTick, NEEDS, type Need } from './needs.ts';
+import { isMeal, liveTick, type Meal, NEEDS } from './needs.ts';
 import { removeVillager, type Villager } from './villagers.ts';
 import type { System, World } from './world.ts';
 
 /** What a need at zero kills by. */
-const DEATH_BY: Record<Need, DeathReason> = { food: 'hunger', water: 'thirst' };
+const DEATH_BY: Record<Meal, DeathReason> = { food: 'hunger', water: 'thirst' };
 
 /** The need among `empty` that ran out first (its event is older). */
-function firstRanOut(villager: Villager, empty: readonly Need[]): Need {
+function firstRanOut(villager: Villager, empty: readonly Meal[]): Meal {
   let first = empty[0]!;
   for (const need of empty) {
     if (villager.ranOut[need] < villager.ranOut[first]) first = need;
@@ -31,9 +31,9 @@ function firstRanOut(villager: Villager, empty: readonly Need[]): Need {
   return first;
 }
 
-function die(world: World, villager: Villager, empty: readonly Need[]): void {
+function die(world: World, villager: Villager, empty: readonly Meal[]): void {
   const need = firstRanOut(villager, empty);
-  const reachable = (what: Need) => findSource(world, villager, what, { others: false }) !== null;
+  const reachable = (what: Meal) => findSource(world, villager, what, { others: false }) !== null;
   emit(
     world,
     {
@@ -56,7 +56,8 @@ export const lifeSystem: System = {
   step(world) {
     // A copy: the dead leave the list.
     for (const villager of [...world.villagers.list]) {
-      const { ranOut, empty, health } = liveTick(villager.needs, villager.health);
+      const asleep = villager.action.kind === 'sleep';
+      const { ranOut, empty, health } = liveTick(villager.needs, villager.health, asleep);
       villager.health = health;
       for (const need of NEEDS) if (villager.needs[need] > 0) villager.ranOut[need] = 0;
       for (const need of ranOut) {
@@ -67,7 +68,8 @@ export const lifeSystem: System = {
         );
         villager.ranOut[need] = event.id;
       }
-      if (health <= 0 && empty.length > 0) die(world, villager, empty);
+      const deadly = empty.filter(isMeal);
+      if (health <= 0 && deadly.length > 0) die(world, villager, deadly);
     }
   },
 };

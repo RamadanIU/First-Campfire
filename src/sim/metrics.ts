@@ -43,6 +43,9 @@ export const METRICS: readonly Metric[] = [
   min('first_death_day', 'Первая смерть, день', 'villager_died', (e) => dayOf(e.tick)),
   count('starving', 'Сытость падала до нуля, раз', 'need_ran_out', (e) => e.need === 'food'),
   count('thirsting', 'Жажда падала до нуля, раз', 'need_ran_out', (e) => e.need === 'water'),
+  // Sleep (step 1.5): a need at zero fells a villager — a faint.
+  count('sleepless', 'Сон падал до нуля, раз', 'need_ran_out', (e) => e.need === 'sleep'),
+  count('fainted', 'Обмороков от недосыпа', 'villager_fainted'),
   gauge('berries_left', 'Ягод на кустах (на конец), рационов', (world) =>
     world.objects.list.reduce((total, object) => total + object.stock, 0),
   ),

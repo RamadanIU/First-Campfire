@@ -10,6 +10,8 @@ import {
   drawRefused,
   NEED_BARS_HEIGHT,
 } from '../render/debugOverlay.ts';
+import { drawFireflies } from '../render/fireflies.ts';
+import { daylightAt, hazeAt, shadeRect } from '../render/lighting.ts';
 import { createMapRenderer } from '../render/mapRenderer.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
@@ -37,6 +39,10 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
  * world pixel, then put on the screen at the zoom's scale. The world runs in a fixed-step game
  * loop (./loop.ts); Space — pause, 1–4 — speed. Villagers move smoothly between ticks
  * (loop.alpha); a frozen frame (`frame=`) shows them exactly at the tick of `ticks=`.
+ *
+ * The light of the time of day (step 1.5, src/render/lighting.ts) lies over the drawn world — rosy
+ * dawn, day as drawn, golden dusk, blue night (`light=0` — always as drawn); fireflies glow over it
+ * at night, bubbles of sleep float over the sleepers.
  *
  *   `debug=1` (step 1.3) — paths of the villagers are drawn as lines; a click on a villager
  *   chooses it, a click on a tile sends the chosen one there (the first by default). A refused
@@ -78,13 +84,15 @@ export function doingOf(villager: Villager): string {
       return 'ест ягоды';
     case 'drink':
       return 'пьёт';
+    case 'sleep':
+      return action.fainted ? 'лежит без сил' : 'спит';
   }
 }
 
 /** A line of the panel for a villager (`debug=needs`): doing what, its scales. */
 export function needsLine(villager: Villager): string {
   const round = (value: number) => Math.round(value);
-  return `${WHO[villager.sex]} (житель ${villager.id}): ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · здоровье ${round(villager.health)}`;
+  return `${WHO[villager.sex]} (житель ${villager.id}): ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
 }
 const WHY: Record<PathFailure, string> = {
   blocked: 'туда нельзя встать — вода, дерево, куст или там другой житель',
@@ -317,7 +325,18 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
       nowMs = timeMs;
       const { layout } = camera;
       if (layout.view.width > 0 && layout.view.height > 0) {
-        renderer.draw(ctx, timeMs, layout.view, tickAlpha());
+        const alpha = tickAlpha();
+        renderer.draw(ctx, timeMs, layout.view, alpha);
+        // The light of the moment shown (between the last two ticks), over world pixels: crisp at
+        // every zoom. Fireflies and signs shine over it, the debug overlay stays readable.
+        if (params.light) {
+          const shown = Math.max(0, world.tick - 1 + alpha);
+          const time = shown % TIME.ticksPerDay;
+          const { width, height } = layout.view;
+          shadeRect(ctx, width, height, daylightAt(time), [], hazeAt(time));
+        }
+        drawFireflies(ctx, layout.view, world.fireflies.swarm, alpha);
+        renderer.drawSigns(ctx, timeMs, layout.view, alpha);
         if (debug) drawDebug(ctx, layout.view);
       }
       screen.fillStyle = background;

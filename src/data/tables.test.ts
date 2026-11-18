@@ -236,8 +236,11 @@ describe('испорченная запись даёт понятную ошиб
     expect(DATA.balance.needs).toEqual({
       food: { emptyDays: 25, deathDays: 40 },
       water: { emptyDays: 15, deathDays: 20 },
+      sleep: { emptyDays: 1.5 },
       healDays: 2,
     });
+    // Sleep (step 1.5): GDD §4.2 — 1.5 days, the ground ×0.5.
+    expect(DATA.balance.sleeping.groundFactor).toBe(0.5);
     expect(DATA.balance.eating.rationPoints).toBe(40);
   });
 

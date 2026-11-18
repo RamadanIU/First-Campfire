@@ -10,6 +10,7 @@ import {
   liveTick,
   portionOf,
   satietyPerRation,
+  sleepPerTick,
   urgency,
 } from './needs.ts';
 
@@ -52,15 +53,37 @@ describe('тик жизни', () => {
       health = result.health;
       for (const need of result.ranOut) ranOut.push(`${need}@${tick}`);
     }
-    // Water empties at 6 000 ticks, food at 10 000 (± rounding of the sums).
-    expect(ranOut).toHaveLength(2);
-    expect(Number(ranOut[0]!.split('@')[1])).toBeGreaterThanOrEqual(5999);
-    expect(Number(ranOut[0]!.split('@')[1])).toBeLessThanOrEqual(6001);
-    expect(ranOut[0]).toMatch(/^water@/);
-    expect(ranOut[1]).toMatch(/^food@/);
-    expect(needs).toEqual({ food: 0, water: 0 });
+    // Sleep (never slept) empties at 600 ticks, water at 6 000, food at 10 000 (± rounding).
+    expect(ranOut).toHaveLength(3);
+    expect(ranOut[0]).toMatch(/^sleep@(599|600|601)$/);
+    expect(Number(ranOut[1]!.split('@')[1])).toBeGreaterThanOrEqual(5999);
+    expect(Number(ranOut[1]!.split('@')[1])).toBeLessThanOrEqual(6001);
+    expect(ranOut[1]).toMatch(/^water@/);
+    expect(ranOut[2]).toMatch(/^food@/);
+    expect(needs).toEqual({ food: 0, water: 0, sleep: 0 });
+    // Sleep at zero harms nothing: only thirst and hunger did.
     // Thirst has harmed health for ≈ 5 000 ticks, hunger for ≈ 1 000.
     expect(health).toBeCloseTo(FULL - 5000 * harmPerTick('water') - 1000 * harmPerTick('food'), 0);
+  });
+
+  it('сон: падает за 1,5 суток бодрствования, во сне на земле возвращается, на нуле не вредит', () => {
+    expect(fallPerTick('sleep') * 600).toBeCloseTo(FULL, 9);
+    // The ground: half of a bed (0 → 100 in a quarter of a day) — 0.5 a tick.
+    expect(sleepPerTick()).toBeCloseTo(0.5, 9);
+    const needs = { ...fullNeeds(), sleep: 40 };
+    const asleep = liveTick(needs, 70, true);
+    expect(needs.sleep).toBeCloseTo(40 + sleepPerTick(), 9);
+    expect(needs.food).toBeLessThan(FULL);
+    // Never above full.
+    needs.sleep = FULL - 0.1;
+    liveTick(needs, 70, true);
+    expect(needs.sleep).toBe(FULL);
+    // At zero: health still heals.
+    const tired = { ...fullNeeds(), sleep: 0 };
+    const result = liveTick(tired, 50);
+    expect(result.empty).toEqual(['sleep']);
+    expect(result.health).toBeGreaterThan(50);
+    expect(asleep.health).toBeGreaterThan(70);
   });
 
   it('пока ни одна нужда не на нуле, здоровье возвращается, но не выше 100', () => {
