@@ -1,6 +1,7 @@
 /**
- * Villagers (step 1.3; needs — step 1.4): the people of the world. They walk, rest and stroll
- * near home, and go to eat and to drink when hunger or thirst presses.
+ * Villagers (step 1.3; needs — step 1.4; sleep — step 1.5): the people of the world. They walk,
+ * rest and stroll near home, go to eat and to drink when hunger or thirst presses, and sleep on
+ * the ground at night.
  *
  *   - A villager is an entity with an id, a sex, looks (skin tone and hair colour — indices the
  *     renderer turns into palette swaps), a position — the tile it stands on plus progress
@@ -18,6 +19,9 @@
  *     berries or to the water's edge, stands beside it facing it and eats (`eating.biteRations`
  *     every `eating.biteTicks`, straight from the bush — ./objects.ts `takeFood`) or drinks
  *     (`eating.sipPoints` every `eating.sipTicks`) until full; the bush picked clean turns empty.
+ *   - At night (and when sleepless) it lies down where it stands and sleeps (step 1.5): sleep
+ *     comes back, and it gets up at dawn, rested, or earlier if hunger or thirst press harder.
+ *     Sleep at zero fells it where it stands — a faint, an event of the journal.
  *   - Otherwise it rests `villagers.restTicks`, then walks to a free tile within
  *     `villagers.wanderRadius` of home.
  *   - The observer's debug order (`orderWalk`, the scene `world` with `debug=1`) sends a villager
@@ -38,9 +42,11 @@ import {
   FULL,
   fullNeeds,
   isSated,
+  type Meal,
   NEEDS,
   type Need,
   type PerNeed,
+  perNeed,
   satietyPerRation,
 } from './needs.ts';
 import { findObject, objectAt, takeFood } from './objects.ts';
@@ -89,7 +95,13 @@ export type VillagerAction =
   /** Picks berries from the bush (object id) beside it and eats them; the next bite at `next`. */
   | { kind: 'eat'; bush: number; next: number }
   /** Drinks from the water tile beside it; the next sip at `next`. */
-  | { kind: 'drink'; water: Tile; next: number };
+  | { kind: 'drink'; water: Tile; next: number }
+  /**
+   * Sleeps on the ground where it stands (step 1.5); `fainted` — fell from want of sleep and
+   * lies until `sleeping.faintWakePoints`, deaf to everything; otherwise wakes when the mind
+   * prefers anything to sleep (rested by day, or hunger or thirst press harder).
+   */
+  | { kind: 'sleep'; fainted: boolean };
 
 export interface Villager {
   id: number;
@@ -249,8 +261,8 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
     action: { kind: 'idle', until },
     needs: fullNeeds(),
     health: FULL,
-    ranOut: { food: 0, water: 0 },
-    nowhere: { food: 0, water: 0 },
+    ranOut: perNeed(0),
+    nowhere: perNeed(0),
   };
   world.villagers.nextId += 1;
   world.villagers.list.push(villager);
@@ -415,8 +427,15 @@ function thinksNow(world: World, villager: Villager): boolean {
   return (world.tick + villager.id) % DATA.balance.ai.thinkTicks === 0;
 }
 
-/** Set off to meet a need: walk to the spot beside the source, or start at once if there. */
+/**
+ * Set off to meet a need: lie down to sleep where it stands, walk to the spot beside the source,
+ * or start at once if there.
+ */
 function setOff(world: World, villager: Villager, choice: Exclude<Choice, { kind: 'rest' }>): void {
+  if (choice.kind === 'sleep') {
+    villager.action = { kind: 'sleep', fainted: false };
+    return;
+  }
   if (choice.path.length === 0) {
     begin(world, villager, choice.source);
     return;
@@ -476,6 +495,47 @@ function eat(world: World, villager: Villager, action: Extract<VillagerAction, {
   }
 }
 
+/**
+ * Sleeping on the ground. Sleep comes back by itself (./life.ts). A fainted villager lies until
+ * `sleeping.faintWakePoints`; one who lay down of its own will thinks now and then, as a resting
+ * one does, and gets up when the mind prefers anything else: rest (rested, and it is no longer
+ * night), or food or water that press harder than the wish to sleep («wakes if it must»).
+ */
+function sleep(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'sleep' }>,
+) {
+  if (action.fainted) {
+    if (villager.needs.sleep >= DATA.balance.sleeping.faintWakePoints) rest(world, villager, 0);
+    return;
+  }
+  if (!thinksNow(world, villager)) return;
+  const choice = choose(world, villager);
+  if (choice.kind === 'sleep') return;
+  if (choice.kind === 'rest') rest(world, villager);
+  else setOff(world, villager, choice);
+}
+
+/**
+ * Sleep ran out: the villager falls where it stands (a faint, GDD §4.2) — an event caused by its
+ * sleep running out.
+ */
+function faint(world: World, villager: Villager): void {
+  villager.action = { kind: 'sleep', fainted: true };
+  emit(
+    world,
+    {
+      type: 'villager_fainted',
+      villager: villager.id,
+      sex: villager.sex,
+      x: villager.x,
+      y: villager.y,
+    },
+    { kind: 'event', event: villager.ranOut.sleep },
+  );
+}
+
 /** Is a need other than `current` more pressing than it (its scale lower)? */
 function morePressing(villager: Villager, current: Need): boolean {
   return NEEDS.some((need) => need !== current && villager.needs[need] < villager.needs[current]);
@@ -498,7 +558,7 @@ function drink(
 }
 
 /** A need is met by `amount` points (never above full). */
-function gain(villager: Villager, need: Need, amount: number): void {
+function gain(villager: Villager, need: Meal, amount: number): void {
   villager.needs[need] = Math.min(FULL, villager.needs[need] + amount);
 }
 
@@ -508,7 +568,12 @@ function gain(villager: Villager, need: Need, amount: number): void {
  * step started.
  */
 function decide(world: World, villager: Villager): boolean {
+  if (villager.needs.sleep <= 0 && villager.action.kind !== 'sleep') faint(world, villager);
   const action = villager.action;
+  if (action.kind === 'sleep') {
+    sleep(world, villager, action);
+    return false;
+  }
   if (action.kind === 'eat') {
     eat(world, villager, action);
     return false;

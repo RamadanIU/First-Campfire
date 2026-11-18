@@ -78,13 +78,15 @@ export function doingOf(villager: Villager): string {
       return 'ест ягоды';
     case 'drink':
       return 'пьёт';
+    case 'sleep':
+      return action.fainted ? 'лежит без сил' : 'спит';
   }
 }
 
 /** A line of the panel for a villager (`debug=needs`): doing what, its scales. */
 export function needsLine(villager: Villager): string {
   const round = (value: number) => Math.round(value);
-  return `${WHO[villager.sex]} (житель ${villager.id}): ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · здоровье ${round(villager.health)}`;
+  return `${WHO[villager.sex]} (житель ${villager.id}): ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
 }
 const WHY: Record<PathFailure, string> = {
   blocked: 'туда нельзя встать — вода, дерево, куст или там другой житель',

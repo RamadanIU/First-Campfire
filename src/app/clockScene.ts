@@ -7,7 +7,7 @@ import {
   TIME,
 } from '../sim/calendar.ts';
 import { type Cause, type DeathReason, findEvent, type WorldEvent } from '../sim/events.ts';
-import { FIELD } from '../sim/systems/fireflies.ts';
+import type { Need } from '../sim/needs.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../sim/world.ts';
 import { bindSpeedKeys } from './controls.ts';
 import { SEASON_NAME } from './dates.ts';
@@ -146,18 +146,30 @@ function describeEvent(event: WorldEvent): string {
     case 'villager_arrived':
       return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} (житель ${event.villager})`;
     case 'need_ran_out':
-      return `житель ${event.villager} ${event.need === 'food' ? 'голодает' : 'мучается жаждой'}`;
+      return `житель ${event.villager} ${RAN_OUT[event.need]}`;
+    case 'villager_fainted':
+      return `${event.sex === 'male' ? 'упал' : 'упала'} без сил житель ${event.villager}`;
     case 'villager_died':
       return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager}: ${DIED_OF[event.reason]}`;
   }
 }
 
 const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
+const RAN_OUT: Record<Need, string> = {
+  food: 'голодает',
+  water: 'мучается жаждой',
+  sleep: 'валится с ног от усталости',
+};
+const NEED_GONE: Record<Need, string> = {
+  food: 'кончилась сытость',
+  water: 'кончилась вода',
+  sleep: 'кончились силы — не спал',
+};
 
 function describeCause(world: World, cause: Cause): string {
   if (cause.kind === 'rule') return cause.rule === 'genesis' ? 'начало всего' : 'ход времени';
   if (cause.kind === 'need') {
-    return `у жителя ${cause.villager} ${cause.need === 'food' ? 'кончилась сытость' : 'кончилась вода'}`;
+    return `у жителя ${cause.villager} ${NEED_GONE[cause.need]}`;
   }
   const source = findEvent(world, cause.event);
   return source ? `#${source.id} ${describeEvent(source)}` : `#${cause.event}`;
@@ -290,8 +302,9 @@ export function createClockView({ canvas, ui, params }: SceneContext, world: Wor
     for (const fly of world.fireflies.swarm) {
       const fx = fly.prevX + (fly.x - fly.prevX) * alpha;
       const fy = fly.prevY + (fly.y - fly.prevY) * alpha;
-      const x = Math.round(left + (fx / FIELD.width) * width);
-      const y = Math.round(top + (fy / FIELD.height) * height);
+      // The map squeezed into the strip of meadow (the fireflies live on the map, step 1.5).
+      const x = Math.round(left + (fx / world.map.width) * width);
+      const y = Math.round(top + (fy / world.map.height) * height);
       if (fly.lit) {
         disc(x, y, 2, 'rgba(200,255,120,0.12)');
         px(x - 1, y, 3, 1, 'rgba(210,255,130,0.35)');

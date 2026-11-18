@@ -27,12 +27,13 @@
  * the goal another one is walking to.
  */
 import { DATA } from '../data/index.ts';
+import { calendarAt } from './calendar.ts';
 import { inside, isWater } from './map.ts';
 import {
   FULL,
   fallPerTick,
   isSated,
-  type Need,
+  type Meal,
   portionOf,
   portionTicks,
   urgency,
@@ -63,7 +64,7 @@ export interface Found {
 }
 
 /** What meets a need on the tile beside (x, y), if anything: a bush with food, the water. */
-function sourceBeside(world: World, need: Need, x: number, y: number): Source | null {
+function sourceBeside(world: World, need: Meal, x: number, y: number): Source | null {
   const { map, objects } = world;
   for (const [dx, dy] of SIDES) {
     const sx = x + dx;
@@ -89,7 +90,7 @@ let marks: { size: number; stamp: number; at: Uint32Array } | null = null;
  * looks at. Water: the four sides by the ground's code. Food: the sides of every bush with food
  * are marked once, before the search (a map has a couple of dozen bushes).
  */
-function besideTest(world: World, need: Need): (x: number, y: number) => boolean {
+function besideTest(world: World, need: Meal): (x: number, y: number) => boolean {
   const { map, objects } = world;
   const { width, height } = map;
   if (need === 'water') {
@@ -135,7 +136,7 @@ export type SourceSearch = ({ ok: true } & Found) | { ok: false; reason: 'nowher
 export function searchSource(
   world: World,
   villager: Villager,
-  need: Need,
+  need: Meal,
   { others = true, maxCost }: FindOptions = {},
 ): SourceSearch {
   const from = { x: villager.x, y: villager.y };
@@ -165,7 +166,7 @@ export function searchSource(
 export function findSource(
   world: World,
   villager: Villager,
-  need: Need,
+  need: Meal,
   options: FindOptions = {},
 ): Found | null {
   const search = searchSource(world, villager, need, options);
@@ -196,23 +197,36 @@ export function reachFor(ceiling: number, best: number): number {
   return DATA.balance.ai.halfAvailabilityTiles * (ceiling / best - 1);
 }
 
-/** Activities a need can drive (step 1.4). Step 1.8 adds work, sleep, warmth… */
+/** Activities that need a source to walk to (step 1.4). Step 1.8 adds work, warmth… */
 export type ActivityId = 'eat' | 'drink';
 
 /** An activity and the need behind it, in the order of the jitter draws. */
-export const ACTIVITIES: readonly { readonly id: ActivityId; readonly need: Need }[] = [
+export const ACTIVITIES: readonly { readonly id: ActivityId; readonly need: Meal }[] = [
   { id: 'eat', need: 'food' },
   { id: 'drink', need: 'water' },
 ];
 
-/** What the mind chose: rest on, or go and meet a need. */
-export type Choice =
-  | { kind: 'rest'; utility: number }
-  | ({ kind: ActivityId; need: Need; utility: number } & Found);
+/** What the mind chose: rest on, sleep where it stands, or go and meet a need. */
+export type Choice = { kind: 'rest'; utility: number } | { kind: 'sleep'; utility: number } | Trip;
+
+/** A choice to walk to a source and eat or drink there. */
+export type Trip = { kind: ActivityId; need: Meal; utility: number } & Found;
+
+/**
+ * How much the villager wants to sleep now (step 1.5): `urgency² × factor + wish` of the phase
+ * of the day (data/balance.json, `sleeping`). At night the wish alone outweighs rest — one goes to
+ * sleep at nightfall and sleeps till dawn even when rested; by day only a sleepless one naps.
+ */
+export function sleepWish(world: World, villager: Villager): number {
+  const { factor, wish } = DATA.balance.sleeping;
+  const { phase } = calendarAt(world.tick);
+  const pressing = urgency(villager.needs.sleep);
+  return pressing * pressing * factor[phase] + wish[phase];
+}
 
 /** A scored option of one decision (the debug view and tests read them). */
 export interface Considered {
-  kind: 'rest' | ActivityId;
+  kind: 'rest' | 'sleep' | ActivityId;
   /** Utility with the jitter; for an activity not looked into — its upper bound. */
   utility: number;
   /** Was the source searched for (false — it could not win anyway)? */
@@ -222,7 +236,7 @@ export interface Considered {
 }
 
 /**
- * Choose what `villager` does now: rest on, eat or drink (the highest utility). `considered`, if
+ * Choose what `villager` does now: rest on, sleep, eat or drink (the highest utility). `considered`, if
  * given, receives every option with its score — the trail of the decision.
  */
 export function choose(world: World, villager: Villager, considered?: Considered[]): Choice {
@@ -236,6 +250,10 @@ export function choose(world: World, villager: Villager, considered?: Considered
     const pressing = urgency(villager.needs[activity.need]);
     return { ...activity, order, ceiling: pressing * pressing * noise() };
   });
+  // Sleep needs no search: one lies down where one stands (beds and shelters — later steps).
+  const sleep = sleepWish(world, villager) * noise();
+  considered?.push({ kind: 'sleep', utility: sleep, searched: false, nowhere: false });
+  if (sleep > best.utility) best = { kind: 'sleep', utility: sleep };
   // The most promising first: once an upper bound cannot beat the best, neither can the rest.
   options.sort((a, b) => b.ceiling - a.ceiling || a.order - b.order);
   for (const option of options) {
@@ -271,7 +289,8 @@ export function choose(world: World, villager: Villager, considered?: Considered
       best = { kind: option.id, need: option.need, utility, ...found };
     }
   }
-  return best.kind === 'rest' ? best : (precaution(world, villager, best, considered) ?? best);
+  if (best.kind === 'rest' || best.kind === 'sleep') return best;
+  return precaution(world, villager, best, considered) ?? best;
 }
 
 /**
@@ -282,7 +301,7 @@ export function choose(world: World, villager: Villager, considered?: Considered
 function precaution(
   world: World,
   villager: Villager,
-  trip: Exclude<Choice, { kind: 'rest' }>,
+  trip: Trip,
   considered?: Considered[],
 ): Choice | null {
   const ticks =
@@ -305,6 +324,6 @@ function precaution(
 }
 
 /** About how many ticks it takes to fill a need from where it is now (bites, sips). */
-export function fillTicks(need: Need, villager: Villager): number {
+export function fillTicks(need: Meal, villager: Villager): number {
   return ((FULL - villager.needs[need]) / portionOf(need)) * portionTicks(need);
 }
