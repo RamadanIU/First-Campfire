@@ -83,6 +83,7 @@ interface CameraState {
   zoom: number;
   scale: number;
   zooming: boolean;
+  flying: boolean;
   x: number;
   y: number;
   width: number;
@@ -220,7 +221,7 @@ function world(page: Page): Promise<World> {
 /** The camera of the world scene now. */
 function camera(page: Page): Promise<CameraState> {
   return page.evaluate<CameraState>(
-    '(({ zoom, scale, zooming, x, y, width, height, pixelRatio, offsetX, offsetY, view }) => ({ zoom, scale, zooming, x, y, width, height, pixelRatio, offsetX, offsetY, view }))(window.__fc.camera)',
+    '(({ zoom, scale, zooming, flying, x, y, width, height, pixelRatio, offsetX, offsetY, view }) => ({ zoom, scale, zooming, flying, x, y, width, height, pixelRatio, offsetX, offsetY, view }))(window.__fc.camera)',
   );
 }
 
@@ -642,7 +643,7 @@ try {
       left.x === 320 && left.offsetX === 0,
       `← 2,5 с: камера упёрлась в левый край (x ${left.x}, карта с ${left.offsetX} пикселя экрана)`,
     );
-    for (let i = 0; i < 3; i++) await mouseDrag(page, { x: 100, y: 100 }, { x: 1200, y: 700 });
+    for (let i = 0; i < 3; i++) await mouseDrag(page, { x: 400, y: 200 }, { x: 1260, y: 710 });
     const corner = await camera(page);
     check(
       corner.offsetX === 0 && corner.offsetY === 0 && corner.view.x === 0 && corner.view.y === 0,
@@ -849,6 +850,112 @@ try {
       );
     },
   );
+
+  // Step 1.6: the observer's panel. Seed 1 at tick 0: the man at (28, 27), the woman at (30, 27).
+  await scenario('Панель наблюдателя: скорость, выбор жителя, лента событий', async (page) => {
+    await open(page, '?scene=world&seed=1&speed=0&zoom=2');
+    const tick = () => page.evaluate<number>('window.__fc.world.tick');
+    const active = () =>
+      page.evaluate<string>("document.querySelector('.hud-speed.active')?.dataset.speed ?? ''");
+    const speedButton = (speed: number) => `.hud-speed[data-speed="${speed}"]`;
+    check(
+      (await text(page, '.hud-date')) === 'Год 1 · весна · день 1 из 3' &&
+        (await text(page, '.hud-count')) === '2',
+      `верхняя полоса: «${await text(page, '.hud-date')}», жителей ${await text(page, '.hud-count')}`,
+    );
+    check((await active()) === '0', `speed=0 — нажата пауза (${await active()})`);
+
+    // Speeds: buttons and keys.
+    await page.click(speedButton(20));
+    await page.waitForTimeout(600);
+    const fast = await tick();
+    check((await active()) === '20' && fast > 60, `кнопка ×20: мир бежит (тик ${fast})`);
+    await page.keyboard.press('Digit2');
+    await page.waitForTimeout(50);
+    check((await active()) === '2', `клавиша 2 — ×2 (нажата ×${await active()})`);
+    await page.click(speedButton(0));
+    await page.waitForTimeout(50);
+    const paused = await tick();
+    await page.waitForTimeout(300);
+    check(
+      (await active()) === '0' && (await tick()) === paused,
+      `кнопка паузы: мир стоит на тике ${paused}`,
+    );
+    // The button clicked does not keep the focus: Space is the pause key, pressed once.
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(50);
+    check((await active()) === '2', `пробел после щелчка — продолжить на ×2 (×${await active()})`);
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(50);
+    check((await active()) === '0', `пробел ещё раз — пауза (${await active()})`);
+
+    // Choosing a villager: a click on it, off it, Escape.
+    const view = await camera(page);
+    const onPage = (x: number, y: number): Point => ({
+      x: (view.offsetX + x * view.scale) / view.pixelRatio,
+      y: (view.offsetY + y * view.scale) / view.pixelRatio,
+    });
+    const villagers = await page.evaluate<VillagerState[]>('window.__fc.world.villagers()');
+    const woman = villagers.find((v) => v.sex === 'female')!;
+    const man = villagers.find((v) => v.sex === 'male')!;
+    await page.mouse.click(
+      onPage(woman.x * 16 + 8, woman.y * 16 + 4).x,
+      onPage(woman.x * 16 + 8, woman.y * 16 + 4).y,
+    );
+    await page.waitForTimeout(100);
+    check(
+      (await page.isVisible('.hud-card')) &&
+        (await text(page, '.hud-card-title')) === 'Женщина · житель 2' &&
+        (await page.evaluate<number>("document.querySelectorAll('.hud-scale').length")) === 4,
+      `щелчок по женщине — карточка: «${await text(page, '.hud-card-title')}», ${await text(page, '.hud-card-doing')}`,
+    );
+    const empty = onPage(34 * 16 + 8, 29 * 16 + 8);
+    await page.mouse.click(empty.x, empty.y);
+    await page.waitForTimeout(100);
+    check(await page.isHidden('.hud-card'), 'щелчок мимо — выбор снят, карточки нет');
+    const him = onPage(man.x * 16 + 8, man.y * 16 + 4);
+    await page.mouse.click(him.x, him.y);
+    await page.waitForTimeout(100);
+    check(
+      (await text(page, '.hud-card-title')) === 'Мужчина · житель 1',
+      `щелчок по мужчине: ${await text(page, '.hud-card-title')}`,
+    );
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100);
+    check(await page.isHidden('.hud-card'), 'Escape — выбор снят');
+
+    // The event feed: a click flies the camera to the place.
+    const lines = await page.evaluate<number>("document.querySelectorAll('.hud-event').length");
+    check(
+      lines === 2 && (await text(page, '.hud-feed-list')).includes('Пришла женщина'),
+      `лента: ${lines} строки — ${await text(page, '.hud-feed-list')}`,
+    );
+    await mouseDrag(page, { x: 900, y: 400 }, { x: 300, y: 400 });
+    const away = await camera(page);
+    await page.click('.hud-event');
+    const flying = (await camera(page)).flying;
+    await page.waitForTimeout(1100);
+    const there = await camera(page);
+    // Where she came at the creation of the world (she has walked since).
+    const goal = { x: (30 + 0.5) * 16, y: (27 + 0.5) * 16 };
+    check(
+      away.x > goal.x + 100 &&
+        flying &&
+        !there.flying &&
+        Math.abs(there.x - goal.x) < 0.5 &&
+        Math.abs(there.y - goal.y) < 0.5,
+      `щелчок по «Пришла женщина»: камера летит (${flying}) из x ${away.x} к месту (${there.x}, ${there.y}) = (${goal.x}, ${goal.y})`,
+    );
+
+    // The menu «Мир»: closed at the start, opens by its button.
+    check(await page.isHidden('.hud-menu'), 'меню «Мир» закрыто');
+    await page.click('.hud-menu-button');
+    check(
+      (await page.isVisible('.hud-menu')) &&
+        (await text(page, '.world-panel-camera')).startsWith('масштаб ×2'),
+      `меню «Мир» открывается: ${await text(page, '.world-panel-clock')}`,
+    );
+  });
 } finally {
   await browser.close();
   server.close();
