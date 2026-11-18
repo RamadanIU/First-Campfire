@@ -15,7 +15,8 @@
  *   - Finding a source costs a search of the map (./path.ts `findNearest`), so an activity is
  *     looked into only if its best possible utility (availability 1) could beat the best found so
  *     far — a fed villager never searches at all — and only as far as a source could still win
- *     (`reachFor`). A search that found nothing anywhere is not repeated for `ai.retryTicks`.
+ *     (`reachFor`). A search in vain (nothing anywhere, or nothing near enough) is not repeated for
+ *     `ai.retryTicks`: needs change slowly.
  *   - Precaution: before a trip, if another need would fall below `ai.reservePoints` by the time
  *     the villager is back (there and back, plus the meal) and there is room to top it up, that
  *     need is met first — one drinks before walking far for berries.
@@ -216,7 +217,7 @@ export interface Considered {
   utility: number;
   /** Was the source searched for (false — it could not win anyway)? */
   searched: boolean;
-  /** Nowhere to meet the need (searched now, or in vain a moment ago). */
+  /** Nowhere to meet the need (searched now and found nothing at all, or in vain a moment ago). */
   nowhere: boolean;
 }
 
@@ -247,7 +248,8 @@ export function choose(world: World, villager: Villager, considered?: Considered
       });
       continue;
     }
-    // Searched in vain not long ago: there is still nowhere to go.
+    // Searched in vain not long ago (nothing at all, or nothing near enough to be worth it): needs
+    // change slowly, so it is not worth searching again so soon.
     const vain = villager.nowhere[option.need];
     if (vain > 0 && world.tick - vain < DATA.balance.ai.retryTicks) {
       considered?.push({ kind: option.id, utility: 0, searched: false, nowhere: true });
@@ -256,7 +258,7 @@ export function choose(world: World, villager: Villager, considered?: Considered
     const search = searchSource(world, villager, option.need, {
       maxCost: reachFor(option.ceiling, best.utility),
     });
-    villager.nowhere[option.need] = !search.ok && search.reason === 'nowhere' ? world.tick : 0;
+    villager.nowhere[option.need] = search.ok ? 0 : world.tick;
     const utility = search.ok ? option.ceiling * availability(search.cost) : 0;
     considered?.push({
       kind: option.id,

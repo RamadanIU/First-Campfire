@@ -22,11 +22,12 @@
     "giveWayTicks": 6
   },
   "needs": {
-    "food": { "emptyDays": 2.5, "deathDays": 4 },
-    "water": { "emptyDays": 1.5, "deathDays": 2 },
+    "food": { "emptyDays": 25, "deathDays": 40 },
+    "water": { "emptyDays": 15, "deathDays": 20 },
     "healDays": 2
   },
   "eating": {
+    "rationPoints": 40,
     "biteRations": 0.25,
     "biteTicks": 15,
     "sipPoints": 10,
@@ -38,7 +39,7 @@
     "halfAvailabilityTiles": 60,
     "jitterPercent": 10,
     "reservePoints": 25,
-    "retryTicks": 100
+    "retryTicks": 400
   },
   "map": {
     "width": 64,

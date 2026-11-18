@@ -804,11 +804,13 @@ try {
   });
 
   // Step 1.4: needs. With debug=needs the panel tells what each villager is doing and how fed it
-  // is; at ×20 the scales fall and the two go to drink and to eat on their own.
+  // is; at ×20 the scales fall and the two go to drink and to eat on their own. Needs last ten
+  // times longer since the owner's feedback (ADR-024): the world starts on day 12 (tick 4 400),
+  // when in world 1 the first meals come and the second drinks.
   await scenario(
     'Нужды: debug=needs — шкалы и строки панели, жители сами едят и пьют',
     async (page) => {
-      await open(page, '?scene=world&seed=1&debug=needs&speed=20&zoom=2');
+      await open(page, '?scene=world&seed=1&ticks=4400&debug=needs&speed=20&zoom=2');
       const people = () => page.evaluate<VillagerState[]>('window.__fc.world.villagers()');
       const panel = () => text(page, '.world-panel-needs');
       const first = await panel();

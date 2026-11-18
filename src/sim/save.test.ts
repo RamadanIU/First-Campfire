@@ -299,13 +299,17 @@ function shapeOf(value: unknown, path: string, out: Set<string>): void {
   }
 }
 
-/** Shape of a world over its first year: sampled by day and by night, all event types included. */
+/**
+ * Shape of a world over its first year: sampled every 10 ticks, by day and by night, all event
+ * types included — often enough to catch short actions (a walk to the water, a drink) that need
+ * them only every few days (step 1.4, ADR-024).
+ */
 function sampleShape(): string[] {
   const out = new Set<string>();
   const world = createWorld(1);
-  for (let tick = 0; tick <= TICKS_PER_YEAR; tick += 50) {
+  for (let tick = 0; tick <= TICKS_PER_YEAR; tick += 10) {
     shapeOf(world, '', out);
-    runTicks(world, 50);
+    runTicks(world, 10);
   }
   return [...out].sort();
 }
