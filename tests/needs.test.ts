@@ -382,7 +382,7 @@ describe('детерминизм с нуждами', () => {
       for (let tick = 0; tick < 4 * DAY; tick++) {
         if (tick === saveAt) {
           const loaded = loadWorld(saveWorld(world));
-          if (!loaded.ok) throw new Error(loaded.error.message);
+          if (!loaded.ok) throw new Error(JSON.stringify(loaded.error));
           world = loaded.world;
         }
         stepWorld(world);

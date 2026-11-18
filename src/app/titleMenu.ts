@@ -10,11 +10,11 @@
  * world there and opens `?scene=world`, so a reload of that page returns to the same world.
  */
 import { loadWorld } from '../sim/save.ts';
-import { dateOf, formatCount } from './dates.ts';
+import { dateOf } from '../ui/dates.ts';
+import { loadErrorText, loadWarningText, MENU, SAVE_TEXT } from '../ui/texts.ts';
 import type { LaunchParams } from './params.ts';
 import { inspectSlot, MAX_SEED, openSaveSlot, randomSeed, startNewWorld } from './savedGame.ts';
 import { createFilePicker } from './saveFiles.ts';
-import { NO_STORAGE } from './saveSlot.ts';
 
 type Child = Node | string | null;
 
@@ -43,12 +43,12 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
   const contents = inspectSlot(slot);
   const current =
     contents.kind === 'saved'
-      ? `${dateOf(contents.header.tick)}, зерно ${contents.header.seed}`
+      ? MENU.worldLine(dateOf(contents.header.tick), contents.header.seed)
       : null;
 
   const note = h('div', { class: 'menu-note', role: 'status', hidden: '' });
   const cards = h('div', { class: 'menu-cards' });
-  const root = h('nav', { class: 'menu', 'aria-label': 'Меню' }, cards);
+  const root = h('nav', { class: 'menu', 'aria-label': MENU.label }, cards);
 
   /** Show the note; actions become buttons beside the text. */
   function showNote(
@@ -65,7 +65,7 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
       h('div', { class: 'menu-note-title' }, title),
       h('div', {}, text),
     );
-    if (detail) body.append(h('div', { class: 'menu-detail' }, `Подробности: ${detail}`));
+    if (detail) body.append(h('div', { class: 'menu-detail' }, MENU.details(detail)));
     note.replaceChildren(body);
     if (actions.length > 0) {
       const row = h('div', { class: 'menu-actions' });
@@ -84,12 +84,12 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
     if (contents.kind === 'problem') {
       showNote(
         'problem',
-        'Сохранённый мир не открылся',
-        `${contents.error.message} Можно начать новый мир или загрузить сохранение из файла.`,
+        MENU.savedProblemTitle,
+        MENU.savedProblemText(loadErrorText(contents.error)),
         contents.error.detail,
       );
     } else if (!slot.available) {
-      showNote('info', 'Мир не будет сохраняться сам', NO_STORAGE);
+      showNote('info', MENU.noStorageTitle, SAVE_TEXT.noStorage);
     } else {
       note.hidden = true;
     }
@@ -101,9 +101,9 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
       run();
       return;
     }
-    showNote('ask', question, `Текущий мир (${current}) сотрётся.`, '', [
+    showNote('ask', question, MENU.eraseText(current), '', [
       { label: yes, primary: true, run },
-      { label: 'Отмена', run: showDefaultNote },
+      { label: MENU.cancel, run: showDefaultNote },
     ]);
   }
 
@@ -112,14 +112,16 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
     const continueCard = h(
       'button',
       { type: 'button', class: 'menu-card primary', 'data-action': 'continue' },
-      h('span', { class: 'menu-title' }, 'Продолжить'),
+      h('span', { class: 'menu-title' }, MENU.continueTitle),
       h('span', { class: 'menu-sub' }, dateOf(contents.header.tick)),
       h(
         'span',
         { class: 'menu-sub' },
-        `зерно ${contents.header.seed} · тик ${formatCount(contents.header.tick)}`,
+        MENU.continueSeed(contents.header.seed, contents.header.tick),
       ),
-      ...contents.warnings.map((warning) => h('span', { class: 'menu-warn' }, warning.message)),
+      ...contents.warnings.map((warning) =>
+        h('span', { class: 'menu-warn' }, loadWarningText(warning)),
+      ),
     );
     continueCard.addEventListener('click', () => goToWorld());
     cards.append(continueCard);
@@ -130,25 +132,25 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
     type: 'text',
     inputmode: 'numeric',
     maxlength: String(MAX_SEED).length.toString(),
-    'aria-label': 'Зерно мира',
+    'aria-label': MENU.seedLabel,
     spellcheck: 'false',
     autocomplete: 'off',
   }) as HTMLInputElement;
   // A random seed is suggested — except when the address names one or freezes a frame
   // (screenshots must come out the same every time).
   seedInput.value = String(params.seedGiven || params.frame !== null ? params.seed : randomSeed());
-  const reroll = h('button', { type: 'button', class: 'menu-reroll', title: 'Случайное зерно' });
+  const reroll = h('button', { type: 'button', class: 'menu-reroll', title: MENU.reroll });
   reroll.textContent = '↻';
   const begin = h('button', { type: 'button', class: 'menu-go', 'data-action': 'new' });
-  begin.textContent = 'Начать';
+  begin.textContent = MENU.begin;
   const seedError = h('span', { class: 'menu-error', hidden: '' });
-  seedError.textContent = `Зерно — целое число от 0 до ${MAX_SEED.toLocaleString('ru-RU')}`;
+  seedError.textContent = MENU.seedError(MAX_SEED);
   const newCard = h(
     'div',
     { class: `menu-card${contents.kind === 'saved' ? '' : ' primary'}`, 'data-card': 'new' },
-    h('span', { class: 'menu-title' }, 'Новый мир'),
-    h('span', { class: 'menu-sub menu-tagline' }, 'одно зерно — одна история'),
-    h('span', { class: 'menu-seed' }, h('label', {}, 'зерно', seedInput), reroll, begin),
+    h('span', { class: 'menu-title' }, MENU.newTitle),
+    h('span', { class: 'menu-sub menu-tagline' }, MENU.newTagline),
+    h('span', { class: 'menu-seed' }, h('label', {}, MENU.seedWord, seedInput), reroll, begin),
     seedError,
   );
   cards.append(newCard);
@@ -175,7 +177,7 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
       seedInput.focus();
       return;
     }
-    confirmErase('Начать новый мир?', 'Начать новый', () => {
+    confirmErase(MENU.newAsk, MENU.newYes, () => {
       // Without storage the world can only come from the address — and it will not save itself.
       if (!slot.available) {
         goToWorld(`?scene=world&seed=${seed}`);
@@ -183,7 +185,7 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
       }
       const result = startNewWorld(slot, seed);
       if (result.ok) goToWorld();
-      else showNote('problem', 'Новый мир не начался', result.message);
+      else showNote('problem', MENU.newFailed, result.message);
     });
   };
   begin.addEventListener('click', startNew);
@@ -197,24 +199,24 @@ export function createTitleMenu(column: HTMLElement, params: LaunchParams): void
     if (!result.ok) {
       showNote(
         'problem',
-        `Файл «${name}» не открылся`,
-        `${result.error.message} Можно выбрать другой файл или начать новый мир.`,
+        MENU.fileFailed(name),
+        MENU.fileProblemText(loadErrorText(result.error)),
         result.error.detail,
       );
       return;
     }
-    const what = `${dateOf(result.header.tick)}, зерно ${result.header.seed}`;
-    confirmErase(`Открыть «${name}» (${what})?`, 'Открыть', () => {
+    const what = MENU.worldLine(dateOf(result.header.tick), result.header.seed);
+    confirmErase(MENU.openAsk(name, what), MENU.openYes, () => {
       const written = slot.write(text);
       if (written.ok) goToWorld();
-      else showNote('problem', `Файл «${name}» не открылся`, written.message);
+      else showNote('problem', MENU.fileFailed(name), written.message);
     });
   });
   const loadCard = h(
     'button',
     { type: 'button', class: 'menu-card', 'data-action': 'load' },
-    h('span', { class: 'menu-title' }, 'Загрузить из файла'),
-    h('span', { class: 'menu-sub' }, 'мир, сохранённый в файл (.json)'),
+    h('span', { class: 'menu-title' }, MENU.loadTitle),
+    h('span', { class: 'menu-sub' }, MENU.loadSub),
   );
   loadCard.addEventListener('click', () => picker.open());
   cards.append(loadCard);

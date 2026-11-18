@@ -9,6 +9,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { loadWorld } from '../../src/sim/save.ts';
 import type { World } from '../../src/sim/world.ts';
+import { loadErrorText } from '../../src/ui/texts.ts';
 import { runWorld, type WorldRun, warmUp } from './run.ts';
 import { measureTimerCost } from './timing.ts';
 
@@ -36,7 +37,7 @@ const send = (message: FromWorker) => port.postMessage(message);
 /** The world to continue, opened from the save text. */
 function savedWorld(text: string): World {
   const result = loadWorld(text);
-  if (!result.ok) throw new Error(`${result.error.message} ${result.error.detail}`);
+  if (!result.ok) throw new Error(`${loadErrorText(result.error)} ${result.error.detail}`);
   return result.world;
 }
 

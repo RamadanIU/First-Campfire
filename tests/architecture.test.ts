@@ -80,6 +80,18 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+/**
+ * Texts for the player live in one module (step 1.6, docs/ARCHITECTURE.md «Тексты»): the code of
+ * the interface — src/app, src/ui, src/render, src/main.ts — writes no Russian of its own outside
+ * comments. Content names live with the content (data/*.json, src/art/sprites).
+ */
+const TEXT_DIRS = ['src/app', 'src/ui', 'src/render'];
+const TEXTS_MODULE = 'src/ui/texts.ts';
+const CYRILLIC = /[А-Яа-яЁё]/;
+
+/** The interface (src/ui) reads the world and the texts; it does not reach into the app or render. */
+const UI_FORBIDDEN = /from\s+['"][^'"]*\/(app|render)\//;
+
 describe('архитектурные правила', () => {
   it('симуляция детерминирована и не зависит от браузера и отрисовки', () => {
     const violations: string[] = [];
@@ -143,5 +155,32 @@ describe('архитектурные правила', () => {
     ]) {
       expect(caught(good), good).toBe(false);
     }
+  });
+
+  it('тексты для игрока — только в модуле текстов (src/ui/texts.ts)', () => {
+    const files = [
+      ...TEXT_DIRS.flatMap((dir) => listSources(join(ROOT, dir))),
+      join(ROOT, 'src/main.ts'),
+    ].filter((file) => relative(ROOT, file) !== TEXTS_MODULE);
+    expect(files.length).toBeGreaterThan(20);
+    const violations: string[] = [];
+    for (const file of files) {
+      const lines = stripComments(readFileSync(file, 'utf8')).split('\n');
+      lines.forEach((line, index) => {
+        if (CYRILLIC.test(line))
+          violations.push(`${relative(ROOT, file)}:${index + 1}: ${line.trim().slice(0, 80)}`);
+      });
+    }
+    expect(violations).toEqual([]);
+    expect(CYRILLIC.test(stripComments("title.textContent = 'Мир';"))).toBe(true);
+    expect(CYRILLIC.test(stripComments('// the menu «Мир»'))).toBe(false);
+  });
+
+  it('интерфейс (src/ui) не зависит от запуска и отрисовки', () => {
+    const violations = listSources(join(ROOT, 'src/ui')).filter((file) =>
+      UI_FORBIDDEN.test(stripComments(readFileSync(file, 'utf8'))),
+    );
+    expect(violations.map((file) => relative(ROOT, file))).toEqual([]);
+    expect(UI_FORBIDDEN.test("import { x } from '../app/loop.ts'")).toBe(true);
   });
 });

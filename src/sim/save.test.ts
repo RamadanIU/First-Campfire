@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { loadErrorText } from '../ui/texts.ts';
 import { TICKS_PER_YEAR } from './calendar.ts';
 import { hashState } from './hash.ts';
 import {
@@ -19,13 +20,13 @@ function worldAt(seed: number, ticks: number): World {
 }
 
 function loaded(result: LoadResult): World {
-  if (!result.ok) throw new Error(`не загрузилось: ${result.error.message} ${result.error.detail}`);
+  if (!result.ok) throw new Error(`не загрузилось: ${JSON.stringify(result.error)}`);
   return result.world;
 }
 
 function problemOf(result: LoadResult): SaveProblem {
   if (result.ok) throw new Error('ожидалась ошибка, а сохранение загрузилось');
-  expect(result.error.message.length).toBeGreaterThan(10);
+  expect(loadErrorText(result.error).length).toBeGreaterThan(10);
   return result.error.code;
 }
 

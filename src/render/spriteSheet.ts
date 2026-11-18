@@ -102,7 +102,7 @@ export function createSpriteSheet(defs: readonly SpriteDef[], palette: Palette):
 
   function entry(name: string): AtlasEntry {
     const found = atlas.sprites.get(name);
-    if (!found) throw new Error(`Нет спрайта «${name}»`);
+    if (!found) throw new Error(`No sprite "${name}"`);
     return found;
   }
 
@@ -126,7 +126,7 @@ export function createSpriteSheet(defs: readonly SpriteDef[], palette: Palette):
       const sprite = from.atlas.sprites.get(name)!;
       const animationName = options.animation ?? sprite.defaultAnimation;
       const animation = sprite.animations.get(animationName);
-      if (!animation) throw new Error(`У спрайта «${name}» нет анимации «${animationName}»`);
+      if (!animation) throw new Error(`Sprite "${name}" has no animation "${animationName}"`);
       const count = animation.frames.length;
       const index =
         options.frame !== undefined

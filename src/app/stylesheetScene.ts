@@ -6,6 +6,7 @@ import { type CameraLayout, drawPicture, pixelScale } from '../render/camera.ts'
 import { createScenery, type Placement } from '../render/scenery.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { createTerrainLayer } from '../render/terrainLayer.ts';
+import { STYLESHEET } from '../ui/texts.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 
 /**
@@ -205,7 +206,7 @@ export function createStylesheetScene({ canvas, ui, params }: SceneContext): Sce
       if (params.ui) {
         caption ??= ui.appendChild(document.createElement('div'));
         caption.className = 'scene-caption';
-        caption.textContent = `Лист стиля · эпоха 0 · стоянка у реки · ×${String(params.zoom ?? scale).replace('.', ',')}`;
+        caption.textContent = STYLESHEET.caption(params.zoom ?? scale);
       }
     },
     render(frame) {

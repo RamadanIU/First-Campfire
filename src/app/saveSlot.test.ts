@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AUTOSAVE_KEY, createSaveSlot, type KeyValueStorage, storedSize } from './saveSlot.ts';
+import { storedSize } from '../ui/texts.ts';
+import { AUTOSAVE_KEY, createSaveSlot, type KeyValueStorage } from './saveSlot.ts';
 
 function storageThatThrows(error: Error): KeyValueStorage {
   return {

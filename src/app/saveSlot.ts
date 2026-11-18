@@ -8,8 +8,9 @@
  * also refuse storage altogether (private mode, blocked site data): then the slot is
  * `available: false` and the game runs without autosave, offering to save to a file.
  *
- * Nothing here throws: every failure becomes a message for the player.
+ * Nothing here throws: every failure becomes a message for the player (src/ui/texts.ts).
  */
+import { SAVE_TEXT, storedSize } from '../ui/texts.ts';
 
 /** Key of the autosave in the browser's storage. */
 export const AUTOSAVE_KEY = 'first-campfire/autosave';
@@ -34,22 +35,6 @@ export interface SaveSlot {
   clear(): void;
 }
 
-/** Text for the player when the browser keeps no storage at all. */
-export const NO_STORAGE =
-  'Браузер не даёт игре хранилище (частный режим или запрет данных сайтов) — автосохранения не будет. Сохраняйте мир в файл.';
-
-/**
- * Size of save text for people: «1,7 МБ», «16 КБ» — about the size of the same save as a file
- * (save text is almost all Latin letters and digits: a byte each). Browsers limit localStorage
- * in characters: Chromium takes ≈ 5,2 million, i.e. «5 МБ» in these units.
- */
-export function storedSize(length: number): string {
-  const kilobytes = length / 1024;
-  return kilobytes < 1024
-    ? `${Math.max(1, Math.round(kilobytes))} КБ`
-    : `${(kilobytes / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ`;
-}
-
 function isQuotaError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const name = (error as { name?: unknown }).name;
@@ -69,7 +54,7 @@ export function createSaveSlot(storage: KeyValueStorage | null, key = AUTOSAVE_K
       }
     },
     write(text) {
-      if (storage === null) return { ok: false, message: NO_STORAGE };
+      if (storage === null) return { ok: false, message: SAVE_TEXT.noStorage };
       try {
         storage.setItem(key, text);
         return { ok: true };
@@ -77,12 +62,12 @@ export function createSaveSlot(storage: KeyValueStorage | null, key = AUTOSAVE_K
         if (isQuotaError(error)) {
           return {
             ok: false,
-            message: `Хранилище браузера переполнено (сохранение — ${storedSize(text.length)}): автосохранение не записано. Сохраните мир в файл.`,
+            message: SAVE_TEXT.storageFull(storedSize(text.length)),
           };
         }
         return {
           ok: false,
-          message: `Браузер не дал записать автосохранение (${error instanceof Error ? error.message : String(error)}). Сохраните мир в файл.`,
+          message: SAVE_TEXT.storageRefused(error instanceof Error ? error.message : String(error)),
         };
       }
     },

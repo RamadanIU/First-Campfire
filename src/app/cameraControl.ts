@@ -94,6 +94,29 @@ export interface CameraControl {
   zoomBy(by: number, at?: { x: number; y: number }): void;
   /** Keys held: the direction the view moves, −1…1 on each axis (0, 0 — none). */
   hold(direction: { x: number; y: number }): void;
+  /**
+   * Fly smoothly to `point` (world pixels: it comes to the middle of the screen, or as near as the
+   * edges of the map let it) at the current zoom step, in `FLY_MS` (step 1.6: a click on an event
+   * of the feed). Dragging, a throw, keys or a zoom stop the flight where it is.
+   */
+  flyTo(point: { x: number; y: number }): void;
+  /** Is the camera flying to a point now? */
+  readonly flying: boolean;
+}
+
+/** How long a flight to a point lasts, ms. */
+export const FLY_MS = 800;
+
+/** A flight of the camera to a point. */
+interface Flight {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  elapsedMs: number;
+}
+
+/** Gentle at both ends: the camera sets off softly and settles softly. */
+function easeInOut(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 }
 
 /** A zoom gliding from one step to the next. */
@@ -125,6 +148,7 @@ export function createCameraControl(
   /** Where the camera stands; while a zoom glides — where it comes to rest. */
   let camera: Camera = { x: focus.x, y: focus.y, zoom: zoom ?? DEFAULT_ZOOM };
   let glide: ZoomGlide | null = null;
+  let flight: Flight | null = null;
   let layout = cameraLayout(camera, screen, world);
   /** Velocity of the view, device px of the screen per second. */
   let vx = 0;
@@ -208,6 +232,9 @@ export function createCameraControl(
     get zooming() {
       return glide !== null;
     },
+    get flying() {
+      return flight !== null;
+    },
     resize(next) {
       screen = next;
       glide = null;
@@ -219,6 +246,19 @@ export function createCameraControl(
       if (glide) {
         glide.elapsedMs += ms;
         compose();
+      }
+      if (flight) {
+        flight.elapsedMs += ms;
+        const done = flight.elapsedMs >= FLY_MS;
+        const t = done ? 1 : easeInOut(flight.elapsedMs / FLY_MS);
+        const { from, to } = flight;
+        place({
+          x: from.x + (to.x - from.x) * t,
+          y: from.y + (to.y - from.y) * t,
+          zoom: camera.zoom,
+        });
+        if (done) flight = null;
+        return;
       }
       const holding = held.x !== 0 || held.y !== 0;
       if (!holding && vx === 0 && vy === 0) return;
@@ -247,11 +287,13 @@ export function createCameraControl(
       if (Math.abs(camera.y - before.y - dy / scale) > 1e-6) vy = 0;
     },
     drag(dx, dy) {
+      flight = null;
       vx = 0;
       vy = 0;
       if (dx !== 0 || dy !== 0) shift(-dx, -dy);
     },
     release(pointerVx, pointerVy) {
+      flight = null;
       const most = MAX_GLIDE_SPEED * screen.pixelRatio;
       const speed = Math.hypot(pointerVx, pointerVy);
       const cut = speed > most ? most / speed : 1;
@@ -261,6 +303,7 @@ export function createCameraControl(
     zoomBy(by, at) {
       const next = zoomStep(camera.zoom, by);
       if (next === camera.zoom) return;
+      flight = null;
       const anchor = at ?? { x: screen.width / 2, y: screen.height / 2 };
       // From the picture as it is drawn now — also halfway through another zoom.
       const fromPoint = screenToWorld(layout, anchor.x, anchor.y);
@@ -270,6 +313,16 @@ export function createCameraControl(
     },
     hold(direction) {
       held = { x: Math.sign(direction.x), y: Math.sign(direction.y) };
+      if (held.x !== 0 || held.y !== 0) flight = null;
+    },
+    flyTo(point) {
+      // A zoom gliding comes to its step at once: the flight goes at one scale.
+      glide = null;
+      vx = 0;
+      vy = 0;
+      const to = clampCamera({ x: point.x, y: point.y, zoom: camera.zoom }, screen, world);
+      flight = { from: { x: camera.x, y: camera.y }, to: { x: to.x, y: to.y }, elapsedMs: 0 };
+      compose();
     },
   };
 }

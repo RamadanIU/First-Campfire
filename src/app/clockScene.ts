@@ -1,18 +1,19 @@
 import { PALETTE } from '../art/palette.ts';
 import { brightness, daylightAt, lit, skyAt } from '../render/lighting.ts';
-import {
-  calendarAt,
-  DAY_PHASES,
-  type DayPhase,
-  PHASE_START,
-  type Season,
-  TIME,
-} from '../sim/calendar.ts';
-import { type Cause, type DeathReason, findEvent, type WorldEvent } from '../sim/events.ts';
-import type { Need } from '../sim/needs.ts';
+import { calendarAt, DAY_PHASES, PHASE_START, TIME } from '../sim/calendar.ts';
+import { type Cause, findEvent } from '../sim/events.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../sim/world.ts';
+import {
+  CLOCK,
+  capitalize,
+  dateText,
+  describeCause,
+  describeEvent,
+  HUD,
+  PHASE_NAME,
+  speedName,
+} from '../ui/texts.ts';
 import { bindSpeedKeys } from './controls.ts';
-import { SEASON_NAME } from './dates.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
 import type { Scene, SceneContext } from './scene.ts';
 
@@ -36,25 +37,6 @@ const HORIZON_SHARE = 0.71;
 /** Clock hour at which dawn begins — presentation only, the simulation counts ticks. */
 const DAWN_HOUR = 5;
 const JOURNAL_LINES = 7;
-
-const SEASON_CAME: Record<Season, string> = {
-  spring: 'наступила весна',
-  summer: 'наступило лето',
-  autumn: 'наступила осень',
-  winter: 'наступила зима',
-};
-const PHASE_NAME: Record<DayPhase, string> = {
-  dawn: 'рассвет',
-  day: 'день',
-  dusk: 'закат',
-  night: 'ночь',
-};
-const PHASE_CAME: Record<DayPhase, string> = {
-  dawn: 'рассвет',
-  day: 'взошло солнце',
-  dusk: 'закат',
-  night: 'наступила ночь',
-};
 
 type Rgb = readonly [number, number, number];
 
@@ -100,59 +82,14 @@ function hash(a: number, b = 0): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString('ru-RU');
-}
-
 function clockTime(dayProgress: number): string {
   const minutes = Math.floor((DAWN_HOUR * 60 + dayProgress * 24 * 60) % (24 * 60));
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
-function describeEvent(event: WorldEvent): string {
-  switch (event.type) {
-    case 'world_created':
-      return `сотворён мир (зерно ${event.seed})`;
-    case 'year_started':
-      return `начался год ${event.year}`;
-    case 'season_started':
-      return SEASON_CAME[event.season];
-    case 'phase_started':
-      return event.phase === 'dawn' ? `рассвет дня ${event.day}` : PHASE_CAME[event.phase];
-    case 'fireflies_rose':
-      return `вылетели светлячки: ${event.count}`;
-    case 'fireflies_gone':
-      return `светлячки исчезли: ${event.count}`;
-    case 'villager_arrived':
-      return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} (житель ${event.villager})`;
-    case 'need_ran_out':
-      return `житель ${event.villager} ${RAN_OUT[event.need]}`;
-    case 'villager_fainted':
-      return `${event.sex === 'male' ? 'упал' : 'упала'} без сил житель ${event.villager}`;
-    case 'villager_died':
-      return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager}: ${DIED_OF[event.reason]}`;
-  }
-}
-
-const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
-const RAN_OUT: Record<Need, string> = {
-  food: 'голодает',
-  water: 'мучается жаждой',
-  sleep: 'валится с ног от усталости',
-};
-const NEED_GONE: Record<Need, string> = {
-  food: 'кончилась сытость',
-  water: 'кончилась вода',
-  sleep: 'кончились силы — не спал',
-};
-
-function describeCause(world: World, cause: Cause): string {
-  if (cause.kind === 'rule') return cause.rule === 'genesis' ? 'начало всего' : 'ход времени';
-  if (cause.kind === 'need') {
-    return `у жителя ${cause.villager} ${NEED_GONE[cause.need]}`;
-  }
-  const source = findEvent(world, cause.event);
-  return source ? `#${source.id} ${describeEvent(source)}` : `#${cause.event}`;
+function causeOf(world: World, cause: Cause): string {
+  const source = cause.kind === 'event' ? findEvent(world, cause.event) : undefined;
+  return describeCause(cause, source ? describeEvent(source) : null);
 }
 
 function escapeHtml(text: string): string {
@@ -343,10 +280,10 @@ function createHud(ui: HTMLElement) {
       ).join('')}</div>
       <div class="hud-meta"></div>
       <div class="hud-speed"></div>
-      <div class="hud-keys">пробел — пауза · 1–4 — ×1 ×2 ×5 ×20</div>
+      <div class="hud-keys">${CLOCK.keys}</div>
     </div>
     <div class="journal">
-      <div class="journal-title">Журнал событий</div>
+      <div class="journal-title">${CLOCK.journal}</div>
       <ol class="journal-list"></ol>
     </div>`;
   const date = ui.querySelector<HTMLElement>('.hud-date')!;
@@ -364,16 +301,16 @@ function createHud(ui: HTMLElement) {
       if (world.tick !== shownTick) {
         shownTick = world.tick;
         const now = calendarAt(world.tick);
-        date.textContent = `Год ${now.year} · ${SEASON_NAME[now.season]} · день ${now.dayOfSeason} из ${TIME.daysPerSeason}`;
+        date.textContent = capitalize(dateText(now, TIME.daysPerSeason));
         time.innerHTML = `<b>${clockTime(now.dayProgress)}</b> · ${PHASE_NAME[now.phase]}`;
         marker.style.left = `${(now.dayProgress * 100).toFixed(2)}%`;
-        meta.textContent = `тик ${formatNumber(world.tick)} · день мира ${formatNumber(now.day)} · зерно ${world.seed}`;
+        meta.textContent = CLOCK.meta(world.tick, now.day, world.seed);
       }
       const speedText =
-        loop.speed === 0 ? 'пауза' : `×${loop.speed}${loop.lagging ? ' (не успевает)' : ''}`;
+        speedName(loop.speed) + (loop.speed !== 0 && loop.lagging ? ` (${HUD.lagging})` : '');
       if (speedText !== shownSpeed) {
         shownSpeed = speedText;
-        speed.innerHTML = `скорость: <b>${speedText}</b>`;
+        speed.innerHTML = `${CLOCK.speed}: <b>${speedText}</b>`;
       }
       if (world.events.nextId !== shownEvents) {
         shownEvents = world.events.nextId;
@@ -382,7 +319,7 @@ function createHud(ui: HTMLElement) {
           .reverse()
           .map(
             (event) =>
-              `<li><span class="journal-meta">#${event.id} · тик ${formatNumber(event.tick)}</span> ${escapeHtml(describeEvent(event))} <span class="journal-cause">← ${escapeHtml(describeCause(world, event.cause))}</span></li>`,
+              `<li><span class="journal-meta">${CLOCK.journalMeta(event.id, event.tick)}</span> ${escapeHtml(describeEvent(event))} <span class="journal-cause">← ${escapeHtml(causeOf(world, event.cause))}</span></li>`,
           )
           .join('');
       }

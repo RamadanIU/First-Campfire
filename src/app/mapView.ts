@@ -13,13 +13,15 @@ import {
 import { drawFireflies } from '../render/fireflies.ts';
 import { daylightAt, hazeAt, shadeRect } from '../render/lighting.ts';
 import { createMapRenderer } from '../render/mapRenderer.ts';
+import { drawPlaceMark, drawSelection, PLACE_MARK_MS } from '../render/selection.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
 import { TIME } from '../sim/calendar.ts';
 import { findCampSite } from '../sim/mapgen.ts';
-import type { PathFailure, Tile } from '../sim/path.ts';
-import { findVillager, orderWalk, type Villager } from '../sim/villagers.ts';
+import type { Tile } from '../sim/path.ts';
+import { findVillager, orderWalk } from '../sim/villagers.ts';
 import { stepWorld, type World } from '../sim/world.ts';
+import { DEBUG, deathNote, needsLine, villagerName } from '../ui/texts.ts';
 import { bindCameraInput, type CameraControl, createCameraControl } from './cameraControl.ts';
 import { bindSpeedKeys } from './controls.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
@@ -54,6 +56,14 @@ export interface MapView {
   scene: Scene;
   loop: GameLoop;
   camera: CameraControl;
+  /** The chosen villager (its id; it may have died since), or null — none (step 1.6). */
+  selected(): number | null;
+  /** Choose a villager (null — none); `select=` in the address chooses one at the start. */
+  select(id: number | null): void;
+  /** Fly the camera to a tile and mark the place for a few seconds (a click on the event feed). */
+  flyToTile(tile: Tile): void;
+  /** Fly the camera to a living villager; false — there is no such villager any more. */
+  flyToVillager(id: number): boolean;
   /** Debug mode: what the last click did, for the panel (null — debug is off). */
   debugNote(): string | null;
   /** `debug=needs`: a line per villager for the panel — doing what, how fed (null — off). */
@@ -63,43 +73,6 @@ export interface MapView {
 /** How long a refused order stays marked, ms of presentation time. */
 const REFUSED_MS = 2500;
 
-const WHO = { male: 'мужчина', female: 'женщина' } as const;
-const WALKS_TO = {
-  wander: 'гуляет у стоянки',
-  order: 'идёт, куда послали',
-  eat: 'идёт к малине',
-  drink: 'идёт к воде',
-} as const;
-const DIED_OF = { hunger: 'голод', thirst: 'жажда' } as const;
-
-/** What a villager is doing, in words (`debug=needs`). */
-export function doingOf(villager: Villager): string {
-  const action = villager.action;
-  switch (action.kind) {
-    case 'idle':
-      return 'отдыхает';
-    case 'walk':
-      return WALKS_TO[action.purpose];
-    case 'eat':
-      return 'ест ягоды';
-    case 'drink':
-      return 'пьёт';
-    case 'sleep':
-      return action.fainted ? 'лежит без сил' : 'спит';
-  }
-}
-
-/** A line of the panel for a villager (`debug=needs`): doing what, its scales. */
-export function needsLine(villager: Villager): string {
-  const round = (value: number) => Math.round(value);
-  return `${WHO[villager.sex]} (житель ${villager.id}): ${doingOf(villager)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
-}
-const WHY: Record<PathFailure, string> = {
-  blocked: 'туда нельзя встать — вода, дерево, куст или там другой житель',
-  unreachable: 'туда не дойти — путь отрезан водой',
-  too_far: 'слишком далеко — поиск пути сдался',
-};
-
 /** What the view tells automated checks about its camera (`window.__fc.camera`). */
 export interface CameraInfo {
   /** Zoom step (while a zoom glides — the step it comes to). */
@@ -108,6 +81,8 @@ export interface CameraInfo {
   readonly scale: number;
   /** Is a zoom gliding between steps now? */
   readonly zooming: boolean;
+  /** Is the camera flying to a point now (step 1.6)? */
+  readonly flying: boolean;
   /** Where the camera stands (the world point in the middle of the screen at rest), world px. */
   readonly x: number;
   readonly y: number;
@@ -151,23 +126,25 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   // Debug: the chosen villager, the last refused order, what the last click did.
   const debug = params.debug.length > 0;
   const needsMode = params.debug.includes('needs');
-  let chosen = 1;
+  /** The chosen villager; with debug the first one by default (the one a click sends). */
+  let selected: number | null = params.select ?? (debug ? 1 : null);
+  /** The villager a debug click sends: the chosen one, else the first. */
+  const chosenId = () => selected ?? 1;
+  /** The place the camera last flew to, marked for a while (presentation time, ms). */
+  let placeMark: { tile: Tile; sinceMs: number | null } | null = null;
   let refused: { tile: Tile; untilMs: number } | null = null;
   /** What the last click did; null — no click yet (then the panel tells how to click). */
   let note: string | null = null;
   const defaultNote = () => {
-    const villager = findVillager(world, chosen);
+    const villager = findVillager(world, chosenId());
     const order = villager?.action.kind === 'walk' && villager.action.purpose === 'order';
     const goal = order && villager?.action.kind === 'walk' ? villager.action.goal : null;
     return goal
-      ? `${describe(chosen)} идёт к тайлу (${goal.x}, ${goal.y}) · щелчок по жителю — выбрать, по карте — отправить туда`
-      : 'щелчок по жителю — выбрать, по карте — отправить его туда';
+      ? `${DEBUG.goes(describe(chosenId()), goal.x, goal.y)} · ${DEBUG.howToShort}`
+      : DEBUG.howTo;
   };
   let nowMs = 0;
-  const describe = (id: number) => {
-    const villager = findVillager(world, id);
-    return villager ? `${WHO[villager.sex]} (житель ${id})` : `житель ${id}`;
-  };
+  const describe = (id: number) => villagerName(findVillager(world, id)?.sex, id);
   /** The villager whose sprite is under world point (x, y), the front one first. */
   const villagerAt = (x: number, y: number): VillagerPose | undefined =>
     renderer
@@ -179,17 +156,35 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
         const top = pose.y - entry.anchor.y;
         return x >= left && x < left + entry.width && y >= top && y < top + entry.height;
       });
+  /** Where villager `id` is drawn now (undefined — it is not: dead). */
+  const poseOf = (id: number, alpha: number): VillagerPose | undefined =>
+    renderer.villagers(alpha).find((pose) => pose.id === id);
+  /** The box of a villager's sprite as drawn, world pixels. */
+  const boxOf = (pose: VillagerPose) => {
+    const entry = sheet.entry(pose.sprite);
+    return {
+      x: pose.x - entry.anchor.x,
+      y: pose.y - entry.anchor.y,
+      width: entry.width,
+      height: entry.height,
+    };
+  };
+  // A click on a villager chooses it (step 1.6); on the map — with debug sends the chosen one
+  // there (step 1.3), without — lets the choice go.
   const onTap = (x: number, y: number) => {
-    if (!debug) return;
     const point = screenToWorld(camera.layout, x, y);
     const hit = villagerAt(point.x, point.y);
     if (hit) {
-      chosen = hit.id;
-      note = `${findVillager(world, chosen)?.sex === 'female' ? 'выбрана' : 'выбран'} ${describe(chosen)}`;
+      selected = hit.id;
+      if (debug) note = DEBUG.chosen(findVillager(world, hit.id)?.sex, hit.id);
+      return;
+    }
+    if (!debug) {
+      selected = null;
       return;
     }
     const tile = { x: Math.floor(point.x / TILE_SIZE), y: Math.floor(point.y / TILE_SIZE) };
-    const villager = findVillager(world, chosen);
+    const villager = findVillager(world, chosenId());
     if (
       !villager ||
       tile.x < 0 ||
@@ -201,13 +196,16 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     const result = orderWalk(world, villager, tile);
     if (result.ok) {
       refused = null;
-      note = `${describe(chosen)} идёт к тайлу (${tile.x}, ${tile.y}): шагов ${result.path.length}`;
+      note = DEBUG.goesSteps(describe(chosenId()), tile.x, tile.y, result.path.length);
     } else {
       refused = { tile, untilMs: nowMs + REFUSED_MS };
-      note = `тайл (${tile.x}, ${tile.y}): ${WHY[result.reason]}`;
+      note = DEBUG.refused(tile.x, tile.y, DEBUG.why[result.reason]);
     }
   };
   bindCameraInput(canvas, window, camera, onTap);
+  window.addEventListener('keydown', (event) => {
+    if (event.code === 'Escape') selected = null;
+  });
 
   /** Paths of the walking villagers, the chosen one's arrow, a refused order. */
   const drawDebug = (
@@ -243,7 +241,7 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
         drawNeeds(ctx, view, pose.x, top, { ...villager.needs, health: villager.health });
       }
     }
-    const mark = poses.find((pose) => pose.id === chosen);
+    const mark = poses.find((pose) => pose.id === chosenId());
     if (mark) {
       // Over the bars of needs, if they are shown.
       const top =
@@ -268,6 +266,9 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     },
     get zooming() {
       return camera.zooming;
+    },
+    get flying() {
+      return camera.flying;
     },
     get x() {
       return camera.camera.x;
@@ -337,6 +338,16 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
         }
         drawFireflies(ctx, layout.view, world.fireflies.swarm, alpha);
         renderer.drawSigns(ctx, timeMs, layout.view, alpha);
+        if (placeMark) {
+          // The mark counts from the first frame drawn after the flight was asked for.
+          placeMark.sinceMs ??= timeMs;
+          const age = timeMs - placeMark.sinceMs;
+          if (age >= PLACE_MARK_MS) placeMark = null;
+          else drawPlaceMark(ctx, layout.view, placeMark.tile, age);
+        }
+        // The chosen one: a frame (debug marks it with its own arrow).
+        const chosen = !debug && selected !== null ? poseOf(selected, alpha) : undefined;
+        if (chosen) drawSelection(ctx, layout.view, boxOf(chosen), timeMs);
         if (debug) drawDebug(ctx, layout.view);
       }
       screen.fillStyle = background;
@@ -349,17 +360,31 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     for (const event of world.events.list) {
       if (event.type !== 'villager_died') continue;
       const day = Math.floor(event.tick / TIME.ticksPerDay) + 1;
-      const died = event.sex === 'male' ? 'умер' : 'умерла';
       lines.push(
-        `${WHO[event.sex]} (житель ${event.villager}): ${died} на ${day}-й день — ${DIED_OF[event.reason]}`,
+        `${villagerName(event.sex, event.villager)}: ${deathNote(event.sex, day, event.reason)}`,
       );
     }
     return lines;
+  };
+  const flyToTile = (tile: Tile) => {
+    camera.flyTo({ x: (tile.x + 0.5) * TILE_SIZE, y: (tile.y + 0.5) * TILE_SIZE });
+    placeMark = { tile, sinceMs: null };
   };
   return {
     scene,
     loop,
     camera,
+    selected: () => selected,
+    select(id) {
+      selected = id;
+    },
+    flyToTile,
+    flyToVillager(id) {
+      const villager = findVillager(world, id);
+      if (!villager) return false;
+      camera.flyTo({ x: (villager.toX + 0.5) * TILE_SIZE, y: (villager.toY + 0.5) * TILE_SIZE });
+      return true;
+    },
     debugNote: () => (debug ? (note ?? defaultNote()) : null),
     needsNotes: () => (needsMode ? needsNotes() : null),
   };

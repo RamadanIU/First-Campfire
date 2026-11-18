@@ -7,15 +7,23 @@
  *   ?scene=world&slot=world&seed=7&ticks=9000  debug: this world put into the slot first
  *
  * The world is drawn as its map (./mapView.ts, step 1.1) seen through the observer's camera (step
- * 1.2: drag, wheel, pinch, WASD / arrows, +/−; `cam=`, `zoom=`). In the corner — the panel of the
- * world: the date, the zoom, how it is saved, «Save to file», «To the menu». A save that cannot be opened shows
- * the title screen with the reason and the offer of a new world.
+ * 1.2: drag, wheel, pinch, WASD / arrows, +/−; `cam=`, `zoom=`). Over it — the observer's panel
+ * (src/ui/hud.ts, step 1.6): the date, the time of day, the population, the speed buttons, the event
+ * feed, the card of the chosen villager (`select=`) and the menu «Мир» (`menu=1`): how the world is
+ * saved, «Save to file», «To the menu». A save that cannot be opened shows the title screen with
+ * the reason and the offer of a new world.
  */
+
+import { PALETTE } from '../art/palette.ts';
+import { SPRITES } from '../art/registry.ts';
+import { createSpriteSheet, type SpriteSheet } from '../render/spriteSheet.ts';
 import { hashState } from '../sim/hash.ts';
 import type { LoadWarning } from '../sim/save.ts';
 import { saveWorld } from '../sim/save.ts';
 import type { World } from '../sim/world.ts';
-import { dateOf, formatCount } from './dates.ts';
+import { dateOf } from '../ui/dates.ts';
+import { createHud, type Hud } from '../ui/hud.ts';
+import { capitalize, HUD, loadWarningText, SAVE_TEXT, speedName } from '../ui/texts.ts';
 import { createMapView, type MapView } from './mapView.ts';
 import {
   type Autosave,
@@ -49,7 +57,22 @@ export function createWorldScene(context: SceneContext): Scene {
 
   const start = { tick: world.tick, hash: hashState(world) };
   const view = createMapView(context, world);
-  const panel = params.ui ? createWorldPanel(ui, world, view, autosave, origin, warnings) : null;
+  let hud: Hud | null = null;
+  let panel: { update(): void } | null = null;
+  if (params.ui) {
+    const sheet = createSpriteSheet(SPRITES, PALETTE);
+    hud = createHud(ui, {
+      world,
+      loop: view.loop,
+      selected: view.selected,
+      select: view.select,
+      flyToTile: view.flyToTile,
+      flyToVillager: view.flyToVillager,
+      icon: (name, scale) => iconCanvas(sheet, name, scale),
+      menuOpen: params.menu,
+    });
+    panel = createWorldPanel(hud, world, view, autosave, origin, warnings);
+  }
   // For automated checks (tools/e2e.ts): the world without reading it off the screen.
   window.__fc.world = {
     get seed() {
@@ -90,82 +113,90 @@ export function createWorldScene(context: SceneContext): Scene {
     },
     render(frame) {
       view.scene.render(frame);
+      hud?.update();
       panel?.update();
     },
   };
 }
 
+/** A canvas with sprite `name` at ×`scale`, exactly its size (crisp at any page zoom of 100 %). */
+function iconCanvas(sheet: SpriteSheet, name: string, scale: number): HTMLCanvasElement {
+  const entry = sheet.entry(name);
+  const canvas = document.createElement('canvas');
+  canvas.width = entry.width * scale;
+  canvas.height = entry.height * scale;
+  canvas.className = 'pixel-icon';
+  const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  sheet.draw(ctx, name, entry.anchor.x * scale, entry.anchor.y * scale, { scale, frame: 0 });
+  return canvas;
+}
+
 /**
- * Panel of the world: the date, the zoom, how it is saved, «Save to file», «To the menu»; with
- * `debug=1` — what the last debug click did; with `debug=needs` — what each villager is doing and
- * its scales, and who died of what.
+ * The menu «Мир» of the observer's panel (step 0.7, in the panel since step 1.6): the date and the
+ * tick, the speed and the keys, the zoom, how the world is saved, «Save to file», «To the menu».
+ * Below the panel — debug lines: with `debug=1` what the last debug click did; with `debug=needs`
+ * what each villager is doing and its scales, and who died of what.
  */
 function createWorldPanel(
-  ui: HTMLElement,
+  hud: Hud,
   world: World,
   { loop, camera, debugNote, needsNotes }: MapView,
   autosave: Autosave,
   origin: 'url' | 'saved' | 'new',
   warnings: LoadWarning[],
 ) {
-  const panel = document.createElement('div');
-  panel.className = 'world-panel';
-  const title = document.createElement('div');
-  title.className = 'world-panel-title';
-  title.textContent = 'Мир';
-  const date = document.createElement('div');
-  date.className = 'world-panel-date';
-  const clock = document.createElement('div');
-  clock.className = 'world-panel-clock';
-  const view = document.createElement('div');
-  view.className = 'world-panel-camera';
-  const debugLine = document.createElement('div');
-  debugLine.className = 'world-panel-debug';
-  const needsBlock = document.createElement('div');
-  needsBlock.className = 'world-panel-debug world-panel-needs';
-  const status = document.createElement('div');
-  status.className = 'world-panel-status';
-  const hint = document.createElement('div');
-  hint.className = 'world-panel-hint';
-  hint.textContent =
-    origin === 'url'
-      ? 'Мир задан адресом и сам не сохраняется. Чтобы вернуться к нему позже — сохраните в файл.'
-      : 'Сохраняется сам: раз в игровой год и при закрытии вкладки.';
-  const notes = document.createElement('div');
-  notes.className = 'world-panel-notes';
+  const line = (className: string, text = '') => {
+    const element = document.createElement('div');
+    element.className = className;
+    element.textContent = text;
+    return element;
+  };
+  const title = line('world-panel-title', HUD.menu);
+  const date = line('world-panel-date');
+  const clock = line('world-panel-clock');
+  const view = line('world-panel-camera');
+  const status = line('world-panel-status');
+  const hint = line('world-panel-hint', origin === 'url' ? HUD.hintUrl : HUD.hintSaved);
+  const notes = line('world-panel-notes');
   for (const warning of warnings) {
-    const line = document.createElement('p');
-    line.className = 'world-panel-warn';
-    line.textContent = `⚠ ${warning.message}`;
-    notes.append(line);
+    const row = document.createElement('p');
+    row.className = 'world-panel-warn';
+    row.textContent = HUD.warn(loadWarningText(warning));
+    notes.append(row);
   }
-  const buttons = document.createElement('div');
-  buttons.className = 'world-panel-buttons';
+  const buttons = line('world-panel-buttons');
   const toFile = document.createElement('button');
   toFile.type = 'button';
-  toFile.textContent = 'Сохранить в файл';
+  toFile.textContent = HUD.toFile;
   const toMenu = document.createElement('button');
   toMenu.type = 'button';
-  toMenu.textContent = 'В меню';
+  toMenu.textContent = HUD.toMenu;
   buttons.append(toFile, toMenu);
-  panel.append(title, date, clock, view, debugLine, needsBlock, status, hint, notes, buttons);
-  ui.append(panel);
+  hud.menu.append(title, date, clock, view, status, hint, notes, buttons);
+
+  const debugLine = line('world-panel-debug');
+  const needsBlock = line('world-panel-debug world-panel-needs');
+  debugLine.hidden = debugNote() === null;
+  needsBlock.hidden = needsNotes() === null;
+  hud.debug.append(debugLine, needsBlock);
+  hud.debug.hidden = debugLine.hidden && needsBlock.hidden;
 
   const note = (text: string, kind: 'ok' | 'warn') => {
-    const line = document.createElement('p');
-    line.className = kind === 'ok' ? 'world-panel-ok' : 'world-panel-warn';
-    line.textContent = text;
-    notes.replaceChildren(line);
+    const row = document.createElement('p');
+    row.className = kind === 'ok' ? 'world-panel-ok' : 'world-panel-warn';
+    row.textContent = text;
+    notes.replaceChildren(row);
   };
 
   toFile.addEventListener('click', () => {
     try {
       const name = saveFileName(world);
       downloadText(name, saveWorld(world));
-      note(`Сохранено в файл «${name}»`, 'ok');
+      note(SAVE_TEXT.savedToFile(name), 'ok');
     } catch (error) {
       note(
-        `⚠ Мир не сохранился: ${error instanceof Error ? error.message : String(error)}`,
+        HUD.warn(SAVE_TEXT.notSaved(error instanceof Error ? error.message : String(error))),
         'warn',
       );
     }
@@ -175,13 +206,9 @@ function createWorldPanel(
     window.location.assign('?scene=title');
   });
 
-  let shown = '';
-  let shownDate = '';
-  let shownClock = '';
-  let shownView = '';
-  let shownDebug = '';
-  debugLine.hidden = debugNote() === null;
-  needsBlock.hidden = needsNotes() === null;
+  const set = (element: HTMLElement, text: string) => {
+    if (element.textContent !== text) element.textContent = text;
+  };
   let shownNeeds = '';
   return {
     update() {
@@ -189,53 +216,23 @@ function createWorldPanel(
       const needsText = needsLines?.join('\n') ?? '';
       if (needsText !== shownNeeds) {
         shownNeeds = needsText;
-        needsBlock.replaceChildren(
-          ...(needsLines ?? []).map((line) => {
-            const row = document.createElement('div');
-            row.textContent = line;
-            return row;
-          }),
-        );
+        needsBlock.replaceChildren(...(needsLines ?? []).map((text) => line('', text)));
       }
       const debugText = debugNote();
-      if (debugText !== null && debugText !== shownDebug) {
-        shownDebug = debugText;
-        debugLine.textContent = `Отладка: ${debugText}`;
-      }
-      const today = dateOf(world.tick);
-      const dateText = today.charAt(0).toUpperCase() + today.slice(1);
-      if (dateText !== shownDate) {
-        shownDate = dateText;
-        date.textContent = dateText;
-      }
+      if (debugText !== null) set(debugLine, HUD.debug(debugText));
+      set(date, capitalize(dateOf(world.tick)));
       const speed =
-        loop.speed === 0 ? 'пауза' : `×${loop.speed}${loop.lagging ? ' (не успевает)' : ''}`;
-      const clockText = `тик\u00a0${formatCount(world.tick)} · ${speed} · пробел — пауза, 1–4 — скорость`;
-      if (clockText !== shownClock) {
-        shownClock = clockText;
-        clock.textContent = clockText;
-      }
-      const zoom = String(camera.camera.zoom).replace('.', ',');
-      const viewText = `масштаб ×${zoom} (колесо, щипок, +/−) · карту двигать мышью, пальцем, WASD/стрелками`;
-      if (viewText !== shownView) {
-        shownView = viewText;
-        view.textContent = viewText;
-      }
+        speedName(loop.speed) + (loop.speed !== 0 && loop.lagging ? ` (${HUD.lagging})` : '');
+      set(clock, `${HUD.tick(world.tick)} · ${speed} · ${HUD.keysSpeed}`);
+      set(view, HUD.zoomLine(camera.camera.zoom));
       let text: string;
-      if (origin === 'url') {
-        text = `Зерно ${world.seed}, из адреса`;
-      } else if (autosave.error !== null) {
-        text = `⚠ ${autosave.error}`;
-      } else if (autosave.savedTick !== null) {
-        text = `Сохранён: ${dateOf(autosave.savedTick)}, тик\u00a0${formatCount(autosave.savedTick)}`;
-      } else {
-        text = 'Ещё не сохранялся';
-      }
-      if (text !== shown) {
-        shown = text;
-        status.textContent = text;
-        status.classList.toggle('world-panel-warn', autosave.error !== null);
-      }
+      if (origin === 'url') text = HUD.fromUrl(world.seed);
+      else if (autosave.error !== null) text = HUD.warn(autosave.error);
+      else if (autosave.savedTick !== null)
+        text = HUD.savedAt(dateOf(autosave.savedTick), autosave.savedTick);
+      else text = HUD.notSavedYet;
+      set(status, text);
+      status.classList.toggle('world-panel-warn', autosave.error !== null);
     },
   };
 }

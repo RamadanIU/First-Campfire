@@ -299,12 +299,18 @@ async function touchGesture(
   await fingers.end();
 }
 
+/** Open the menu «Мир» of the observer's panel (step 1.6), if it is closed. */
+async function openMenu(page: Page): Promise<void> {
+  if (await page.isHidden('.hud-menu')) await page.click(MENU_BUTTON);
+}
+
 /** Click and wait for the page it leads to. */
 async function goes(page: Page, pattern: string, action: () => Promise<void>): Promise<void> {
   await Promise.all([page.waitForURL(pattern), action()]);
   await ready(page);
 }
 
+const MENU_BUTTON = '.hud-menu-button';
 const PANEL_FILE = '.world-panel-buttons button:first-child';
 const PANEL_MENU = '.world-panel-buttons button:last-child';
 const SEED = '.menu-seed input';
@@ -356,6 +362,7 @@ try {
     );
 
     // Save to file.
+    await openMenu(page);
     const [download] = await Promise.all([page.waitForEvent('download'), page.click(PANEL_FILE)]);
     const name = download.suggestedFilename();
     const file = join(temp, name);
@@ -368,6 +375,7 @@ try {
     );
 
     // To the menu: «Continue» shows the world.
+    await openMenu(page);
     await goes(page, '**/?scene=title', () => page.click(PANEL_MENU));
     const card = await text(page, '[data-action=continue]');
     check(/зерно 12345 · тик \d/.test(card), `меню: ${card}`);
@@ -404,6 +412,7 @@ try {
     await page.click('[data-action=new]');
     await goes(page, '**/?scene=world', () => page.click(ASK_YES));
     check((await world(page)).seed === 777, 'подтвердил — новый мир 777');
+    await openMenu(page);
     await goes(page, '**/?scene=title', () => page.click(PANEL_MENU));
     await page.setInputFiles(FILE, file);
     await page.waitForSelector('.menu-note-ask');

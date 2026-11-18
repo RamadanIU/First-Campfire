@@ -164,9 +164,9 @@ describe('лист спрайтов', () => {
   it('опечатка в имени спрайта или анимации — сразу ошибка', () => {
     const sheet = createSpriteSheet([PERSON], TEST);
     const { ctx } = recorder();
-    expect(() => sheet.draw(ctx, 'persn', 0, 0)).toThrow('Нет спрайта «persn»');
+    expect(() => sheet.draw(ctx, 'persn', 0, 0)).toThrow('No sprite "persn"');
     expect(() => sheet.draw(ctx, 'person', 0, 0, { animation: 'walk' })).toThrow(
-      'У спрайта «person» нет анимации «walk»',
+      'Sprite "person" has no animation "walk"',
     );
   });
 
