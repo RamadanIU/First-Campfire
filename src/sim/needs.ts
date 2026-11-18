@@ -3,11 +3,13 @@
  * need at all (fed, not thirsty), and health. The numbers live in data/balance.json (`needs`);
  * here they become rates per tick.
  *
- *   - Every tick satiety falls 100 → 0 in `needs.food.emptyDays`, thirst in `needs.water.emptyDays`.
- *   - A need at zero harms health: from 100 to 0 in its `deathDays` (hunger ~4 days, thirst ~2);
+ *   - Every tick satiety falls 100 → 0 in `needs.food.emptyDays`, thirst in `needs.water.emptyDays`
+ *     (25 and 15 days: ten times GDD §4.2 — the owner's decision, ADR-024, so that the two do not
+ *     spend their lives eating and drinking).
+ *   - A need at zero harms health: from 100 to 0 in its `deathDays` (hunger 40 days, thirst 20);
  *     both at zero harm faster. Health at zero is death (./life.ts writes it to the journal).
  *   - While no need is at zero, health comes back: 0 → 100 in `needs.healDays`.
- *   - A ration (GDD §13.2: the food of an adult for a day) gives back one day's fall of satiety.
+ *   - A ration fills `eating.rationPoints` of satiety (40, as when it was a day's food).
  *
  * Pure arithmetic over plain numbers: the world is not touched here.
  */
@@ -43,9 +45,13 @@ export function healPerTick(): number {
   return FULL / (DATA.balance.needs.healDays * TIME.ticksPerDay);
 }
 
-/** Satiety one ration gives: a day's food makes up for a day's fall. */
+/**
+ * Satiety one ration gives (`eating.rationPoints`). GDD §13.2 has a ration as a day's food; the
+ * owner made satiety last ten times longer (ADR-024) and a ration still fills as much — so an
+ * adult eats a tenth of a ration a day.
+ */
 export function satietyPerRation(): number {
-  return FULL / DATA.balance.needs.food.emptyDays;
+  return DATA.balance.eating.rationPoints;
 }
 
 /** Points one bite (food) or one sip (water) gives back. */

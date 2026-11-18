@@ -36,7 +36,9 @@ function runUntilAllDead(world: World, ticks: number): number {
 }
 
 describe('критерий: на зёрнах 1…20 двое живут 7 суток, нужды не падают до нуля', () => {
-  it('ни одного нуля сытости и жажды, никто не умер, оба ели и пили', () => {
+  // Since the owner's feedback (ADR-024) needs last ten times longer: a drink comes about every
+  // week, a meal every ten days — so the worlds run 30 days, not 7, to see both eat and drink.
+  it('30 суток (критерий — 7): ни одного нуля сытости и жажды, никто не умер, оба ели и пили', () => {
     const lowest: string[] = [];
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld(seed);
@@ -44,7 +46,7 @@ describe('критерий: на зёрнах 1…20 двое живут 7 су�
       let water = FULL;
       const ate = new Set<number>();
       const drank = new Set<number>();
-      for (let tick = 0; tick < 7 * DAY; tick++) {
+      for (let tick = 0; tick < 30 * DAY; tick++) {
         stepWorld(world);
         for (const v of world.villagers.list) {
           food = Math.min(food, v.needs.food);
@@ -66,7 +68,7 @@ describe('критерий: на зёрнах 1…20 двое живут 7 су�
       ...lowest.map((line) => Math.min(...line.split(': ')[1]!.split('/').map(Number))),
     );
     expect(worst, lowest.join(', ')).toBeGreaterThan(5);
-  });
+  }, 60_000);
 });
 
 describe('критерий: смерть от голода и от жажды — с причиной в журнале', () => {
@@ -89,18 +91,18 @@ describe('критерий: смерть от голода и от жажды �
     '............',
   ];
 
-  it('без кустов: сытость кончается через 2,5 суток, смерть от голода ещё через ~4', () => {
+  it('без кустов: сытость кончается через 25 суток, смерть от голода ещё через 40', () => {
     const world = worldOn(NO_BUSHES, [
       { x: 1, y: 1 },
       { x: 10, y: 4 },
     ]);
-    runUntilAllDead(world, 10 * DAY);
+    runUntilAllDead(world, 80 * DAY);
     expect(world.villagers.list).toEqual([]);
     const ranOut = events(world, 'need_ran_out');
     expect(ranOut.map((e) => e.need)).toEqual(['food', 'food']);
     for (const e of ranOut) {
-      expect(e.tick).toBeGreaterThanOrEqual(2.5 * DAY - 2);
-      expect(e.tick).toBeLessThanOrEqual(2.5 * DAY + 2);
+      expect(e.tick).toBeGreaterThanOrEqual(25 * DAY - 2);
+      expect(e.tick).toBeLessThanOrEqual(25 * DAY + 2);
       expect(e.cause).toEqual({ kind: 'need', villager: e.villager, need: 'food' });
     }
     const deaths = events(world, 'villager_died');
@@ -111,19 +113,19 @@ describe('критерий: смерть от голода и от жажды �
       expect(death.cause.kind).toBe('event');
       const cause = death.cause.kind === 'event' ? findEvent(world, death.cause.event) : undefined;
       expect(cause).toMatchObject({ type: 'need_ran_out', villager: death.villager, need: 'food' });
-      expect(death.tick - cause!.tick).toBeGreaterThanOrEqual(4 * DAY - 2);
-      expect(death.tick - cause!.tick).toBeLessThanOrEqual(4 * DAY + 2);
+      expect(death.tick - cause!.tick).toBeGreaterThanOrEqual(40 * DAY - 2);
+      expect(death.tick - cause!.tick).toBeLessThanOrEqual(40 * DAY + 2);
     }
     // Thirst never ran out: the pond was there all along.
     expect(ranOut.some((e) => e.need === 'water')).toBe(false);
   });
 
-  it('без воды: жажда кончается через 1,5 суток, смерть от жажды ещё через ~2', () => {
+  it('без воды: жажда кончается через 15 суток, смерть от жажды ещё через 20', () => {
     const world = worldOn(NO_WATER, [
       { x: 1, y: 2 },
       { x: 10, y: 3 },
     ]);
-    runUntilAllDead(world, 10 * DAY);
+    runUntilAllDead(world, 50 * DAY);
     expect(world.villagers.list).toEqual([]);
     const deaths = events(world, 'villager_died');
     expect(deaths).toHaveLength(2);
@@ -131,10 +133,10 @@ describe('критерий: смерть от голода и от жажды �
       expect(death).toMatchObject({ reason: 'thirst', foodReachable: true, waterReachable: false });
       const cause = death.cause.kind === 'event' ? findEvent(world, death.cause.event) : undefined;
       expect(cause).toMatchObject({ type: 'need_ran_out', need: 'water' });
-      expect(cause!.tick).toBeGreaterThanOrEqual(1.5 * DAY - 2);
-      expect(cause!.tick).toBeLessThanOrEqual(1.5 * DAY + 2);
-      expect(death.tick - cause!.tick).toBeGreaterThanOrEqual(2 * DAY - 2);
-      expect(death.tick - cause!.tick).toBeLessThanOrEqual(2 * DAY + 2);
+      expect(cause!.tick).toBeGreaterThanOrEqual(15 * DAY - 2);
+      expect(cause!.tick).toBeLessThanOrEqual(15 * DAY + 2);
+      expect(death.tick - cause!.tick).toBeGreaterThanOrEqual(20 * DAY - 2);
+      expect(death.tick - cause!.tick).toBeLessThanOrEqual(20 * DAY + 2);
     }
     // They ate meanwhile: hunger never ran out.
     expect(events(world, 'need_ran_out').every((e) => e.need === 'water')).toBe(true);
@@ -142,13 +144,17 @@ describe('критерий: смерть от голода и от жажды �
 });
 
 describe('критерий: житель не умирает при доступной еде и воде', () => {
-  it('зёрна 1…20, 30 суток: всякая смерть — только когда еды или воды в досягаемости нет', () => {
-    // Bushes do not grow back until step 1.11: in 30 days some worlds eat their reach bare, and
-    // their people die of hunger — lawfully. None may die with food and water in reach.
+  it('зёрна 1…20, ягод мало: всякая смерть — только когда еды или воды в досягаемости нет', () => {
+    // Bushes do not grow back until step 1.11. With their own berries the two live some 25 years
+    // (ADR-024); here every bush has a single handful, so they eat their reach bare within weeks
+    // and die of hunger — lawfully. None may die with food and water in reach.
     const deaths: string[] = [];
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld(seed);
-      runUntilAllDead(world, 30 * DAY);
+      for (const object of world.objects.list) {
+        if (object.stock > 0) object.stock = DATA.balance.eating.biteRations;
+      }
+      runUntilAllDead(world, 150 * DAY);
       for (const death of events(world, 'villager_died')) {
         deaths.push(`${seed}: ${death.reason}`);
         expect(
@@ -160,9 +166,9 @@ describe('критерий: житель не умирает при доступ
     // The check is not empty: there were deaths, all of hunger with the berries gone.
     expect(deaths.length).toBeGreaterThan(4);
     expect(deaths.every((line) => line.endsWith('hunger'))).toBe(true);
-  }, 30_000);
+  }, 60_000);
 
-  it('еды вдоволь и вода рядом: 30 суток без единого нуля', () => {
+  it('еды вдоволь и вода рядом: 150 суток без единого нуля', () => {
     const rows = [
       '..B....................B..',
       '..........................',
@@ -177,9 +183,9 @@ describe('критерий: житель не умирает при доступ
       { x: 4, y: 4 },
       { x: 14, y: 4 },
     ]);
-    // Eight bushes of 4 rations: 32 rations for 30 days of two would not do — top them up.
+    // Plenty of berries on every bush: the scales go round many times — a meal every ten days.
     for (const object of world.objects.list) object.stock = 100;
-    runTicks(world, 30 * DAY);
+    runTicks(world, 150 * DAY);
     expect(world.villagers.list).toHaveLength(2);
     expect(events(world, 'need_ran_out')).toEqual([]);
     for (const v of world.villagers.list) expect(v.health).toBe(FULL);
@@ -223,7 +229,8 @@ describe('у куста и у воды', () => {
     // Berries came off the bush, no more and no fewer than were eaten — whole bites.
     const eaten = 4 - bush.stock;
     expect(gained).toBeCloseTo(eaten * satietyPerRation(), 9);
-    expect(eaten / DATA.balance.eating.biteRations).toBe(8);
+    // 30 → above 90: seven handfuls of 10 (satiety hardly falls on the way since ADR-024).
+    expect(eaten / DATA.balance.eating.biteRations).toBe(7);
     expect(bush.state).toBe('ripe');
   });
 
@@ -311,17 +318,18 @@ describe('выбор: нужда² × доступность', () => {
   });
 
   it('предусмотрительность: перед дальним походом за ягодами сначала пьёт', () => {
-    // Very hungry, a little thirsty: the berries win on their own…
-    const hungry = villagerAt({ food: 5, water: 60 });
+    // Starving, rather thirsty: the berries win on their own…
+    const hungry = villagerAt({ food: 0, water: 30 });
     const considered: Considered[] = [];
     const choice = choose(hungry.world, hungry.villager, considered);
     expect(considered.find((option) => option.kind === 'eat')!.utility).toBeGreaterThan(
       considered.find((option) => option.kind === 'drink')!.utility,
     );
-    // …but there and back is ~90 tiles: thirst would not last — drink first.
+    // …but there and back is ~85 tiles, and the meal: thirst would fall below the reserve (25) —
+    // drink first.
     expect(choice.kind).toBe('drink');
     // Full of water already: there is nothing to top up, he goes for the berries.
-    const sated = villagerAt({ food: 5, water: 95 });
+    const sated = villagerAt({ food: 0, water: 95 });
     expect(choose(sated.world, sated.villager).kind).toBe('eat');
   });
 

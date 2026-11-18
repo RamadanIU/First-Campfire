@@ -232,12 +232,13 @@ describe('испорченная запись даёт понятную ошиб
     ).toHaveLength(1);
   });
 
-  it('потребности — из GDD §4.2', () => {
+  it('потребности — GDD §4.2, сытость и жажда вдесятеро дольше (решение владельца, ADR-024)', () => {
     expect(DATA.balance.needs).toEqual({
-      food: { emptyDays: 2.5, deathDays: 4 },
-      water: { emptyDays: 1.5, deathDays: 2 },
+      food: { emptyDays: 25, deathDays: 40 },
+      water: { emptyDays: 15, deathDays: 20 },
       healDays: 2,
     });
+    expect(DATA.balance.eating.rationPoints).toBe(40);
   });
 
   it('карта: стороны делятся на чанки, «от» не больше «до»', () => {

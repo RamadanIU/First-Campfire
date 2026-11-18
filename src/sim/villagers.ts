@@ -124,8 +124,9 @@ export interface Villager {
    */
   ranOut: PerNeed<number>;
   /**
-   * The mind's memory (./minds.ts): the tick of the last search that found nowhere to meet the
-   * need at all (no berries left in reach); 0 — none. Not searched again for `ai.retryTicks`.
+   * The mind's memory (./minds.ts): the tick of the last search in vain for the need — no
+   * source anywhere in reach, or none near enough to be worth the way; 0 — none. Not searched
+   * again for `ai.retryTicks`.
    */
   nowhere: PerNeed<number>;
 }
