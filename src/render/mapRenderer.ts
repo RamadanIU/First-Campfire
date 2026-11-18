@@ -18,6 +18,11 @@
  *     a «live» copy of the still layer, where the last frame's villager shadows are wiped
  *     (copied back from the still layer) and this frame's are drawn.
  *
+ *   - Items (step 1.7, ./items.ts): stacks lying loose and the pile at the camp come and go, so
+ *     like villagers they are placed every frame and drawn among the objects by depth, their
+ *     shadows in the live layer (only those near the view: up to a hundred stacks lie about the
+ *     map). A villager's load is drawn over its head, right after the villager.
+ *
  * Signs (step 1.5) — bubbles of sleep over the sleepers — are drawn separately (`drawSigns`), after
  * the light of the time of day: they stay readable at night.
  *
@@ -30,6 +35,7 @@ import { TIME } from '../sim/calendar.ts';
 import { chunkGrid, chunkRect, groundAt } from '../sim/map.ts';
 import { defOf, type MapObject } from '../sim/objects.ts';
 import type { World } from '../sim/world.ts';
+import { type ItemPose, itemPoses, loadLook } from './items.ts';
 import { drawOrder, type Placement } from './scenery.ts';
 import type { SpriteSheet } from './spriteSheet.ts';
 import { createTerrainLayer, type TerrainLayer } from './terrainLayer.ts';
@@ -148,11 +154,32 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
   const stride = strideOf(walkMs, DATA.balance.movement.walkTicksPerTile, TIME.ticksPerSecond);
   const posesAt = (alpha: number) =>
     world.villagers.list
-      .map((villager) => villagerPose(villager, alpha, stride))
+      .map((villager) =>
+        villagerPose(
+          villager,
+          alpha,
+          stride,
+          villager.load ? loadLook(villager.load.resource) : null,
+        ),
+      )
       .sort((a, b) => a.depth - b.depth || a.x - b.x || a.id - b.id);
 
-  /** The live shadow layer for this frame: last frame's villagers wiped, these drawn. */
-  function patchShadows(people: readonly VillagerPose[]): void {
+  /** Items lying on tiles near `view` (a tile of margin), as they are drawn. */
+  const itemsNear = (view: PixelRect): ItemPose[] => {
+    const poses: ItemPose[] = [];
+    const margin = 2 * TILE_SIZE;
+    for (const item of world.items.list) {
+      const px = item.x * TILE_SIZE;
+      const py = item.y * TILE_SIZE;
+      if (px + margin < view.x || py + margin < view.y) continue;
+      if (px - margin > view.x + view.width || py - margin > view.y + view.height) continue;
+      poses.push(...itemPoses(item));
+    }
+    return poses;
+  };
+
+  /** The live shadow layer for this frame: last frame's villagers and items wiped, these drawn. */
+  function patchShadows(people: readonly { sprite: string; x: number; y: number }[]): void {
     for (const box of patched) {
       liveCtx.clearRect(box.x, box.y, box.width, box.height);
       liveCtx.drawImage(
@@ -261,7 +288,16 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
       if (builtFor !== `${world.objects.nextId}/${world.objects.list.length}`) rebuild();
       ctx.imageSmoothingEnabled = false;
       const people = posesAt(tickAlpha);
-      patchShadows(people);
+      const things = itemsNear(view);
+      patchShadows([...things, ...people]);
+      // Villagers and items, by depth: a villager in front of an item on its own tile.
+      type Figure =
+        | { person: VillagerPose; depth: number; x: number }
+        | { thing: ItemPose; depth: number; x: number };
+      const figures: Figure[] = [
+        ...people.map((person) => ({ person, depth: person.depth, x: person.x })),
+        ...things.map((thing) => ({ thing, depth: thing.depth, x: thing.x })),
+      ].sort((a, b) => a.depth - b.depth || a.x - b.x);
       const right = view.x + view.width;
       const bottom = view.y + view.height;
 
@@ -287,13 +323,27 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
           swap: person.swap,
           ...(person.frame === null ? { timeMs: timeMs + person.phase } : { frame: person.frame }),
         });
+        if (person.load) {
+          sheet.draw(ctx, person.load.sprite, person.load.x - view.x, person.load.y - view.y, {
+            swap: person.load.swap,
+          });
+        }
+      };
+      const drawThing = (thing: ItemPose) => {
+        sheet.draw(ctx, thing.sprite, thing.x - view.x, thing.y - view.y, {
+          ...(thing.animation === undefined ? {} : { animation: thing.animation }),
+        });
+      };
+      const drawFigure = (figure: Figure) => {
+        if ('person' in figure) drawPerson(figure.person);
+        else drawThing(figure.thing);
       };
 
       let next = 0;
       for (const item of shown) {
-        // Villagers standing behind this object are drawn before it.
-        while (next < people.length && people[next]!.depth < item.placement.y) {
-          drawPerson(people[next]!);
+        // Villagers and items standing behind this object are drawn before it.
+        while (next < figures.length && figures[next]!.depth < item.placement.y) {
+          drawFigure(figures[next]!);
           next++;
         }
         if (
@@ -311,7 +361,7 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
           timeMs: timeMs + (placement.phase ?? 0),
         });
       }
-      for (; next < people.length; next++) drawPerson(people[next]!);
+      for (; next < figures.length; next++) drawFigure(figures[next]!);
     },
   };
 }

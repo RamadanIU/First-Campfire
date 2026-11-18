@@ -123,7 +123,7 @@ describe('испорченная запись даёт понятную ошиб
       }),
     ).toEqual([
       'data/resources.json · запись «berries» · поле «spoilDays»: нет обязательного поля (ожидается число от 0,25 до 1000 или null (не портится))',
-      'data/resources.json · запись «berries» · поле «spoilDay»: лишнее поле — может быть, «spoilDays»? Известные поля: id, name, category, era, stack, spoilDays, sprite, pile',
+      'data/resources.json · запись «berries» · поле «spoilDay»: лишнее поле — может быть, «spoilDays»? Известные поля: id, name, category, era, stack, spoilDays, sprite, pile, carry',
     ]);
   });
 
@@ -291,7 +291,7 @@ describe('испорченная запись даёт понятную ошиб
         (t as { resources: unknown }).resources = { berries: {} };
       }),
     ).toEqual([
-      'data/resources.json: ожидается список записей [{ … }, { … }], у каждой — объект с полями id, name, category, era, stack, spoilDays, sprite, pile, получено объект {"berries":{}}',
+      'data/resources.json: ожидается список записей [{ … }, { … }], у каждой — объект с полями id, name, category, era, stack, spoilDays, sprite, pile, carry, получено объект {"berries":{}}',
     ]);
   });
 });

@@ -32,11 +32,13 @@ function tablesWith(
 describe('таблицы данных целиком', () => {
   it('ссылки на спрайты и виды земли существуют', () => {
     expect(checkDataRefs(DATA).map(formatIssue)).toEqual([]);
-    // Every resource names its sprite, and the ones with a pile look — that sprite too (step 1.7).
+    // Every resource names its sprite, and the ones with a pile or a carried look — those too (1.7).
     const piles = DATA.resources.records.filter((resource) => resource.pile !== null).length;
+    const carried = DATA.resources.records.filter((resource) => resource.carry !== null).length;
     expect(DATA.external.length).toBe(
       DATA.resources.records.length +
         piles +
+        carried +
         DATA.terrain.records.length +
         DATA.objects.records.length,
     );
@@ -135,6 +137,7 @@ describe('сцена data показывает таблицы как есть', 
         stack: 5,
         spoilDays: 6.5,
         pile: null,
+        carry: null,
         sprite: 'nuts',
       });
     });

@@ -492,6 +492,12 @@ const resourcesSchema = table({
     }),
     'в куче — тот же значок, сложенный по одному на каждую треть стопки',
   ),
+  carry: nullable(
+    external(EXTERNAL_KINDS.sprite, 'спрайт', {
+      doc: 'Как ношу держат в руках: спрайт поверх жителя (руки — перекраска кожи жителя), точка привязки — на линии плеч',
+    }),
+    'в руках — значок ресурса над головой',
+  ),
 });
 
 export type Resource = Infer<typeof resourcesSchema>[number];

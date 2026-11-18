@@ -14,6 +14,9 @@
  *   - Standing: the breathing `idle_*`, each villager with its own phase.
  *   - Asleep (step 1.5): `man_asleep` / `woman_asleep` — lying on the ground, breathing slowly; the
  *     same swaps. A bubble of sleep floats over the head (./mapRenderer.ts, `drawSigns`).
+ *   - Carrying (step 1.7): the load's look over the villager (./items.ts `loadLook` — a bundle held
+ *     up in raised arms, with the villager's skin); walking, it sinks a pixel with the body on the
+ *     strides (frames 0 and 2), so the bundle bobs with the steps.
  *   - Depth: like an object's (anchor y), a little in front of the low flowers and grass of its
  *     own tile (they stand up to 2 px lower), never in front of anything of the row below.
  */
@@ -21,6 +24,7 @@ import type { PaletteSwap } from '../art/palette.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import type { Villager } from '../sim/villagers.ts';
 import { positionOf } from '../sim/villagers.ts';
+import type { LoadLook } from './items.ts';
 
 /** Skin tones by the villager's `skin` index; the first is the sprite's own colours. */
 export const SKIN_RAMPS = [
@@ -67,6 +71,13 @@ export interface VillagerPose {
   readonly walking: boolean;
   /** Asleep (step 1.5): lying, with a bubble of sleep over the head. */
   readonly asleep: boolean;
+  /** What it carries (step 1.7): the load's sprite, its anchor and swap; or null. */
+  readonly load: {
+    readonly sprite: string;
+    readonly x: number;
+    readonly y: number;
+    readonly swap: PaletteSwap;
+  } | null;
 }
 
 export function spriteOf(villager: Villager): 'man' | 'woman' {
@@ -100,8 +111,16 @@ export function strideOf(
   return (frameMs * ticksPerSecond) / (walkTicksPerTile * 1000);
 }
 
-/** Where (between the last two ticks, by `alpha`) and how a villager is drawn. */
-export function villagerPose(villager: Villager, alpha: number, strideTiles: number): VillagerPose {
+/**
+ * Where (between the last two ticks, by `alpha`) and how a villager is drawn; `load` — how what it
+ * carries looks (./items.ts `loadLook`), if anything.
+ */
+export function villagerPose(
+  villager: Villager,
+  alpha: number,
+  strideTiles: number,
+  load: LoadLook | null = null,
+): VillagerPose {
   const now = positionOf(villager);
   const x = villager.prevX + (now.x - villager.prevX) * alpha;
   const y = villager.prevY + (now.y - villager.prevY) * alpha;
@@ -111,17 +130,30 @@ export function villagerPose(villager: Villager, alpha: number, strideTiles: num
   // The distance at the drawn moment: the last tick's way is covered by alpha.
   const lastStep = Math.hypot(now.x - villager.prevX, now.y - villager.prevY);
   const walked = Math.max(0, villager.walked - (1 - alpha) * lastStep);
+  const frame = walking ? walkFrame(walked, strideTiles) : null;
+  const feetX = Math.round(x * TILE_SIZE + FEET.x);
+  // On a stride (frames 0 and 2) the body is a pixel lower, and the load with it.
+  const bob = frame !== null && frame % 2 === 0 ? 1 : 0;
   return {
     id: villager.id,
     sprite: asleep ? `${spriteOf(villager)}_asleep` : spriteOf(villager),
     swap: swapOf(villager),
-    x: Math.round(x * TILE_SIZE + FEET.x),
+    x: feetX,
     y: feetY,
     animation: asleep ? 'idle' : `${walking ? 'walk' : 'idle'}_${villager.facing}`,
-    frame: walking ? walkFrame(walked, strideTiles) : null,
+    frame,
     phase: (villager.id * 617) % 1600,
     depth: feetY + DEPTH_AHEAD,
     walking,
     asleep,
+    load:
+      load === null || asleep
+        ? null
+        : {
+            sprite: load.sprite,
+            x: feetX,
+            y: feetY + load.y + bob,
+            swap: load.skin ? swapOf(villager) : {},
+          },
   };
 }

@@ -97,6 +97,16 @@ export const STILL: Placement[] = [
   },
   { sprite: 'bubble_sleep', x: 101, y: 107, over: true, phase: 300 },
   { sprite: 'branch_pile', x: 198, y: 136 },
+  // Carrying branches to the pile (step 1.7): a bundle held up over the head, skin recoloured.
+  {
+    sprite: 'man',
+    x: 176,
+    y: 116,
+    animation: 'idle_e',
+    swap: { skin_light: 'skin_brown', hair_brown: 'hair_red' },
+    phase: 500,
+  },
+  { sprite: 'carry_bundle', x: 176, y: 106, swap: { skin_light: 'skin_brown' }, over: true },
   { sprite: 'campfire', x: 168, y: 154, animation: 'burning' },
   // The river banks.
   { sprite: 'stone', x: 238, y: 104 },
