@@ -32,8 +32,13 @@ function tablesWith(
 describe('таблицы данных целиком', () => {
   it('ссылки на спрайты и виды земли существуют', () => {
     expect(checkDataRefs(DATA).map(formatIssue)).toEqual([]);
+    // Every resource names its sprite, and the ones with a pile look — that sprite too (step 1.7).
+    const piles = DATA.resources.records.filter((resource) => resource.pile !== null).length;
     expect(DATA.external.length).toBe(
-      DATA.resources.records.length + DATA.terrain.records.length + DATA.objects.records.length,
+      DATA.resources.records.length +
+        piles +
+        DATA.terrain.records.length +
+        DATA.objects.records.length,
     );
   });
 
@@ -129,6 +134,7 @@ describe('сцена data показывает таблицы как есть', 
         era: 0,
         stack: 5,
         spoilDays: 6.5,
+        pile: null,
         sprite: 'nuts',
       });
     });
@@ -205,6 +211,7 @@ describe('сцена data показывает таблицы как есть', 
       'Сон: полезность «спать» = нужда² × множитель фазы суток + прибавка фазы (GDD §4.2)',
       'Еда и питьё (GDD §13.2)',
       'Выбор действия: полезность = нужда² × доступность (GDD §2.3)',
+      'Предметы: стоянка, куча, ноша, падение веток (GDD §5.1, шаг 1.7)',
       'Карта (GDD §2.2, §3.1, §3.3)',
     ]);
     const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.key, r.value]));

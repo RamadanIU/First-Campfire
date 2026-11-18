@@ -22,6 +22,11 @@
  *   - At night (and when sleepless) it lies down where it stands and sleeps (step 1.5): sleep
  *     comes back, and it gets up at dawn, rested, or earlier if hunger or thirst press harder.
  *     Sleep at zero fells it where it stands — a faint, an event of the journal.
+ *   - Free time is for work (step 1.7, ./items.ts): when the mind prefers it to rest, the villager
+ *     walks to branches lying loose, picks them up (`items.pickUpTicks`), gathers an armful while
+ *     more lie within `items.gatherTiles`, carries the load to the pile at the camp and puts it
+ *     down (`items.putDownTicks`). A load is held only while hauling: one who does anything else
+ *     (eats, lies down to sleep, dies) lets it go where it stands — nothing is lost.
  *   - Otherwise it rests `villagers.restTicks`, then walks to a free tile within
  *     `villagers.wanderRadius` of home.
  *   - The observer's debug order (`orderWalk`, the scene `world` with `debug=1`) sends a villager
@@ -35,9 +40,9 @@
  */
 import { DATA } from '../data/index.ts';
 import { type Cause, emit } from './events.ts';
+import { dropLoad, findItem, isPileTile, lay, pileSpot, type Stack, takeItem } from './items.ts';
 import { inside } from './map.ts';
-import { findCampSite } from './mapgen.ts';
-import { type Choice, canUse, choose, sleepWish } from './minds.ts';
+import { type Choice, canUse, choose, searchLoose, sleepWish } from './minds.ts';
 import {
   FULL,
   fullNeeds,
@@ -69,14 +74,20 @@ export const LOOKS = { skinTones: 6, hairColors: 5 } as const;
 
 /**
  * Why a villager walks: to stroll near home, because the observer sent it (debug), to eat or to
- * drink (step 1.4).
+ * drink (step 1.4), to fetch something lying loose or to carry the load to the pile (step 1.7).
  */
-export type WalkPurpose = 'wander' | 'order' | 'eat' | 'drink';
+export type WalkPurpose = 'wander' | 'order' | 'eat' | 'drink' | 'fetch' | 'carry';
 
-/** What meets a need (step 1.4): a bush with food — object `object` on its tile — or water. */
+/**
+ * What a walk leads to. A need is met (step 1.4) beside a bush with food — object `object` on
+ * its tile — or beside water; work (step 1.7) is done on the tile itself: picking up item `item`
+ * lying there, putting the load down in the pile.
+ */
 export type Source =
   | { kind: 'bush'; object: number; x: number; y: number }
-  | { kind: 'water'; x: number; y: number };
+  | { kind: 'water'; x: number; y: number }
+  | { kind: 'item'; item: number; resource: string; x: number; y: number }
+  | { kind: 'pile'; resource: string; x: number; y: number };
 
 export type VillagerAction =
   /** Stands (breathes) until tick `until`, thinking now and then (./minds.ts); then strolls. */
@@ -102,7 +113,11 @@ export type VillagerAction =
    * lies until `sleeping.faintWakePoints`, deaf to everything; otherwise wakes when the mind
    * prefers anything to sleep (rested by day, or hunger or thirst press harder).
    */
-  | { kind: 'sleep'; fainted: boolean };
+  | { kind: 'sleep'; fainted: boolean }
+  /** Picks up item `item` (of `resource`) lying on its tile; done at tick `until` (step 1.7). */
+  | { kind: 'pick_up'; item: number; resource: string; until: number }
+  /** Puts its load of `resource` down on its tile of the pile; done at tick `until` (step 1.7). */
+  | { kind: 'put_down'; resource: string; until: number };
 
 export interface Villager {
   id: number;
@@ -142,6 +157,10 @@ export interface Villager {
    * again for `ai.retryTicks`.
    */
   nowhere: PerNeed<number>;
+  /** What it carries in its hands (step 1.7, ./items.ts): one stack at most, or nothing. */
+  load: Stack | null;
+  /** The tick of the last search in vain for something to carry to the pile; 0 — none. */
+  noWork: number;
 }
 
 export interface Villagers {
@@ -187,11 +206,13 @@ export function facingOf(dx: number, dy: number): Facing {
   return dy < 0 ? 'n' : 's';
 }
 
-/** Take a villager out of the world (it died). */
+/** Take a villager out of the world (it died); its load stays on the ground. */
 export function removeVillager(world: World, id: number): void {
   const list = world.villagers.list;
   const index = list.findIndex((villager) => villager.id === id);
-  if (index >= 0) list.splice(index, 1);
+  if (index < 0) return;
+  dropLoad(world, list[index]!);
+  list.splice(index, 1);
 }
 
 /** Does another villager than `self` stand on tile (x, y) or step onto it? */
@@ -264,6 +285,8 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
     health: FULL,
     ranOut: perNeed(0),
     nowhere: perNeed(0),
+    load: null,
+    noWork: 0,
   };
   world.villagers.nextId += 1;
   world.villagers.list.push(villager);
@@ -271,15 +294,12 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
 }
 
 /**
- * The first two people — a man and a woman — come to the camp site (`findCampSite`: dry, by water
- * and forest; GDD §3.1, item 9, simplified) and stand on either side of it. A map without one (a
- * test's) — around the free tile nearest to its middle. Each arrival is an event caused by `cause`.
+ * The first two people — a man and a woman — come to the camp (`world.camp`: the camp site — dry,
+ * by water and forest, GDD §3.1, item 9, simplified; on a test's map without one — the free tile
+ * nearest to its middle) and stand on either side of it. Each arrival is an event caused by `cause`.
  */
 export function settleFirstPair(world: World, cause: Cause): void {
-  const camp = findCampSite(world.map, world.objects);
-  const middle = { x: world.map.width >> 1, y: world.map.height >> 1 };
-  const home = camp ? { x: camp.x, y: camp.y } : freeTileNear(world, middle.x, middle.y);
-  if (!home) throw new Error('На карте нет ни одного тайла, где можно стоять');
+  const home = { x: world.camp.x, y: world.camp.y };
   for (const [sex, side] of [
     ['male', -1],
     ['female', 1],
@@ -455,7 +475,7 @@ function setOff(world: World, villager: Villager, choice: Exclude<Choice, { kind
   }
   villager.action = {
     kind: 'walk',
-    purpose: choice.kind,
+    purpose: choice.kind === 'haul' ? 'fetch' : choice.kind,
     goal: choice.goal,
     path: choice.path,
     waited: 0,
@@ -464,12 +484,31 @@ function setOff(world: World, villager: Villager, choice: Exclude<Choice, { kind
 }
 
 /**
- * Standing beside a source: face it and start eating or drinking. The bush emptied or the
- * spot is not beside it after all — think again on the next tick.
+ * At the end of the way: face the source and start eating or drinking (beside it), or start
+ * picking up or putting down (on the tile). The bush emptied, the item is gone or the spot is
+ * not right after all — think again on the next tick.
  */
 function begin(world: World, villager: Villager, source: Source): void {
   if (!canUse(world, source, villager.x, villager.y)) {
     rest(world, villager, 0);
+    return;
+  }
+  const { pickUpTicks, putDownTicks } = DATA.balance.items;
+  if (source.kind === 'item') {
+    villager.action = {
+      kind: 'pick_up',
+      item: source.item,
+      resource: source.resource,
+      until: world.tick + pickUpTicks,
+    };
+    return;
+  }
+  if (source.kind === 'pile') {
+    villager.action = {
+      kind: 'put_down',
+      resource: source.resource,
+      until: world.tick + putDownTicks,
+    };
     return;
   }
   villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
@@ -478,6 +517,111 @@ function begin(world: World, villager: Villager, source: Source): void {
     source.kind === 'bush'
       ? { kind: 'eat', bush: source.object, next: world.tick + biteTicks }
       : { kind: 'drink', water: { x: source.x, y: source.y }, next: world.tick + sipTicks };
+}
+
+/** Is the villager busy hauling — the only work a load is held for? */
+function hauling(action: VillagerAction): boolean {
+  return (
+    action.kind === 'pick_up' ||
+    action.kind === 'put_down' ||
+    (action.kind === 'walk' && (action.purpose === 'fetch' || action.purpose === 'carry'))
+  );
+}
+
+/** Tiles another villager than `self` stands on or walks to. */
+function busyFor(world: World, self: Villager): (x: number, y: number) => boolean {
+  return (x, y) => isTaken(world, x, y, self) || isGoalOfAnother(world, { x, y }, self);
+}
+
+/**
+ * Picking up (step 1.7): when done, the item (if still there) goes into the hands as far as they
+ * hold. Then, while the hands are not full and more of it lies near (`items.gatherTiles` of the
+ * way), it goes for that too — an armful; otherwise it carries the load to the pile.
+ */
+function pickUp(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'pick_up' }>,
+) {
+  if (world.tick < action.until) return;
+  const item = findItem(world, action.item);
+  if (item && item.place === 'ground' && item.x === villager.x && item.y === villager.y) {
+    takeItem(world, villager, item, item.count);
+  }
+  const load = villager.load;
+  if (!load) {
+    rest(world, villager, 0);
+    return;
+  }
+  if (load.count < DATA.resources.get(load.resource).stack) {
+    const more = searchLoose(world, villager, {
+      resource: load.resource,
+      maxCost: DATA.balance.items.gatherTiles,
+    });
+    if (more) {
+      if (more.path.length === 0) begin(world, villager, more.source);
+      else {
+        villager.action = {
+          kind: 'walk',
+          purpose: 'fetch',
+          goal: more.goal,
+          path: more.path,
+          waited: 0,
+          source: more.source,
+        };
+      }
+      return;
+    }
+  }
+  carry(world, villager);
+}
+
+/**
+ * Take the load to the pile: walk to the tile of the pile where it fits (./items.ts `pileSpot`),
+ * or put it down at once if standing there. No room in the pile or no way there — let it go
+ * where it stands and rest.
+ */
+function carry(world: World, villager: Villager): void {
+  const load = villager.load!;
+  const spot = pileSpot(world, load.resource, busyFor(world, villager));
+  const result = spot ? planPath(world, villager, villager, spot) : null;
+  if (!spot || !result?.ok) {
+    dropLoad(world, villager);
+    rest(world, villager);
+    return;
+  }
+  const source: Source = { kind: 'pile', resource: load.resource, x: spot.x, y: spot.y };
+  if (result.path.length === 0) {
+    begin(world, villager, source);
+    return;
+  }
+  villager.action = {
+    kind: 'walk',
+    purpose: 'carry',
+    goal: spot,
+    path: result.path,
+    waited: 0,
+    source,
+  };
+}
+
+/**
+ * Putting down (step 1.7): when done, the load goes onto the stack of the pile on this tile as
+ * far as it has room; what is left is carried on to another tile of the pile.
+ */
+function putDown(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'put_down' }>,
+) {
+  if (world.tick < action.until) return;
+  const load = villager.load;
+  if (load && isPileTile(world, villager.x, villager.y)) {
+    load.count -= lay(world, load.resource, load.count, villager.x, villager.y, load.id);
+    if (load.count === 0) villager.load = null;
+  }
+  if (villager.load) carry(world, villager);
+  else rest(world, villager);
 }
 
 /** A meal or a drink is over: rest if the need is met, otherwise think again at once. */
@@ -545,9 +689,11 @@ function sleepOnTheWay(
 ): boolean {
   if (walk.purpose === 'order' || !thoughtOnTheWay(world, villager)) return false;
   let keep = DATA.balance.ai.restUtility;
-  if (walk.purpose !== 'wander') {
+  if (walk.purpose === 'eat' || walk.purpose === 'drink') {
     const pressing = urgency(villager.needs[walk.purpose === 'eat' ? 'food' : 'water']);
     keep = pressing * pressing;
+  } else if (walk.purpose === 'fetch' || walk.purpose === 'carry') {
+    keep = DATA.balance.ai.haulUtility;
   }
   if (sleepWish(world, villager) <= keep) return false;
   villager.action = { kind: 'sleep', fainted: false };
@@ -606,6 +752,8 @@ function gain(villager: Villager, need: Meal, amount: number): void {
  */
 function decide(world: World, villager: Villager): boolean {
   if (villager.needs.sleep <= 0 && villager.action.kind !== 'sleep') faint(world, villager);
+  // A load is held only while hauling: anything else (sleep, a meal…) lets it go here.
+  if (villager.load && !hauling(villager.action)) dropLoad(world, villager);
   const action = villager.action;
   if (action.kind === 'sleep') {
     sleep(world, villager, action);
@@ -618,6 +766,14 @@ function decide(world: World, villager: Villager): boolean {
   if (action.kind === 'drink') {
     drink(world, villager, action);
     return false;
+  }
+  if (action.kind === 'pick_up') {
+    pickUp(world, villager, action);
+    if (villager.action.kind !== 'walk') return false;
+  }
+  if (action.kind === 'put_down') {
+    putDown(world, villager, action);
+    if (villager.action.kind !== 'walk') return false;
   }
   if (action.kind === 'idle') {
     const rested = world.tick >= action.until;
@@ -726,6 +882,8 @@ export const villagersSystem: System = {
       villager.prevX = at.x;
       villager.prevY = at.y;
       act(world, villager);
+      // Stopped hauling (lay down to sleep on the way, gave up a blocked path…): the load stays here.
+      if (villager.load && !hauling(villager.action)) dropLoad(world, villager);
     }
   },
 };
