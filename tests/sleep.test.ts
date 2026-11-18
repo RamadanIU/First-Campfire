@@ -126,6 +126,43 @@ describe('критерий: сон не приводит к смерти от г
   }, 60_000);
 });
 
+describe('ночью в пути ложатся спать', () => {
+  it('уставший по дороге к дальнему кусту ночью ложится, а утром идёт дальше', () => {
+    const FAR = [
+      '~~..........................................B',
+      '~~...........................................',
+    ];
+    const world = worldOn(FAR, [
+      { x: 3, y: 0 },
+      { x: 3, y: 1 },
+    ]);
+    // Late afternoon: hungry and tired, it sets off for a bush a night's walk away.
+    runTicks(world, tickAt(1, 200) - world.tick);
+    const villager = world.villagers.list[0]!;
+    villager.needs.food = 40;
+    villager.needs.sleep = 45;
+    const found = choose(world, villager);
+    expect(found.kind).toBe('eat');
+    // Set off for the bush (the mind's own trip), then night goes on.
+    villager.action = {
+      kind: 'walk',
+      purpose: 'eat',
+      goal: found.kind === 'eat' ? found.goal : { x: 0, y: 0 },
+      path: found.kind === 'eat' ? [...found.path] : [],
+      waited: 0,
+      source: found.kind === 'eat' ? found.source : null,
+    };
+    runTicks(world, tickAt(1, 300) - world.tick);
+    expect(calendarAt(world.tick).phase).toBe('night');
+    expect(villager.action.kind).toBe('sleep');
+    expect(villager.x).toBeLessThan(40);
+    runTicks(world, tickAt(2, 230) - world.tick);
+    expect(events(world, 'villager_fainted')).toEqual([]);
+    // Morning: up again, and has eaten at the bush since.
+    expect(villager.needs.food).toBeGreaterThan(40);
+  });
+});
+
 describe('нехватка сна — обморок', () => {
   const FIELD = ['~~............', '~~............', '~~............'];
 

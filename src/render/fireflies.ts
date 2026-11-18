@@ -40,9 +40,9 @@ export function drawFireflies(
     const y = at.y - view.y;
     if (x < -2 || y < -2 || x > view.width + 2 || y > view.height + 2) continue;
     if (fly.lit) {
-      ctx.fillStyle = css(GLOW, 0.18);
+      ctx.fillStyle = css(GLOW, 0.3);
       ctx.fillRect(x - 1, y - 1, 3, 3);
-      ctx.fillStyle = css(GLOW, 0.5);
+      ctx.fillStyle = css(GLOW, 0.8);
       ctx.fillRect(x - 1, y, 3, 1);
       ctx.fillRect(x, y - 1, 1, 3);
       ctx.fillStyle = css(CORE);

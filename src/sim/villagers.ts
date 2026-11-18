@@ -37,7 +37,7 @@ import { DATA } from '../data/index.ts';
 import { type Cause, emit } from './events.ts';
 import { inside } from './map.ts';
 import { findCampSite } from './mapgen.ts';
-import { type Choice, canUse, choose } from './minds.ts';
+import { type Choice, canUse, choose, sleepWish } from './minds.ts';
 import {
   FULL,
   fullNeeds,
@@ -48,6 +48,7 @@ import {
   type PerNeed,
   perNeed,
   satietyPerRation,
+  urgency,
 } from './needs.ts';
 import { findObject, objectAt, takeFood } from './objects.ts';
 import { canStep, DIAGONAL, findPath, type PathResult, type Tile, tileSpeed } from './path.ts';
@@ -428,6 +429,18 @@ function thinksNow(world: World, villager: Villager): boolean {
 }
 
 /**
+ * Does a walking villager think at this step? A walker decides only between steps, which seldom
+ * fall on its moment of thought (`thinksNow`: steps of 4 ticks, thoughts every 10 — for some ids
+ * never), so it thinks at the first step after its moment: one came within the last step's time.
+ */
+function thoughtOnTheWay(world: World, villager: Villager): boolean {
+  const every = DATA.balance.ai.thinkTicks;
+  const step = Math.ceil(DATA.balance.movement.walkTicksPerTile);
+  const now = world.tick + villager.id;
+  return Math.floor(now / every) !== Math.floor((now - step) / every);
+}
+
+/**
  * Set off to meet a need: lie down to sleep where it stands, walk to the spot beside the source,
  * or start at once if there.
  */
@@ -518,6 +531,30 @@ function sleep(
 }
 
 /**
+ * On the way (to food, to water, home or for a stroll — not on the observer's order): now and then
+ * the walker weighs the wish to sleep (./minds.ts `sleepWish`) against what it walks for — the
+ * pressing of the need (its upper bound, urgency²), or rest for a stroll — and lies down where it
+ * stands if sleep outweighs it: at night one does not walk on to a far bush or home till sleep
+ * runs out. No search and no randomness here (a search in vain would be remembered and the source
+ * forgotten for a day); the trip is thought out afresh on waking. Returns true if it lay down.
+ */
+function sleepOnTheWay(
+  world: World,
+  villager: Villager,
+  walk: Extract<VillagerAction, { kind: 'walk' }>,
+): boolean {
+  if (walk.purpose === 'order' || !thoughtOnTheWay(world, villager)) return false;
+  let keep = DATA.balance.ai.restUtility;
+  if (walk.purpose !== 'wander') {
+    const pressing = urgency(villager.needs[walk.purpose === 'eat' ? 'food' : 'water']);
+    keep = pressing * pressing;
+  }
+  if (sleepWish(world, villager) <= keep) return false;
+  villager.action = { kind: 'sleep', fainted: false };
+  return true;
+}
+
+/**
  * Sleep ran out: the villager falls where it stands (a faint, GDD §4.2) — an event caused by its
  * sleep running out.
  */
@@ -596,6 +633,7 @@ function decide(world: World, villager: Villager): boolean {
   }
   const walk = villager.action;
   if (walk.kind !== 'walk') return false;
+  if (sleepOnTheWay(world, villager, walk)) return false;
   const next = walk.path[0];
   if (!next) {
     arrive(world, villager, walk);
