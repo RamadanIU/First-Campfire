@@ -17,12 +17,13 @@ import { createMapRenderer } from '../render/mapRenderer.ts';
 import { drawPlaceMark, drawSelection, PLACE_MARK_MS } from '../render/selection.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
-import { TIME } from '../sim/calendar.ts';
+import { calendarAt, TIME } from '../sim/calendar.ts';
 import { findCampSite } from '../sim/mapgen.ts';
+import { ACTIVITY, holdOf } from '../sim/minds.ts';
 import type { Tile } from '../sim/path.ts';
 import { findVillager, orderWalk } from '../sim/villagers.ts';
 import { stepWorld, type World } from '../sim/world.ts';
-import { DEBUG, deathNote, needsLine, villagerName } from '../ui/texts.ts';
+import { DEBUG, deathNote, MIND, needsLine, villagerName } from '../ui/texts.ts';
 import { bindCameraInput, type CameraControl, createCameraControl } from './cameraControl.ts';
 import { bindSpeedKeys } from './controls.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
@@ -30,6 +31,18 @@ import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 
 /** The name of a resource for the words of the panel (data/resources.json). */
 const resourceName = (id: string): string => DATA.resources.get(id).name;
+
+/** How many of the last decisions the panel shows (the journal keeps `ai.logSize`). */
+const MIND_SHOWN = 6;
+
+/** The debug view of a villager's mind (`debug=mind`): words for the panel. */
+export interface MindNotes {
+  title: string;
+  /** Its plan under way. */
+  now: string;
+  /** Its decisions, the newest first: a line, and the options weighed (may be empty). */
+  decisions: [string, string][];
+}
 
 /**
  * The view of a running world: its map (src/render/mapRenderer.ts, step 1.1) seen through the
@@ -55,6 +68,8 @@ const resourceName = (id: string): string => DATA.resources.get(id).name;
  *   order is marked with a red cross for a moment; the panel of the world says why.
  *   `debug=needs` (step 1.4) — besides, bars of satiety, thirst and health over every head, and
  *   for the panel a line per villager: what it is doing, its scales; the dead — of what they died.
+ *   `debug=mind` (step 1.8) — the same as `1`, and for the panel the mind of the chosen villager
+ *   (the first by default): its plan under way and its journal of decisions with the scores.
  */
 export interface MapView {
   scene: Scene;
@@ -72,6 +87,11 @@ export interface MapView {
   debugNote(): string | null;
   /** `debug=needs`: a line per villager for the panel — doing what, how fed (null — off). */
   needsNotes(): string[] | null;
+  /**
+   * `debug=mind` (step 1.8): the mind of the chosen villager — its plan under way and its journal
+   * of decisions, the newest first, each a line and the options it weighed (null — off).
+   */
+  mindNotes(): MindNotes | null;
 }
 
 /** How long a refused order stays marked, ms of presentation time. */
@@ -130,6 +150,7 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   // Debug: the chosen villager, the last refused order, what the last click did.
   const debug = params.debug.length > 0;
   const needsMode = params.debug.includes('needs');
+  const mindMode = params.debug.includes('mind');
   /** The chosen villager; with debug the first one by default (the one a click sends). */
   let selected: number | null = params.select ?? (debug ? 1 : null);
   /** The villager a debug click sends: the chosen one, else the first. */
@@ -370,6 +391,23 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     }
     return lines;
   };
+  const mindNotes = (): MindNotes => {
+    const villager = findVillager(world, chosenId());
+    const title = MIND.title(describe(chosenId()));
+    if (!villager) return { title, now: '', decisions: [] };
+    const bar = holdOf(world, villager, villager.plan);
+    const now = MIND.now(villager.plan, ACTIVITY[villager.plan.activity].hold, bar);
+    const decisions = villager.log
+      .slice(-MIND_SHOWN)
+      .reverse()
+      .map((decision) => {
+        const date = calendarAt(decision.tick);
+        return MIND.decision(decision, MIND.when(date.day, date.phase));
+      });
+    const earlier = villager.log.length - decisions.length;
+    if (earlier > 0) decisions.push([MIND.more(earlier), '']);
+    return { title, now, decisions };
+  };
   const flyToTile = (tile: Tile) => {
     camera.flyTo({ x: (tile.x + 0.5) * TILE_SIZE, y: (tile.y + 0.5) * TILE_SIZE });
     placeMark = { tile, sinceMs: null };
@@ -391,5 +429,6 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     },
     debugNote: () => (debug ? (note ?? defaultNote()) : null),
     needsNotes: () => (needsMode ? needsNotes() : null),
+    mindNotes: () => (mindMode ? mindNotes() : null),
   };
 }

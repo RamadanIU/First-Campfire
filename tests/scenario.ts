@@ -11,6 +11,7 @@
  * are the game's own; only the map is given.
  */
 
+import { canHold, countAll, isPileTile, stackOf } from '../src/sim/items.ts';
 import { createMap, setGround } from '../src/sim/map.ts';
 import type { GeneratedMap } from '../src/sim/mapgen.ts';
 import { createObjects, placeObject } from '../src/sim/objects.ts';
@@ -82,4 +83,53 @@ export function worldOn(
 /** An open meadow `width`×`height` of grass. */
 export function meadow(width: number, height: number): string[] {
   return Array.from({ length: height }, () => '.'.repeat(width));
+}
+
+/**
+ * Every rule items keep (step 1.7; a violation — a message, none — an empty list): all that lies
+ * and is carried adds up to all that fell, one stack per tile within its size, stacks only where
+ * things may lie and the pile's on its tiles, a load only while the plan is to haul.
+ */
+export function brokenRules(world: World): string[] {
+  const broken: string[] = [];
+  const all = countAll(world);
+  const total = Object.values(all).reduce((sum, n) => sum + n, 0);
+  if (total !== world.items.made) {
+    broken.push(`предметов ${total}, а упало ${world.items.made} (тик ${world.tick})`);
+  }
+  const tiles = new Set<string>();
+  for (const item of world.items.list) {
+    const at = `${item.x},${item.y}`;
+    if (tiles.has(at)) broken.push(`две стопки на тайле ${at}`);
+    tiles.add(at);
+    if (item.count < 1 || item.count > stackOf(item.resource)) {
+      broken.push(`стопка #${item.id}: ${item.count} — больше стопки или пусто`);
+    }
+    if (!canHold(world.map, world.objects, item.x, item.y)) {
+      broken.push(`стопка #${item.id} на тайле ${at}, где ничего не может лежать`);
+    }
+    if ((item.place === 'pile') !== isPileTile(world, item.x, item.y)) {
+      broken.push(`стопка #${item.id} (${item.place}) на ${at} — не своё место`);
+    }
+  }
+  const ids = world.items.list.map((item) => item.id);
+  if (ids.some((id, i) => i > 0 && id <= ids[i - 1]!)) broken.push('список не по порядку id');
+  for (const villager of world.villagers.list) {
+    const load = villager.load;
+    if (!load) continue;
+    if (load.count < 1 || load.count > stackOf(load.resource)) {
+      broken.push(`ноша жителя ${villager.id}: ${load.count}`);
+    }
+    if (ids.includes(load.id)) broken.push(`id ноши ${load.id} и на земле`);
+    const hauling =
+      villager.action.kind === 'pick_up' ||
+      villager.action.kind === 'put_down' ||
+      (villager.action.kind === 'walk' &&
+        (villager.action.purpose === 'fetch' || villager.action.purpose === 'carry'));
+    if (!hauling) broken.push(`житель ${villager.id} держит ношу, делая «${villager.action.kind}»`);
+    if (villager.plan.activity !== 'haul') {
+      broken.push(`житель ${villager.id} держит ношу, а план — «${villager.plan.activity}»`);
+    }
+  }
+  return broken;
 }

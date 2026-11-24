@@ -35,13 +35,22 @@ export function randomSeed(random: () => number = Math.random): number {
 
 /**
  * The world of the address: `seed=`, fast-forwarded to `ticks=`. With `go=x,y` (debug) the first
- * villager is sent to that tile at the very start — the walk is reproducible by URL.
+ * villager is sent to that tile at the very start — the walk is reproducible by URL; with
+ * `food=value@tick` (debug, step 1.8) its satiety becomes `value` at that tick on the way.
  */
 export function worldFromParams(params: LaunchParams): World {
   const world = createWorld(params.seed);
   const first = findVillager(world, 1);
   if (params.go && first) orderWalk(world, first, params.go);
-  runTicks(world, params.ticks);
+  const food = params.food;
+  if (food && food.tick <= params.ticks) {
+    runTicks(world, food.tick);
+    const villager = findVillager(world, 1);
+    if (villager) villager.needs.food = food.value;
+    runTicks(world, params.ticks - food.tick);
+  } else {
+    runTicks(world, params.ticks);
+  }
   return world;
 }
 

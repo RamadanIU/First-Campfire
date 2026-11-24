@@ -15,9 +15,10 @@
  */
 import type { CalendarDate, DayPhase, Season } from '../sim/calendar.ts';
 import type { Cause, DeathReason, WorldEvent } from '../sim/events.ts';
+import type { Activity, Considered, Decision, Hold, PlanStep, Why } from '../sim/minds.ts';
 import type { Need } from '../sim/needs.ts';
 import type { LoadError, LoadWarning } from '../sim/save.ts';
-import type { Sex, Villager } from '../sim/villagers.ts';
+import type { Plan, Sex, Villager } from '../sim/villagers.ts';
 
 // ── Numbers and plural forms ─────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,98 @@ export function needsLine(villager: Villager, name: (resource: string) => string
   const round = (value: number) => Math.round(value);
   return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager, name)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
 }
+
+// ── The mind of a villager: plans and decisions (step 1.8, `debug=mind`) ────────────────────
+
+/** Names of activities, as the journal of decisions shows them. */
+export const ACTIVITY_NAME: Record<Activity, string> = {
+  rest: 'отдых',
+  sleep: 'сон',
+  eat: 'еда',
+  drink: 'питьё',
+  haul: 'работа',
+  order: 'приказ',
+};
+
+/** Steps of plans, in the words of the journal. */
+const STEP_NAME: Record<PlanStep, string> = {
+  stand: 'постоять',
+  stroll: 'прогуляться',
+  sleep: 'спать',
+  go: 'дойти',
+  eat: 'есть',
+  drink: 'пить',
+  fetch: 'дойти до веток',
+  pick_up: 'поднять',
+  gather: 'набрать ещё',
+  carry: 'донести до кучи',
+  put_down: 'сложить',
+};
+
+/** A score of the mind: «0,52». */
+export function score(value: number): string {
+  return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * An option of a decision: «еда 0,52», «питьё ≤ 0,12» (its upper bound: not worth a search),
+ * «еда — негде», «сон 0,19 — сейчас», «работа — в деле (порог 0,30)» (the plan under way and its bar).
+ */
+function optionText(option: Considered): string {
+  const name = ACTIVITY_NAME[option.kind];
+  if (option.current && (option.kind === 'rest' || option.kind === 'sleep')) {
+    return `${name} ${score(option.utility)} — сейчас`;
+  }
+  if (option.current) return `${name} — в деле (порог ${score(option.utility)})`;
+  if (option.nowhere) return `${name} — негде`;
+  if (option.kind === 'eat' || option.kind === 'drink' || option.kind === 'haul') {
+    return option.searched
+      ? `${name} ${score(option.utility)}`
+      : `${name} ≤ ${score(option.utility)}`;
+  }
+  return `${name} ${score(option.utility)}`;
+}
+
+const WHY_TEXT: Record<Exclude<Why, 'chose'>, (from: string, plan: string) => string> = {
+  done: (from, plan) => `${from}: сделано → ${plan}`,
+  failed: (from, plan) => `${from}: не вышло (источник пропал, нет пути или места) → ${plan}`,
+  order: () => 'приказ наблюдателя',
+  faint: () => 'упал без сил → сон',
+};
+
+export const MIND = {
+  title: (who: string) => `Решения: ${who}`,
+  more: (n: number) => `…и ещё ${n} — раньше`,
+  empty: 'Ещё ничего не решал — отдыхает с начала мира',
+  /** The plan under way: its activity, worth, the steps ahead and what breaks it off. */
+  now: (plan: Plan, hold: Hold, bar: number) => {
+    const ahead =
+      plan.steps.length > 0
+        ? ` · дальше: ${plan.steps.map((step) => STEP_NAME[step]).join(' → ')}`
+        : '';
+    const name = ACTIVITY_NAME[plan.activity];
+    let keeps: string;
+    if (hold === 'fixed') keeps = 'не передумывает';
+    else if (hold === 'loose') keeps = 'уступит всему, что полезнее';
+    else keeps = `бросит ради того, что полезнее ${score(bar)}`;
+    const worth = plan.activity === 'order' ? '' : ` ${score(plan.utility)}`;
+    return `Сейчас: ${name}${worth} · ${keeps}${ahead}`;
+  },
+  /** A decision in two lines: when and what was decided; what else was weighed. */
+  decision: (decision: Decision, when: string): [string, string] => {
+    const plan = ACTIVITY_NAME[decision.plan];
+    const from = decision.from === null ? '—' : ACTIVITY_NAME[decision.from];
+    if (decision.why !== 'chose') return [`${when} · ${WHY_TEXT[decision.why](from, plan)}`, ''];
+    const over = decision.bar === null ? '' : ` (порог ${score(decision.bar)})`;
+    const first = decision.ahead ? ` — сначала, перед «${ACTIVITY_NAME[decision.ahead]}»` : '';
+    return [
+      `${when} · ${from} → ${plan} ${score(decision.utility)}${over}${first}`,
+      decision.options.map(optionText).join(' · '),
+    ];
+  },
+  /** When: «12-й день, закат». */
+  when: (day: number, phase: DayPhase) => `${day}-й день, ${PHASE_NAME[phase]}`,
+} as const;
 
 export const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
 

@@ -915,6 +915,30 @@ button.menu-card:focus-visible {
   bottom: 8px;
 }
 
+/* The mind of the chosen villager (step 1.8, `debug=mind`): a wider box, a line per decision. */
+.hud-debug-wide {
+  width: 460px;
+}
+
+.world-panel-mind-title {
+  font-size: 12px;
+}
+
+.world-panel-mind-now {
+  margin: 2px 0 4px;
+  color: #f1e3c4;
+}
+
+.world-panel-mind-row {
+  margin-top: 3px;
+  color: #f1e3c4;
+}
+
+.world-panel-mind-options {
+  padding-left: 10px;
+  color: #b6b9c2;
+}
+
 .world-panel-title {
   margin-bottom: 4px;
   font-size: 13px;

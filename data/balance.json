@@ -48,8 +48,11 @@
     "jitterPercent": 10,
     "reservePoints": 25,
     "retryTicks": 400,
-    "haulUtility": 0.2,
-    "workRetryTicks": 100
+    "haulUtility": 0.25,
+    "workRetryTicks": 100,
+    "keepMargin": 0.5,
+    "sleepHold": 0.1,
+    "logSize": 12
   },
   "items": {
     "pileRadius": 1,

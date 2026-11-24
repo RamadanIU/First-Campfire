@@ -39,6 +39,9 @@ function villager(fields: Partial<Villager> = {}): Villager {
     nowhere: { food: 0, water: 0, sleep: 0 },
     load: null,
     noWork: 0,
+    plan: { activity: 'rest', utility: 0.15, since: 0, steps: ['stroll'] },
+    thought: 0,
+    log: [],
     ...fields,
   };
 }
