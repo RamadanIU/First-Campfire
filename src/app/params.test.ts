@@ -22,6 +22,7 @@ describe('parseParams', () => {
       slot: null,
       debug: [],
       go: null,
+      food: null,
       select: null,
       menu: false,
       worldFromUrl: true,
@@ -105,6 +106,15 @@ describe('parseParams', () => {
     expect(parseParams('?go=-1,4').go).toBeNull();
     expect(parseParams('?go=18').go).toBeNull();
     expect(parseParams('').go).toBeNull();
+  });
+
+  it('reads food: satiety@tick (0…100, tick ≥ 0); malformed — none', () => {
+    expect(parseParams('?food=15@870').food).toEqual({ value: 15, tick: 870 });
+    expect(parseParams('?food=0.5@0').food).toEqual({ value: 0.5, tick: 0 });
+    expect(parseParams('?food=150@10').food).toBeNull();
+    expect(parseParams('?food=15').food).toBeNull();
+    expect(parseParams('?food=15@-3').food).toBeNull();
+    expect(parseParams('').food).toBeNull();
   });
 
   it('reads the gallery sprite name', () => {

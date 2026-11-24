@@ -102,6 +102,8 @@ interface VillagerState {
   y: number;
   toX: number;
   toY: number;
+  /** Share of the step from (x, y) to (toX, toY) done: where the villager is drawn. */
+  progress: number;
   action: string;
   goal: { x: number; y: number } | null;
   walked: number;
@@ -900,10 +902,14 @@ try {
     const villagers = await page.evaluate<VillagerState[]>('window.__fc.world.villagers()');
     const woman = villagers.find((v) => v.sex === 'female')!;
     const man = villagers.find((v) => v.sex === 'male')!;
-    await page.mouse.click(
-      onPage(woman.x * 16 + 8, woman.y * 16 + 4).x,
-      onPage(woman.x * 16 + 8, woman.y * 16 + 4).y,
-    );
+    // Where a villager is drawn (mid-step — between two tiles), at its chest.
+    const drawnAt = (v: VillagerState): Point =>
+      onPage(
+        (v.x + (v.toX - v.x) * v.progress) * 16 + 8,
+        (v.y + (v.toY - v.y) * v.progress) * 16 + 4,
+      );
+    const her = drawnAt(woman);
+    await page.mouse.click(her.x, her.y);
     await page.waitForTimeout(100);
     check(
       (await page.isVisible('.hud-card')) &&
@@ -915,7 +921,7 @@ try {
     await page.mouse.click(empty.x, empty.y);
     await page.waitForTimeout(100);
     check(await page.isHidden('.hud-card'), 'щелчок мимо — выбор снят, карточки нет');
-    const him = onPage(man.x * 16 + 8, man.y * 16 + 4);
+    const him = drawnAt(man);
     await page.mouse.click(him.x, him.y);
     await page.waitForTimeout(100);
     check(

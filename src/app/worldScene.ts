@@ -95,6 +95,7 @@ export function createWorldScene(context: SceneContext): Scene {
         y: villager.y,
         toX: villager.toX,
         toY: villager.toY,
+        progress: villager.progress,
         action: villager.action.kind,
         goal: villager.action.kind === 'walk' ? { ...villager.action.goal } : null,
         walked: villager.walked,
@@ -136,12 +137,13 @@ function iconCanvas(sheet: SpriteSheet, name: string, scale: number): HTMLCanvas
  * The menu «Мир» of the observer's panel (step 0.7, in the panel since step 1.6): the date and the
  * tick, the speed and the keys, the zoom, how the world is saved, «Save to file», «To the menu».
  * Below the panel — debug lines: with `debug=1` what the last debug click did; with `debug=needs`
- * what each villager is doing and its scales, and who died of what.
+ * what each villager is doing and its scales, and who died of what; with `debug=mind` (step 1.8)
+ * the plan and the journal of decisions of the chosen villager.
  */
 function createWorldPanel(
   hud: Hud,
   world: World,
-  { loop, camera, debugNote, needsNotes }: MapView,
+  { loop, camera, debugNote, needsNotes, mindNotes }: MapView,
   autosave: Autosave,
   origin: 'url' | 'saved' | 'new',
   warnings: LoadWarning[],
@@ -177,10 +179,13 @@ function createWorldPanel(
 
   const debugLine = line('world-panel-debug');
   const needsBlock = line('world-panel-debug world-panel-needs');
+  const mindBlock = line('world-panel-debug world-panel-mind');
   debugLine.hidden = debugNote() === null;
   needsBlock.hidden = needsNotes() === null;
-  hud.debug.append(debugLine, needsBlock);
-  hud.debug.hidden = debugLine.hidden && needsBlock.hidden;
+  mindBlock.hidden = mindNotes() === null;
+  hud.debug.append(debugLine, needsBlock, mindBlock);
+  hud.debug.hidden = debugLine.hidden && needsBlock.hidden && mindBlock.hidden;
+  hud.debug.classList.toggle('hud-debug-wide', !mindBlock.hidden);
 
   const note = (text: string, kind: 'ok' | 'warn') => {
     const row = document.createElement('p');
@@ -210,8 +215,23 @@ function createWorldPanel(
     if (element.textContent !== text) element.textContent = text;
   };
   let shownNeeds = '';
+  let shownMind = '';
   return {
     update() {
+      const mind = mindNotes();
+      const mindText = mind === null ? '' : JSON.stringify(mind);
+      if (mind !== null && mindText !== shownMind) {
+        shownMind = mindText;
+        mindBlock.replaceChildren(
+          line('world-panel-mind-title', mind.title),
+          line('world-panel-mind-now', mind.now),
+          ...mind.decisions.map(([head, options]) => {
+            const row = line('world-panel-mind-row', head);
+            if (options !== '') row.append(line('world-panel-mind-options', options));
+            return row;
+          }),
+        );
+      }
       const needsLines = needsNotes();
       const needsText = needsLines?.join('\n') ?? '';
       if (needsText !== shownNeeds) {

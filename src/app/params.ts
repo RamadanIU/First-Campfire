@@ -60,8 +60,9 @@ export interface LaunchParams {
   /**
    * Debug overlays of the world (`debug=1`; several — `debug=1,needs`): `1` — paths of villagers
    * as lines, a click sends the chosen villager to a tile (step 1.3); `needs` — bars of satiety,
-   * thirst and health over the heads and what each one is doing (step 1.4). Any word turns on
-   * the paths and the click. Empty — none.
+   * thirst and health over the heads and what each one is doing (step 1.4); `mind` — the plan
+   * and the journal of decisions of the chosen villager (step 1.8). Any word turns on the paths
+   * and the click. Empty — none.
    */
   debug: readonly string[];
   /**
@@ -69,6 +70,12 @@ export interface LaunchParams {
    * world runs `ticks=` — a walk (and its path with `debug=1`) reproducible by URL.
    */
   go: { x: number; y: number } | null;
+  /**
+   * Debug (step 1.8): `food=15@870` — at tick 870 of a world given by the address (on the way to
+   * `ticks=`) the first villager's satiety becomes 15: hunger breaks off its work, reproducible by
+   * URL (the hysteresis of the mind, `debug=mind`).
+   */
+  food: { value: number; tick: number } | null;
   /** The villager chosen at the start (step 1.6: its frame and card); null — none. */
   select: number | null;
   /** The menu «Мир» of the observer's panel is open at the start (step 1.6). */
@@ -95,6 +102,7 @@ export const DEFAULT_PARAMS: LaunchParams = {
   slot: null,
   debug: [],
   go: null,
+  food: null,
   select: null,
   menu: false,
   worldFromUrl: false,
@@ -130,6 +138,15 @@ function parseCam(raw: string | null): { x: number; y: number } | null {
   if (parts.length !== 2) return null;
   const [x, y] = parts.map(parseDecimal);
   return x == null || y == null ? null : { x, y };
+}
+
+/** `value@tick` — satiety 0…100 at a tick ≥ 0, or null. */
+function parseFood(raw: string | null): { value: number; tick: number } | null {
+  const parts = raw?.split('@') ?? [];
+  if (parts.length !== 2) return null;
+  const value = parseDecimal(parts[0]!);
+  const tick = parseInteger(parts[1]!, 0);
+  return value === null || tick === null || value < 0 || value > 100 ? null : { value, tick };
 }
 
 /** `x,y` — two whole numbers ≥ 0 (a tile), or null. */
@@ -175,6 +192,7 @@ export function parseParams(search: string): LaunchParams {
     slot,
     debug: parseDebug(query.get('debug')),
     go: parseTile(query.get('go')),
+    food: parseFood(query.get('food')),
     select: parseInteger(query.get('select'), 1),
     menu: query.get('menu') === '1',
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,
