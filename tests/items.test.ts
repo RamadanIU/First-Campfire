@@ -12,7 +12,6 @@ import { DATA } from '../src/data/index.ts';
 import { tickAt } from '../src/sim/calendar.ts';
 import { hashState } from '../src/sim/hash.ts';
 import {
-  canHold,
   countAll,
   type Item,
   inPile,
@@ -25,54 +24,12 @@ import {
 import { loadWorld, saveWorld } from '../src/sim/save.ts';
 import { orderWalk, removeVillager, type Villager } from '../src/sim/villagers.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../src/sim/world.ts';
-import { meadow, worldOn } from './scenario.ts';
+import { brokenRules, meadow, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 
 /** A row of oaks along the top of a meadow: branches fall under them; the camp is in the middle. */
 const EDGE = ['T'.repeat(24), ...meadow(24, 13)];
-
-/** Every rule items keep (a violation — a message, none — an empty list). */
-function brokenRules(world: World): string[] {
-  const broken: string[] = [];
-  const all = countAll(world);
-  const total = Object.values(all).reduce((sum, n) => sum + n, 0);
-  if (total !== world.items.made) {
-    broken.push(`предметов ${total}, а упало ${world.items.made} (тик ${world.tick})`);
-  }
-  const tiles = new Set<string>();
-  for (const item of world.items.list) {
-    const at = `${item.x},${item.y}`;
-    if (tiles.has(at)) broken.push(`две стопки на тайле ${at}`);
-    tiles.add(at);
-    if (item.count < 1 || item.count > stackOf(item.resource)) {
-      broken.push(`стопка #${item.id}: ${item.count} — больше стопки или пусто`);
-    }
-    if (!canHold(world.map, world.objects, item.x, item.y)) {
-      broken.push(`стопка #${item.id} на тайле ${at}, где ничего не может лежать`);
-    }
-    if ((item.place === 'pile') !== isPileTile(world, item.x, item.y)) {
-      broken.push(`стопка #${item.id} (${item.place}) на ${at} — не своё место`);
-    }
-  }
-  const ids = world.items.list.map((item) => item.id);
-  if (ids.some((id, i) => i > 0 && id <= ids[i - 1]!)) broken.push('список не по порядку id');
-  for (const villager of world.villagers.list) {
-    const load = villager.load;
-    if (!load) continue;
-    if (load.count < 1 || load.count > stackOf(load.resource)) {
-      broken.push(`ноша жителя ${villager.id}: ${load.count}`);
-    }
-    if (ids.includes(load.id)) broken.push(`id ноши ${load.id} и на земле`);
-    const hauling =
-      villager.action.kind === 'pick_up' ||
-      villager.action.kind === 'put_down' ||
-      (villager.action.kind === 'walk' &&
-        (villager.action.purpose === 'fetch' || villager.action.purpose === 'carry'));
-    if (!hauling) broken.push(`житель ${villager.id} держит ношу, делая «${villager.action.kind}»`);
-  }
-  return broken;
-}
 
 describe('критерий: ветки складываются в кучу у стоянки', () => {
   it('сценарий: опушка и луг — через 3 суток в куче не меньше 10 веток, всё по правилам', () => {

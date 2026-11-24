@@ -481,6 +481,27 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].load.resource: string',
   'villagers.list[].load: null',
   'villagers.list[].load: object',
+  'villagers.list[].log: array',
+  'villagers.list[].log[].ahead: null',
+  'villagers.list[].log[].bar: null',
+  'villagers.list[].log[].bar: number',
+  'villagers.list[].log[].from: string',
+  'villagers.list[].log[].options: array',
+  'villagers.list[].log[].options[].current: boolean',
+  'villagers.list[].log[].options[].kind = "drink"',
+  'villagers.list[].log[].options[].kind = "eat"',
+  'villagers.list[].log[].options[].kind = "haul"',
+  'villagers.list[].log[].options[].kind = "rest"',
+  'villagers.list[].log[].options[].kind = "sleep"',
+  'villagers.list[].log[].options[].nowhere: boolean',
+  'villagers.list[].log[].options[].searched: boolean',
+  'villagers.list[].log[].options[].utility: number',
+  'villagers.list[].log[].options[]: object',
+  'villagers.list[].log[].plan: string',
+  'villagers.list[].log[].tick: number',
+  'villagers.list[].log[].utility: number',
+  'villagers.list[].log[].why: string',
+  'villagers.list[].log[]: object',
   'villagers.list[].needs.food: number',
   'villagers.list[].needs.sleep: number',
   'villagers.list[].needs.water: number',
@@ -490,6 +511,12 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].nowhere.sleep: number',
   'villagers.list[].nowhere.water: number',
   'villagers.list[].nowhere: object',
+  'villagers.list[].plan.activity: string',
+  'villagers.list[].plan.since: number',
+  'villagers.list[].plan.steps: array',
+  'villagers.list[].plan.steps[]: string',
+  'villagers.list[].plan.utility: number',
+  'villagers.list[].plan: object',
   'villagers.list[].prevX: number',
   'villagers.list[].prevY: number',
   'villagers.list[].progress: number',
@@ -499,6 +526,7 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].ranOut: object',
   'villagers.list[].sex: string',
   'villagers.list[].skin: number',
+  'villagers.list[].thought: number',
   'villagers.list[].toX: number',
   'villagers.list[].toY: number',
   'villagers.list[].walked: number',
@@ -517,6 +545,7 @@ const SHAPE_HISTORY: Record<number, string> = {
   4: '1af16d6fbdb44747', // step 1.4: needs, health, eating and drinking, berries on bushes, minds
   5: '5daf554442d2bbea', // step 1.5: sleep (need, action, faint); fireflies over the map
   6: '63b0fccd78514df5', // step 1.7: items (on tiles, in the hands), the camp, hauling, litter stream
+  7: '5d50768a02d91b51', // step 1.8: plans of villagers and their journals of decisions
 };
 
 describe('форма мира и версия формата сохранения', () => {

@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { worldOn } from '../../tests/scenario.ts';
-import { availability, canUse, choose, fillTicks, reachFor, searchSource } from './minds.ts';
+import { DATA } from '../data/index.ts';
+import {
+  availability,
+  type Considered,
+  canUse,
+  choose,
+  type Decision,
+  fillTicks,
+  holdOf,
+  reachFor,
+  reconsider,
+  remember,
+  searchSource,
+  sleepWish,
+} from './minds.ts';
 import { objectAt, takeFood } from './objects.ts';
 
 describe('доступность и предел поиска', () => {
@@ -74,5 +88,76 @@ describe('источник', () => {
       searched: false,
       nowhere: true,
     });
+  });
+});
+
+describe('упрямство: начатое бросают только ради заметно лучшего (шаг 1.8)', () => {
+  const { keepMargin, sleepHold, haulUtility, logSize } = DATA.balance.ai;
+  const ROWS = ['......', '....B.', '......', '~~~~~~'];
+
+  it('держится: работа и еда — оценкой при выборе (или нуждой сейчас, если выросла) × 1,5', () => {
+    const world = worldOn(ROWS);
+    const villager = world.villagers.list[0]!;
+    villager.needs.food = 80;
+    const firm = 1 + keepMargin;
+    expect(holdOf(world, villager, { activity: 'haul', utility: 0.18 })).toBeCloseTo(
+      haulUtility * firm,
+      12,
+    );
+    expect(holdOf(world, villager, { activity: 'eat', utility: 0.3 })).toBeCloseTo(0.3 * firm, 12);
+    // Grew hungrier on the way: the need now holds.
+    villager.needs.food = 20;
+    expect(holdOf(world, villager, { activity: 'eat', utility: 0.3 })).toBeCloseTo(0.64 * firm, 12);
+    // Sleep — the wish now and a little; rest — nothing; an order — everything.
+    expect(holdOf(world, villager, { activity: 'sleep', utility: 1 })).toBeCloseTo(
+      sleepWish(world, villager) + sleepHold,
+      12,
+    );
+    expect(holdOf(world, villager, { activity: 'rest', utility: 0.15 })).toBe(0);
+    expect(holdOf(world, villager, { activity: 'order', utility: 0 })).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it('передумывает, только если другое лучше порога; начатое не ищет заново', () => {
+    const world = worldOn(ROWS, [
+      { x: 1, y: 0 },
+      { x: 0, y: 2 },
+    ]);
+    world.tick = 5;
+    const villager = world.villagers.list[0]!;
+    villager.needs.food = 60; // eating is worth ≤ 0.16 × 1.1: below the hold of work
+    const considered: Considered[] = [];
+    expect(reconsider(world, villager, 'haul', 0.375, considered)).toBeNull();
+    expect(considered.find((o) => o.kind === 'haul')).toMatchObject({
+      current: true,
+      searched: false,
+      utility: 0.375,
+    });
+    villager.needs.food = 10; // 0.81 × availability: well over it
+    expect(reconsider(world, villager, 'haul', 0.375)).toMatchObject({ kind: 'eat' });
+    // Eating already: the bush is not searched again, and nothing else beats the meal.
+    const eating: Considered[] = [];
+    expect(reconsider(world, villager, 'eat', 0.9, eating)).toBeNull();
+    expect(eating.find((o) => o.kind === 'eat')).toMatchObject({ current: true, searched: false });
+  });
+
+  it('журнал решений помнит последние ai.logSize', () => {
+    const world = worldOn(ROWS);
+    const villager = world.villagers.list[0]!;
+    const decision = (tick: number): Decision => ({
+      tick,
+      why: 'done',
+      from: 'haul',
+      bar: null,
+      plan: 'rest',
+      utility: 0.15,
+      ahead: null,
+      options: [],
+    });
+    for (let tick = 1; tick <= logSize + 5; tick++) remember(villager, decision(tick));
+    expect(villager.log).toHaveLength(logSize);
+    expect(villager.log[0]!.tick).toBe(6);
+    expect(villager.log.at(-1)!.tick).toBe(logSize + 5);
   });
 });
