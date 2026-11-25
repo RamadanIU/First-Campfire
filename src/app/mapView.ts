@@ -7,23 +7,27 @@ import { DATA } from '../data/index.ts';
 import { drawPicture, pixelScale, screenToWorld, ZOOMS } from '../render/camera.ts';
 import {
   drawChosen,
+  drawMemory,
   drawNeeds,
   drawPath,
   drawRefused,
+  type KnownMark,
   NEED_BARS_HEIGHT,
 } from '../render/debugOverlay.ts';
 import { burningFire, drawFlames, drawSmoke, drawSparks, fireLight } from '../render/fire.ts';
 import { drawFireflies } from '../render/fireflies.ts';
 import { daylightAt, hazeAt, shadeRect } from '../render/lighting.ts';
-import { createMapRenderer, type SeasonalArt } from '../render/mapRenderer.ts';
+import { createMapRenderer, type PixelRect, type SeasonalArt } from '../render/mapRenderer.ts';
 import { drawPlaceMark, drawSelection, PLACE_MARK_MS } from '../render/selection.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
 import { drawWeather, weatherTint } from '../render/weather.ts';
 import { calendarAt, TIME } from '../sim/calendar.ts';
+import { believesFood, cellsOf } from '../sim/memory.ts';
 import { ACTIVITY, holdOf } from '../sim/minds.ts';
+import { findObject } from '../sim/objects.ts';
 import type { Tile } from '../sim/path.ts';
-import { findVillager, orderWalk } from '../sim/villagers.ts';
+import { findVillager, orderWalk, type Villager } from '../sim/villagers.ts';
 import { stepWorld, type World } from '../sim/world.ts';
 import { DEBUG, deathNote, MIND, needsLine, villagerName } from '../ui/texts.ts';
 import { bindCameraInput, type CameraControl, createCameraControl } from './cameraControl.ts';
@@ -71,6 +75,8 @@ export interface MindNotes {
  *   order is marked with a red cross for a moment; the panel of the world says why.
  *   `debug=needs` (step 1.4) — besides, bars of satiety, thirst and health over every head, and
  *   for the panel a line per villager: what it is doing, its scales; the dead — of what they died.
+ *   `debug=memory` (step 1.11b) — the same as `1`, and what the chosen villager knows: the land it
+ *   has not explored veiled, the food it saw marked (src/render/debugOverlay.ts `drawMemory`).
  *   `debug=mind` (step 1.8) — the same as `1`, and for the panel the mind of the chosen villager
  *   (the first by default): its plan under way and its journal of decisions with the scores.
  */
@@ -159,6 +165,7 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   const debug = params.debug.length > 0;
   const needsMode = params.debug.includes('needs');
   const mindMode = params.debug.includes('mind');
+  const memoryMode = params.debug.includes('memory');
   /** The chosen villager; with debug the first one by default (the one a click sends). */
   let selected: number | null = params.select ?? (debug ? 1 : null);
   /** The villager a debug click sends: the chosen one, else the first. */
@@ -256,6 +263,10 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
         height: entry.height + 2,
       };
     });
+    if (memoryMode) {
+      const chosen = findVillager(world, chosenId());
+      if (chosen) drawMemory(ctx, view, unexploredOf(world, chosen), knownMarks(world, chosen));
+    }
     for (const pose of poses) {
       const villager = findVillager(world, pose.id);
       if (villager?.action.kind !== 'walk') continue;
@@ -451,4 +462,34 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     needsNotes: () => (needsMode ? needsNotes() : null),
     mindNotes: () => (mindMode ? mindNotes() : null),
   };
+}
+
+/** The cells of the land `villager` has not explored, as rectangles of tiles (step 1.11b). */
+function unexploredOf(world: World, villager: Villager): PixelRect[] {
+  const size = DATA.balance.ai.cellTiles;
+  const { across } = cellsOf(world.map);
+  const rects: PixelRect[] = [];
+  villager.seen.forEach((seen, at) => {
+    if (seen === 1) return;
+    const x = (at % across) * size;
+    const y = Math.floor(at / across) * size;
+    rects.push({
+      x,
+      y,
+      width: Math.min(size, world.map.width - x),
+      height: Math.min(size, world.map.height - y),
+    });
+  });
+  return rects;
+}
+
+/** The food objects `villager` saw, and whether it believes there is food on them (step 1.11b). */
+function knownMarks(world: World, villager: Villager): KnownMark[] {
+  const marks: KnownMark[] = [];
+  for (const known of villager.foods) {
+    const object = findObject(world.objects, known.object);
+    if (object)
+      marks.push({ x: object.x, y: object.y, full: believesFood(world, villager, object) });
+  }
+  return marks;
 }

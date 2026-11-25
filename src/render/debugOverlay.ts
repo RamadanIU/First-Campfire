@@ -13,6 +13,9 @@
  *   - A refused order — a red cross on the tile.
  *   - Needs (`debug=needs`): five bars over the head — satiety (berry red), thirst (water blue),
  *     sleep (bone white, step 1.5), health (leaf green); full bar — no need, empty — at zero.
+ *   - Memory (`debug=memory`, step 1.11b): what the chosen villager knows — land it has not
+ *     explored is veiled by a dark checker (every other pixel), every food object it saw has a
+ *     mark at its corner: leaf green — it believes there is food on it, grey — bare.
  *
  * Colours are the palette's (src/art/palette.ts).
  */
@@ -33,6 +36,8 @@ export const OVERLAY_COLORS = {
   warmth: color('fire.1'),
   health: color('leaf.4'),
   empty: color('ui.1'),
+  known: color('leaf.4'),
+  bare: color('ui.2'),
 } as const;
 
 /** The bars of needs: inner width and the height of one bar, px. */
@@ -214,4 +219,67 @@ export function drawNeeds(
     ctx.fillStyle = OVERLAY_COLORS.empty;
     ctx.fillRect(left + 1 + filled - view.x, y, width - filled, bar);
   });
+}
+
+/** A food object the villager knows of (step 1.11b): its tile, does it believe there is food on it. */
+export interface KnownMark {
+  readonly x: number;
+  readonly y: number;
+  readonly full: boolean;
+}
+
+/** The dark checker of the land not explored: one pattern per canvas. */
+const veils = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
+
+function veilOf(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  const cached = veils.get(ctx);
+  if (cached) return cached;
+  const tile = document.createElement('canvas');
+  tile.width = 2;
+  tile.height = 2;
+  const g = tile.getContext('2d');
+  if (!g) return null;
+  g.fillStyle = OVERLAY_COLORS.edge;
+  g.fillRect(0, 0, 1, 1);
+  g.fillRect(1, 1, 1, 1);
+  const pattern = ctx.createPattern(tile, 'repeat');
+  if (pattern) veils.set(ctx, pattern);
+  return pattern;
+}
+
+/**
+ * What a villager knows (`debug=memory`, step 1.11b): `unexplored` — rectangles of tiles it has not
+ * explored (veiled by a checker), `known` — the food objects it saw, marked at the top left corner
+ * of their tile with a 3×3 square in a dark frame: green — food on it, grey — bare.
+ */
+export function drawMemory(
+  ctx: CanvasRenderingContext2D,
+  view: PixelRect,
+  unexplored: readonly PixelRect[],
+  known: readonly KnownMark[],
+): void {
+  const veil = veilOf(ctx);
+  if (veil) {
+    ctx.save();
+    // The checker keeps to world pixels: shifted by the view, so it does not crawl with the camera.
+    ctx.translate(-view.x, -view.y);
+    ctx.fillStyle = veil;
+    for (const rect of unexplored) {
+      ctx.fillRect(
+        rect.x * TILE_SIZE,
+        rect.y * TILE_SIZE,
+        rect.width * TILE_SIZE,
+        rect.height * TILE_SIZE,
+      );
+    }
+    ctx.restore();
+  }
+  for (const mark of known) {
+    const left = mark.x * TILE_SIZE + 1;
+    const top = mark.y * TILE_SIZE + 1;
+    ctx.fillStyle = OVERLAY_COLORS.edge;
+    ctx.fillRect(left - view.x, top - view.y, 5, 5);
+    ctx.fillStyle = mark.full ? OVERLAY_COLORS.known : OVERLAY_COLORS.bare;
+    ctx.fillRect(left + 1 - view.x, top + 1 - view.y, 3, 3);
+  }
 }

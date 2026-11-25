@@ -61,7 +61,9 @@ export interface LaunchParams {
    * Debug overlays of the world (`debug=1`; several — `debug=1,needs`): `1` — paths of villagers
    * as lines, a click sends the chosen villager to a tile (step 1.3); `needs` — bars of satiety,
    * thirst and health over the heads and what each one is doing (step 1.4); `mind` — the plan
-   * and the journal of decisions of the chosen villager (step 1.8). Any word turns on the paths
+   * and the journal of decisions of the chosen villager (step 1.8); `memory` — what the chosen
+   * villager knows: the land it has not explored veiled, the food it saw marked (step 1.11b). Any
+   * word turns on the paths
    * and the click. Empty — none.
    */
   debug: readonly string[];
