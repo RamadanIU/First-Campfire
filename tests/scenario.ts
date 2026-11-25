@@ -12,6 +12,8 @@
  * are the game's own; only the map is given.
  */
 
+import { DATA } from '../src/data/index.ts';
+import { calendarAt } from '../src/sim/calendar.ts';
 import { canHold, countAll, isPileTile, stackOf } from '../src/sim/items.ts';
 import { createMap, setGround } from '../src/sim/map.ts';
 import type { GeneratedMap } from '../src/sim/mapgen.ts';
@@ -97,6 +99,21 @@ export function stepWarm(world: World): void {
 /** `ticks` ticks in a mild climate (`stepWarm`). */
 export function runWarm(world: World, ticks: number): void {
   for (let i = 0; i < ticks; i++) stepWarm(world);
+}
+
+/**
+ * Food without end (step 1.11): every bush, hazel and patch of roots carries `rations` in its seasons
+ * (none out of them — raspberries still have nothing in winter). Bushes bear a handful a year now;
+ * scenarios of the other needs call it every tick so that hunger does not get in their way.
+ */
+export function plenty(world: World, rations = 100): void {
+  const { season } = calendarAt(world.tick);
+  for (const object of world.objects.list) {
+    const harvest = DATA.objects.get(object.def).harvest;
+    if (harvest === null || !(harvest.seasons as readonly string[]).includes(season)) continue;
+    object.stock = rations;
+    object.state = DATA.objects.get(object.def).states[0]!;
+  }
 }
 
 /** An open meadow `width`×`height` of grass. */

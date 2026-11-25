@@ -40,6 +40,9 @@ describe('сезон на карте', () => {
   it('малина зимой нарисована пустой (ягоды «спят»), летом — как есть; лещина зимой с орехами', () => {
     const world = worldOn(['.B.H.']);
     const [bush, hazel] = world.objects.list;
+    // Hazel ripens in autumn (step 1.11): in the spring of a new world it is bare — give it its nuts.
+    expect(hazel!.state).toBe('empty');
+    Object.assign(hazel!, { state: 'nuts', stock: 1 });
     expect(seasonalState(bush!, 'summer')).toBe('ripe');
     expect(seasonalState(bush!, 'winter')).toBe('empty');
     expect(seasonalState(hazel!, 'winter')).toBe('nuts');

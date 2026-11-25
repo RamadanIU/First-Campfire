@@ -827,6 +827,7 @@ function begin(world: World, villager: Villager, source: Source): void {
   }
   villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
   const { biteTicks, sipTicks } = DATA.balance.eating;
+  if (source.kind === 'bush') foundFood(world, villager, source);
   villager.action =
     source.kind === 'bush'
       ? {
@@ -840,6 +841,29 @@ function begin(world: World, villager: Villager, source: Source): void {
           water: { x: source.x, y: source.y },
           next: world.tick + sipTicks,
         };
+}
+
+/**
+ * A villager came to food and begins to eat (step 1.11): an event with how far from the camp the
+ * source is (straight, tiles, to a tenth) — the runs' «how far one goes for food» by seasons. The
+ * cause is its decision to eat (its plan — the activity `eat`).
+ */
+function foundFood(world: World, villager: Villager, source: Extract<Source, { kind: 'bush' }>) {
+  const dx = source.x - world.camp.x;
+  const dy = source.y - world.camp.y;
+  emit(
+    world,
+    {
+      type: 'food_found',
+      villager: villager.id,
+      object: source.object,
+      food: foodOf(world, source.object),
+      x: source.x,
+      y: source.y,
+      distance: Math.round(Math.sqrt(dx * dx + dy * dy) * 10) / 10,
+    },
+    { kind: 'decision', villager: villager.id, activity: villager.plan.activity },
+  );
 }
 
 /** What the object `id` gives to eat (its harvest's resource; berries if it has none). */

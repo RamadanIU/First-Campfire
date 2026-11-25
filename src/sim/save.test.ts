@@ -349,10 +349,13 @@ const CURRENT_SHAPE: string[] = [
   'events.list[].cause: object',
   'events.list[].count: number',
   'events.list[].day: number',
+  'events.list[].distance: number',
   'events.list[].first: boolean',
+  'events.list[].food: string',
   'events.list[].from: string',
   'events.list[].id: number',
   'events.list[].lit: number',
+  'events.list[].object: number',
   'events.list[].phase: string',
   'events.list[].season: string',
   'events.list[].seed: number',
@@ -363,6 +366,7 @@ const CURRENT_SHAPE: string[] = [
   'events.list[].type = "fire_out"',
   'events.list[].type = "fireflies_gone"',
   'events.list[].type = "fireflies_rose"',
+  'events.list[].type = "food_found"',
   'events.list[].type = "phase_started"',
   'events.list[].type = "season_started"',
   'events.list[].type = "villager_arrived"',
@@ -519,6 +523,7 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].load: object',
   'villagers.list[].log: array',
   'villagers.list[].log[].ahead: null',
+  'villagers.list[].log[].ahead: string',
   'villagers.list[].log[].bar: null',
   'villagers.list[].log[].bar: number',
   'villagers.list[].log[].from: string',
@@ -598,6 +603,7 @@ const SHAPE_HISTORY: Record<number, string> = {
   7: '5d50768a02d91b51', // step 1.8: plans of villagers and their journals of decisions
   8: 'a898a8e18ce492d8', // step 1.9: the campfire, burnt wood, tending the fire, sitting at it
   9: '4421a8b21c8842c5', // step 1.10: weather and its stream, warmth, a wet fire, rotting branches, food of a meal
+  10: '567a017677412fd7', // step 1.11: the yearly crop, food found (how far from the camp)
 };
 
 describe('форма мира и версия формата сохранения', () => {

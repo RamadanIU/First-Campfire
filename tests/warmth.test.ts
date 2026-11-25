@@ -10,6 +10,7 @@ import { DATA } from '../src/data/index.ts';
 import { calendarAt, tickAt } from '../src/sim/calendar.ts';
 import { findEvent, type WorldEvent } from '../src/sim/events.ts';
 import { isBurning, WOOD } from '../src/sim/fire.ts';
+import { setCrops } from '../src/sim/harvest.ts';
 import { lay, pileTiles } from '../src/sim/items.ts';
 import { choose, coldReach } from '../src/sim/minds.ts';
 import { FULL } from '../src/sim/needs.ts';
@@ -205,16 +206,19 @@ describe('разум и холод', () => {
 });
 
 describe('еда по сезонам: зимой ягод нет — орехи и коренья', () => {
-  it('зимой голодный не идёт к малине, хотя на ней ягоды; к весне ягоды снова доступны', () => {
+  it('зимой голодный не идёт к малине, даже если на ней ягоды; весной ягоды наливаются снова', () => {
     const world = worldOn(NO_WOOD, [
       { x: 10, y: 1 },
       { x: 10, y: 4 },
     ]);
     world.tick = tickAt(10, 60);
+    // Step 1.11: winter takes the berries (./harvest.ts) — here they are left on to check the season.
+    for (const object of world.objects.list) Object.assign(object, { stock: 1, state: 'ripe' });
     const [villager] = world.villagers.list;
     villager!.needs.food = 10;
     expect(choose(world, villager!).kind).not.toBe('eat');
     world.tick = tickAt(13, 60);
+    setCrops(world);
     expect(choose(world, villager!).kind).toBe('eat');
   });
 
@@ -225,6 +229,7 @@ describe('еда по сезонам: зимой ягод нет — орехи 
       { x: 6, y: 3 },
     ]);
     world.tick = tickAt(10, 60);
+    setCrops(world); // winter: the autumn's nuts and roots (step 1.11)
     for (const villager of world.villagers.list) villager.needs.food = 20;
     let nuts = 0;
     let roots = 0;

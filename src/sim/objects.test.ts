@@ -22,7 +22,8 @@ describe('объекты карты', () => {
     const { map, objects } = emptyMap();
     const bush = placeObject(map, objects, 'berry_bush', 3, 4);
     const oak = placeObject(map, objects, 'oak', 10, 2);
-    expect(bush).toEqual({ id: 1, def: 'berry_bush', x: 3, y: 4, state: 'ripe', stock: 4 });
+    // With its year's crop (step 1.11: a world sets its crops by the calendar — ./harvest.ts).
+    expect(bush).toEqual({ id: 1, def: 'berry_bush', x: 3, y: 4, state: 'ripe', stock: 0.25 });
     expect(oak.id).toBe(2);
     expect(oak.stock).toBe(0);
     expect(objects.nextId).toBe(3);
@@ -36,6 +37,7 @@ describe('объекты карты', () => {
   it('еду с куста берут, пока она есть; обобранный куст пустеет', () => {
     const { map, objects } = emptyMap();
     const bush = placeObject(map, objects, 'berry_bush', 3, 4);
+    bush.stock = 4;
     expect(takeFood(bush, 1.5)).toBe(1.5);
     expect(bush).toMatchObject({ stock: 2.5, state: 'ripe' });
     expect(takeFood(bush, 2)).toBe(2);

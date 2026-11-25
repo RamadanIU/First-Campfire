@@ -125,7 +125,10 @@ export interface ObjectRow {
   readonly states: string;
   /** «лес · 56» — where the map generator puts it and how often. */
   readonly place: string;
-  /** «Ягоды · 4 рациона → empty» — food gathered from it and its state once picked clean. */
+  /**
+   * «Ягоды · 0,25 рациона за год → empty · весна, лето, осень · зреет весной» — food gathered from it,
+   * its state once picked clean, the seasons of harvest and of ripening (step 1.11).
+   */
   readonly harvest: string;
   /** «Ветки · до 3 · раз в 10 сут» — what falls from it (step 1.7). */
   readonly litter: string;
@@ -146,7 +149,7 @@ export function objectRows(data: GameData): ObjectRow[] {
     harvest:
       def.harvest === null
         ? DATA_SCENE.none
-        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, DATA_SCENE.unitRations)} → ${def.harvest.empty} · ${def.harvest.seasons.map((season) => SEASON_NAME[season]).join(', ')}`,
+        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, DATA_SCENE.unitRations)} ${DATA_SCENE.perYear} → ${def.harvest.empty} · ${def.harvest.seasons.map((season) => SEASON_NAME[season]).join(', ')} · ${DATA_SCENE.ripens(def.harvest.ripens)}`,
     litter:
       def.litter === null
         ? DATA_SCENE.none

@@ -91,6 +91,14 @@ export const SEASON_NAME: Record<Season, string> = {
   winter: 'зима',
 };
 
+/** «весной», «летом»… — in a season. */
+export const SEASON_WHEN: Record<Season, string> = {
+  spring: 'весной',
+  summer: 'летом',
+  autumn: 'осенью',
+  winter: 'зимой',
+};
+
 export const PHASE_NAME: Record<DayPhase, string> = {
   dawn: 'рассвет',
   day: 'день',
@@ -397,8 +405,17 @@ export function describeEvent(event: WorldEvent): string {
       return `костёр погас (сжёг ${formatCount(event.burned)} ${plural(event.burned, ['охапку', 'охапки', 'охапок'])})`;
     case 'weather_changed':
       return `погода: ${WEATHER_NAME[event.from]} → ${WEATHER_NAME[event.to]}`;
+    case 'food_found':
+      return `житель ${event.villager} ест (${FOOD_NAME[event.food] ?? event.food}) в ${String(event.distance).replace('.', ',')} тайла от стоянки`;
   }
 }
+
+/** Food gathered on objects in words (step 1.11: the journal) — by resource id. */
+const FOOD_NAME: Readonly<Record<string, string>> = {
+  berries: 'ягоды',
+  nuts: 'орехи',
+  roots: 'коренья',
+};
 
 /** Kinds of weather in words (step 1.10): the journal, the panel. */
 export const WEATHER_NAME: Record<WeatherKind, string> = {
@@ -733,7 +750,7 @@ export const DATA_SCENE = {
   groundHeads: ['', 'Название · id', 'Проходима', 'Скорость', 'Тиков на тайл', 'Вид'],
   objects: (file: string) => `Объекты карты — ${file}`,
   objectsMeta:
-    'Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное); еда — что с него собирают и съедают на месте (шаг 1.4); роняет — что падает с него на соседний свободный тайл и как часто (шаг 1.7).',
+    'Деревья, кусты, камни, цветы — то, что стоит на тайле (GDD §2.2). Место и вес — где их ставит генератор карты и как часто среди соседей по месту; состояние — как объект выглядит (первое — начальное); еда — что с него собирают и съедают на месте (шаг 1.4): урожай за год, в какие сезоны собирают, когда зреет (шаг 1.11); роняет — что падает с него на соседний свободный тайл и как часто (шаг 1.7).',
   objectHeads: [
     '',
     'Название · id',
@@ -753,6 +770,10 @@ export const DATA_SCENE = {
   /** Units of the balance as the schema names them (src/data/tables.ts). */
   unitTicks: 'тиков',
   unitRations: 'рационов',
+  /** After the year's crop of an object (step 1.11): «за год». */
+  perYear: 'за год',
+  /** When the crop of an object ripens (step 1.11): «зреет весной». */
+  ripens: (season: Season) => `зреет ${SEASON_WHEN[season]}`,
   /** Units of the balance (the schema, src/data/tables.ts) and their forms after a number. */
   units: {
     тиков: FORMS.tick,

@@ -9,6 +9,7 @@
  */
 import { createJournal, type EventJournal, emit } from './events.ts';
 import { createFire, type Fire, fireSystem } from './fire.ts';
+import { harvestSystem, setCrops } from './harvest.ts';
 import {
   type Camp,
   createCamp,
@@ -68,13 +69,15 @@ export interface System {
 /**
  * Systems in the order they run every tick. The order is part of the rules: do not reorder.
  * The weather (./weather.ts — step 1.10) changes first, after the calendar: life feels the
- * temperature of this tick. Life (needs, health, death — ./life.ts) goes before the villagers act;
+ * temperature of this tick. The crops (./harvest.ts — step 1.11) ripen and fall at the start of a
+ * day, before anyone looks for food. Life (needs, health, death — ./life.ts) goes before the villagers act;
  * the fire (./fire.ts — step 1.9) burns after they have fed it; litter (branches falling from trees,
  * ./items.ts — step 1.7) comes last.
  */
 export const SYSTEMS: readonly System[] = [
   calendarEventsSystem,
   weatherSystem,
+  harvestSystem,
   firefliesSystem,
   lifeSystem,
   villagersSystem,
@@ -91,8 +94,8 @@ export interface WorldOptions {
 }
 
 /**
- * A new world: the map from the seed, the camp (./items.ts), the first two people at it, the
- * branches that fell before the world began.
+ * A new world: the map from the seed with the crops of its first day (./harvest.ts), the camp
+ * (./items.ts), the first two people at it, the branches that fell before the world began.
  */
 export function createWorld(seed: number, options: WorldOptions = {}): World {
   const rng = {} as Record<RngStream, Rng>;
@@ -112,6 +115,7 @@ export function createWorld(seed: number, options: WorldOptions = {}): World {
     fire: createFire(),
     weather: createWeather(rng.weather),
   };
+  setCrops(world);
   const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
   settleFirstPair(world, { kind: 'event', event: created.id });
   scatterLitter(world);

@@ -77,6 +77,20 @@ export type EventBody =
    */
   | { type: 'fire_out'; x: number; y: number; lit: number; burned: number }
   /**
+   * A villager came to food and begins to eat it (step 1.11): `object` — the bush (hazel, roots),
+   * `food` — its resource, `distance` — from the middle of the camp, straight, tiles to a tenth.
+   * The cause is its decision to eat.
+   */
+  | {
+      type: 'food_found';
+      villager: number;
+      object: number;
+      food: string;
+      x: number;
+      y: number;
+      distance: number;
+    }
+  /**
    * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
    * out first. Could food, water and warmth be reached from where it died (`foodReachable`,
    * `waterReachable`, `warmReachable`)? Death of a need that could be met is a mistake of the mind

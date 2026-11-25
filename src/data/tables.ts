@@ -831,17 +831,21 @@ const objectsSchema = table(
             min: 0.25,
             max: 1000,
             unit: 'рационов',
-            doc: 'Сколько её на объекте при сотворении мира',
+            doc: 'Урожай за год (шаг 1.11): столько наливается на объекте в сезон созревания, долями по дням',
           }),
           empty: id({ doc: 'Состояние, когда всё собрано (одно из states)' }),
           seasons: list(oneOf(SEASON_IDS, { names: SEASON_NAMES, doc: 'Сезон' }), {
             min: 1,
             max: 4,
-            doc: 'В какие сезоны еду можно собрать (шаг 1.10: зимой ягод нет — малина «спит» до весны)',
+            doc: 'В какие сезоны еду можно собрать (шаг 1.10); в начале другого сезона несобранное осыпается (шаг 1.11)',
+          }),
+          ripens: oneOf(SEASON_IDS, {
+            names: SEASON_NAMES,
+            doc: 'Сезон созревания (шаг 1.11): в начале каждого его дня наливается доля годового урожая; в его первый день прошлогодний остаток осыпается',
           }),
         },
         {
-          doc: 'Еда, которую собирают и съедают на месте (шаг 1.4): малина — ягоды; пока не возобновляется (шаг 1.11)',
+          doc: 'Еда, которую собирают и съедают на месте (шаг 1.4): малина — ягоды; плодоносит раз в год (шаг 1.11)',
         },
       ),
       'с объекта нечего собрать',
@@ -880,6 +884,9 @@ const objectsSchema = table(
       }
       if (harvest !== null && new Set(harvest.seasons).size !== harvest.seasons.length) {
         return 'сезоны harvest.seasons повторяются';
+      }
+      if (harvest !== null && !(harvest.seasons as readonly string[]).includes(harvest.ripens)) {
+        return `сезон созревания «${harvest.ripens}» (harvest.ripens) не из сезонов сбора: ${harvest.seasons.join(', ')}`;
       }
       if (harvest !== null && harvest.empty === states[0]) {
         return `harvest.empty не может быть начальным состоянием «${states[0]}» — объект появляется с едой`;

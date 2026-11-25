@@ -200,10 +200,12 @@ describe('испорченная запись даёт понятную ошиб
     const harvest = (t: Tables) => bush(t).harvest as Json;
     expect(DATA.objects.get('berry_bush').harvest).toEqual({
       food: 'berries',
-      rations: 4,
+      // Step 1.11: a handful a year (ADR-031), ripening in spring.
+      rations: 0.25,
       empty: 'empty',
       // Step 1.10: no berries in winter (GDD §3.2).
       seasons: ['spring', 'summer', 'autumn'],
+      ripens: 'spring',
     });
     expect(DATA.objects.get('oak').harvest).toBeNull();
     expect(
@@ -236,6 +238,13 @@ describe('испорченная запись даёт понятную ошиб
       }),
     ).toEqual([
       'data/objects.json · запись «berry_bush»: harvest.empty не может быть начальным состоянием «ripe» — объект появляется с едой',
+    ]);
+    expect(
+      problemsWith((t) => {
+        harvest(t).ripens = 'winter';
+      }),
+    ).toEqual([
+      'data/objects.json · запись «berry_bush»: сезон созревания «winter» (harvest.ripens) не из сезонов сбора: spring, summer, autumn',
     ]);
     expect(
       problemsWith((t) => {
