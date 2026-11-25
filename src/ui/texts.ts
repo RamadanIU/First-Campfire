@@ -38,6 +38,8 @@ export const FORMS = {
   frame: ['кадр', 'кадра', 'кадров'],
   sprite: ['спрайт', 'спрайта', 'спрайтов'],
   villager: ['житель', 'жителя', 'жителей'],
+  armful: ['охапка', 'охапки', 'охапок'],
+  branch: ['ветка', 'ветки', 'веток'],
 } as const satisfies Record<string, Forms>;
 
 /**
@@ -125,6 +127,10 @@ const WALKS_TO = {
   order: 'идёт, куда послали',
   eat: 'идёт к малине',
   drink: 'идёт к воде',
+  wood: 'идёт за дровами',
+  fire: 'несёт дрова к костру',
+  sit: 'идёт к костру',
+  bed: 'идёт спать к костру',
 } as const;
 
 /**
@@ -169,6 +175,9 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
         return `несёт ${resourceCount(villager.load.resource, villager.load.count, name)} в кучу`;
       }
       if (action.purpose === 'fetch' || action.purpose === 'carry') return 'носит в кучу';
+      if (action.purpose === 'fire' && villager.load) {
+        return `несёт к костру ${resourceCount(villager.load.resource, villager.load.count, name)}`;
+      }
       return WALKS_TO[action.purpose];
     case 'pick_up':
       return `подбирает ${handled(action.resource, name).what}`;
@@ -180,6 +189,14 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
       return 'пьёт';
     case 'sleep':
       return action.fainted ? 'лежит без сил' : 'спит';
+    case 'take':
+      return 'берёт дрова из кучи';
+    case 'kindle':
+      return 'разводит огонь';
+    case 'stoke':
+      return 'подкладывает дрова в костёр';
+    case 'sit':
+      return 'сидит у костра';
   }
 }
 
@@ -206,6 +223,9 @@ export const ACTIVITY_NAME: Record<Activity, string> = {
   eat: 'еда',
   drink: 'питьё',
   haul: 'работа',
+  kindle: 'развести огонь',
+  stoke: 'подложить дров',
+  sit: 'у огня',
   order: 'приказ',
 };
 
@@ -222,6 +242,13 @@ const STEP_NAME: Record<PlanStep, string> = {
   gather: 'набрать ещё',
   carry: 'донести до кучи',
   put_down: 'сложить',
+  fetch_wood: 'дойти до дров',
+  take: 'взять',
+  to_fire: 'донести до костра',
+  kindle: 'развести огонь',
+  stoke: 'подложить',
+  sit: 'сесть у огня',
+  bed: 'лечь у огня',
 };
 
 /** A score of the mind: «0,52». */
@@ -240,7 +267,7 @@ function optionText(option: Considered): string {
   }
   if (option.current) return `${name} — в деле (порог ${score(option.utility)})`;
   if (option.nowhere) return `${name} — негде`;
-  if (option.kind === 'eat' || option.kind === 'drink' || option.kind === 'haul') {
+  if (option.kind !== 'rest' && option.kind !== 'sleep') {
     return option.searched
       ? `${name} ${score(option.utility)}`
       : `${name} ≤ ${score(option.utility)}`;
@@ -324,6 +351,12 @@ const NEED_GONE: Record<Need, string> = {
   sleep: 'кончились силы — не спал',
 };
 
+const RULE_CAUSE: Record<Extract<Cause, { kind: 'rule' }>['rule'], string> = {
+  genesis: 'начало всего',
+  calendar: 'ход времени',
+  fuel: 'прогорели дрова',
+};
+
 /** An event of the journal in words, as the debug journal shows it. */
 export function describeEvent(event: WorldEvent): string {
   switch (event.type) {
@@ -347,6 +380,10 @@ export function describeEvent(event: WorldEvent): string {
       return `${event.sex === 'male' ? 'упал' : 'упала'} без сил житель ${event.villager}`;
     case 'villager_died':
       return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager}: ${DIED_OF[event.reason]}`;
+    case 'fire_lit':
+      return `${event.sex === 'male' ? 'развёл' : 'развела'} костёр житель ${event.villager}${event.first ? ' (первый костёр стоянки)' : ''}`;
+    case 'fire_out':
+      return `костёр погас (сжёг ${formatCount(event.burned)} ${plural(event.burned, ['охапку', 'охапки', 'охапок'])})`;
   }
 }
 
@@ -355,8 +392,11 @@ export function describeEvent(event: WorldEvent): string {
  * (`describeEvent`), when the cause is an event.
  */
 export function describeCause(cause: Cause, source: string | null): string {
-  if (cause.kind === 'rule') return cause.rule === 'genesis' ? 'начало всего' : 'ход времени';
+  if (cause.kind === 'rule') return RULE_CAUSE[cause.rule];
   if (cause.kind === 'need') return `у жителя ${cause.villager} ${NEED_GONE[cause.need]}`;
+  if (cause.kind === 'decision') {
+    return `решение жителя ${cause.villager}: ${ACTIVITY_NAME[cause.activity]}`;
+  }
   return source === null ? `#${cause.event}` : `#${cause.event} ${source}`;
 }
 
@@ -376,6 +416,12 @@ export function feedText(event: WorldEvent, sex: Sex | undefined): string | null
       return `${capitalize(who)} ${female ? 'упала' : 'упал'} без сил — не спал${female ? 'а' : ''}`;
     case 'villager_died':
       return `${female ? 'Умерла' : 'Умер'} ${who} — ${DIED_OF[event.reason]}`;
+    case 'fire_lit':
+      return event.first
+        ? `${capitalize(who)} ${female ? 'развела' : 'развёл'} первый костёр`
+        : `${capitalize(who)} ${female ? 'развела' : 'развёл'} костёр`;
+    case 'fire_out':
+      return 'Костёр погас — прогорели дрова';
     default:
       return null;
   }
@@ -676,5 +722,7 @@ export const DATA_SCENE = {
     тайлов: FORMS.tile,
     рационов: FORMS.ration,
     пунктов: FORMS.point,
+    охапок: FORMS.armful,
+    веток: FORMS.branch,
   } as Readonly<Record<string, Forms>>,
 } as const;

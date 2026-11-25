@@ -85,6 +85,16 @@ function fastestGround(): number {
 }
 
 /**
+ * The least a way from `from` to `to` can cost, tiles of grass (straight and diagonal steps on the
+ * fastest ground, nothing in the way): no path is cheaper — a quick «too far?» before a search.
+ */
+export function leastCost(from: Tile, to: Tile): number {
+  const dx = Math.abs(from.x - to.x);
+  const dy = Math.abs(from.y - to.y);
+  return (Math.abs(dx - dy) + DIAGONAL * Math.min(dx, dy)) / fastestGround();
+}
+
+/**
  * Speed of walking onto tile (x, y) relative to grass: 0 — one cannot (water, a tree, outside
  * the map), otherwise the ground's speed (data/terrain.json).
  */

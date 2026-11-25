@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { DATA } from '../src/data/index.ts';
 import { hashState } from '../src/sim/hash.ts';
 import { findItem, inPile } from '../src/sim/items.ts';
-import { ACTIVITY, type Activity, type Decision } from '../src/sim/minds.ts';
+import { ACTIVITY, type Activity, type Decision, woodNeed } from '../src/sim/minds.ts';
 import { loadWorld, saveWorld } from '../src/sim/save.ts';
 import type { Villager, VillagerAction } from '../src/sim/villagers.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../src/sim/world.ts';
@@ -90,7 +90,8 @@ describe('критерий: с ношей и сытостью 60 донесёт,
     // The journal says why: hunger outbid the work by more than the hold of the plan.
     const decision = villager.log.at(-1)!;
     expect(decision).toMatchObject({ why: 'chose', from: 'haul', plan: 'eat' });
-    expect(decision.bar).toBeCloseTo(haulUtility * (1 + keepMargin), 1);
+    // Work is worth more while the pile is short of wood (step 1.9): its hold grows with it.
+    expect(decision.bar).toBeCloseTo(haulUtility * woodNeed(world) * (1 + keepMargin), 1);
     expect(decision.utility).toBeGreaterThan(decision.bar!);
     expect(decision.options.find((o) => o.current)).toMatchObject({ kind: 'haul' });
     expect(runUntil(world, () => villager.action.kind === 'eat', DAY)).toBe(true);
@@ -192,10 +193,13 @@ describe('критерий: нет «дёрганья»', () => {
 /** The steps a plan of each activity may be at (`action`), by kind and walk purpose. */
 const STEPS_OF: Record<Activity, readonly string[]> = {
   rest: ['idle', 'walk:wander'],
-  sleep: ['sleep'],
+  sleep: ['walk:bed', 'sleep'],
   eat: ['walk:eat', 'eat'],
   drink: ['walk:drink', 'drink'],
   haul: ['walk:fetch', 'pick_up', 'walk:carry', 'put_down'],
+  kindle: ['walk:wood', 'take', 'walk:fire', 'kindle', 'stoke'],
+  stoke: ['walk:wood', 'take', 'walk:fire', 'stoke', 'kindle'],
+  sit: ['walk:sit', 'sit'],
   order: ['walk:order'],
 };
 

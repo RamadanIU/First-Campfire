@@ -18,6 +18,7 @@ import {
   isPileTile,
   itemAt,
   lay,
+  pileHasRoom,
   pileTiles,
   stackOf,
 } from '../src/sim/items.ts';
@@ -40,7 +41,8 @@ describe('критерий: ветки складываются в кучу у �
       stepWorld(world);
       expect(brokenRules(world)).toEqual([]);
     }
-    expect(inPile(world, 'branches')).toBeGreaterThanOrEqual(10);
+    // Gathered: what lies in the pile and what went from it into the fire (step 1.9).
+    expect(inPile(world, 'branches') + world.items.burned).toBeGreaterThanOrEqual(10);
     // The pile lies where it should: by the camp, on its tiles.
     for (const item of world.items.list.filter((i) => i.place === 'pile')) {
       expect(Math.abs(item.x - world.camp.pile.x)).toBeLessThanOrEqual(1);
@@ -53,9 +55,10 @@ describe('критерий: ветки складываются в кучу у �
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld(seed);
       runTicks(world, 5 * DAY);
-      piles.push(inPile(world, 'branches'));
+      // Gathered: in the pile and burnt from it (step 1.9: the fire takes its wood there).
+      piles.push(inPile(world, 'branches') + world.items.burned);
     }
-    expect(Math.min(...piles), `в кучах: ${piles.join(', ')}`).toBeGreaterThanOrEqual(15);
+    expect(Math.min(...piles), `собрано: ${piles.join(', ')}`).toBeGreaterThanOrEqual(15);
   }, 60_000);
 
   it('куча растёт от середины: первая стопка — на месте кучи, полные стопки — по 10', () => {
@@ -225,11 +228,24 @@ describe('куча полна — работы нет', () => {
     for (const tile of pileTiles(world)) {
       world.items.made += lay(world, 'branches', stackOf('branches'), tile.x, tile.y);
     }
-    const before = world.items.list.filter((item) => item.place === 'ground').map((i) => i.id);
-    runTicks(world, DAY);
-    for (const villager of world.villagers.list) expect(villager.load).toBeNull();
-    const after = world.items.list.filter((item) => item.place === 'ground').map((i) => i.id);
-    for (const id of before) expect(after).toContain(id);
-    expect(brokenRules(world)).toEqual([]);
+    // The fire (step 1.9) takes wood from the pile and makes room in it: then work may start again.
+    // While the pile is full, nobody sets off to carry anything lying loose to it.
+    let full = 0;
+    for (let tick = 0; tick < DAY; tick++) {
+      const room = pileHasRoom(world, 'branches');
+      if (!room) full++;
+      stepWorld(world);
+      for (const villager of world.villagers.list) {
+        const chose = villager.log.at(-1);
+        const hauls = chose?.tick === world.tick && chose.why === 'chose' && chose.plan === 'haul';
+        if (!room)
+          expect(
+            hauls,
+            `тик ${world.tick}: куча полна, а житель ${villager.id} взялся носить`,
+          ).toBe(false);
+      }
+      expect(brokenRules(world)).toEqual([]);
+    }
+    expect(full, 'куча была полна').toBeGreaterThan(0);
   });
 });

@@ -57,8 +57,18 @@ export const METRICS: readonly Metric[] = [
     world.items.list.reduce((n, item) => n + (item.place === 'ground' ? 1 : 0), 0),
   ),
   gauge('items_lost', 'Предметов потеряно или лишних (ошибка, на конец)', (world) =>
-    Math.abs(Object.values(countAll(world)).reduce((total, n) => total + n, 0) - world.items.made),
+    Math.abs(
+      Object.values(countAll(world)).reduce((total, n) => total + n, 0) +
+        world.items.burned -
+        world.items.made,
+    ),
   ),
+  // The campfire (step 1.9): lit from the pile, fed, goes out without wood.
+  min('fire_first_day', 'Первый костёр, день', 'fire_lit', (e) => (e.first ? dayOf(e.tick) : null)),
+  count('fires_lit', 'Костёр разведён, раз', 'fire_lit'),
+  count('fires_out', 'Костёр погас, раз', 'fire_out'),
+  gauge('fire_burning', 'Костёр горит (на конец): 1 — да', (world) => (world.fire.lit ? 1 : 0)),
+  gauge('wood_burned', 'Сожжено веток (на конец)', (world) => world.items.burned),
 ];
 
 /** Day of the world's life a tick falls on, from 1. */

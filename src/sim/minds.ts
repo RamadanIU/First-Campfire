@@ -35,7 +35,17 @@
  *
  * Work (step 1.7): carrying things lying loose to the pile at the camp — `ai.haulUtility` ×
  * availability of the nearest loose item whose resource has room in the pile. It beats rest, so
- * free time goes to work, and loses to a pressing need.
+ * free time goes to work, and loses to a pressing need. The need of wood (step 1.9) makes it worth
+ * more while the pile holds less than `fire.woodReserve` branches.
+ *
+ * The fire (step 1.9, ./fire.ts): `kindle` — light it when it does not burn and the pile holds
+ * branches enough (worth more than work); `stoke` — feed it, the more urgent the less wood is left
+ * in it, more so in the evening (it has to last the night); one villager at a time tends it. Both
+ * take wood from the pile, carry it to the fire and put it in; in the evening the fire is fed to
+ * last the night. `sit` — in the evening sit at the
+ * burning fire, facing it (leisure: a begun meal, drink or work is not broken off for it, and
+ * work that would last into the evening is worth less, `fire.eveningWork`); at night sleep wins, and one goes to sleep beside the fire (the step
+ * `bed` of the plan of sleep — if the hearth is near enough, else where one stands).
  *
  * Where: food is a bush (an object with `harvest` in data/objects.json) that still has some, and
  * the villager stands on a tile beside it — on one of its four sides, facing it; water is drunk
@@ -43,8 +53,18 @@
  * the goal another one is walking to.
  */
 import { DATA } from '../data/index.ts';
-import { calendarAt } from './calendar.ts';
-import { type Item, itemAt, pileHasRoom } from './items.ts';
+import { calendarAt, PHASE_START } from './calendar.ts';
+import {
+  fireRoom,
+  fuelTillMorning,
+  isBurning,
+  isEvening,
+  isEveningOrNight,
+  knowsFire,
+  tendedByOther,
+  WOOD,
+} from './fire.ts';
+import { type Item, inPile, isPileTile, itemAt, pileHasRoom, pileTiles } from './items.ts';
 import { inside, isWater } from './map.ts';
 import {
   FULL,
@@ -57,7 +77,7 @@ import {
   urgency,
 } from './needs.ts';
 import { defOf, objectAt } from './objects.ts';
-import { findNearest, type Tile } from './path.ts';
+import { DIAGONAL, findNearest, findPath, leastCost, type Tile, tileSpeed } from './path.ts';
 import { floatRange } from './rng.ts';
 import { isGoalOfAnother, isTaken, type Source, type Villager } from './villagers.ts';
 import type { World } from './world.ts';
@@ -195,7 +215,8 @@ export function findSource(
 
 /**
  * Is the source still there for a villager standing on (x, y): beside it, with food left; on the
- * item's tile, the item still lying loose there; on the tile of the pile.
+ * item's tile, the item still lying loose there; on the tile of the pile; on the tile of the pile's
+ * stack of wood, the stack still there; on its spot by the fire; beside the fire.
  */
 export function canUse(world: World, source: Source, x: number, y: number): boolean {
   if (source.kind === 'item') {
@@ -203,7 +224,13 @@ export function canUse(world: World, source: Source, x: number, y: number): bool
     return source.x === x && source.y === y && item?.id === source.item && item.place === 'ground';
   }
   if (source.kind === 'pile') return source.x === x && source.y === y;
+  if (source.kind === 'store') {
+    const item = itemAt(world, x, y);
+    return source.x === x && source.y === y && item?.id === source.item && item.place === 'pile';
+  }
+  if (source.kind === 'spot') return source.x === x && source.y === y;
   if (Math.abs(source.x - x) + Math.abs(source.y - y) !== 1) return false;
+  if (source.kind === 'fire') return world.camp.x === source.x && world.camp.y === source.y;
   if (source.kind === 'water') return isWater(world.map, source.x, source.y);
   const object = objectAt(world.map, world.objects, source.x, source.y);
   return object !== undefined && object.id === source.object && object.stock > 0;
@@ -289,6 +316,124 @@ export function searchLoose(
   };
 }
 
+/**
+ * A stack of wood in the pile (step 1.9) that `villager` can take some from — the last one in the
+ * order the pile fills (./items.ts `pileTiles`): a begun stack is used up first and the pile shrinks
+ * from its edge, its middle stays full. Nobody else stands on it or walks to it. Null — none, or
+ * not within `maxCost`.
+ */
+export function searchWood(world: World, villager: Villager, maxCost?: number): Found | null {
+  const tiles = pileTiles(world);
+  let target: Item | undefined;
+  for (let i = tiles.length - 1; i >= 0 && !target; i--) {
+    const { x, y } = tiles[i]!;
+    const item = itemAt(world, x, y);
+    if (item?.place !== 'pile' || item.resource !== WOOD) continue;
+    if (isTaken(world, x, y, villager) || isGoalOfAnother(world, { x, y }, villager)) continue;
+    target = item;
+  }
+  if (!target) return null;
+  const item = target;
+  const from = { x: villager.x, y: villager.y };
+  if (maxCost !== undefined && leastCost(from, item) > maxCost) return null;
+  const result = findPath(world.map, world.objects, from, item, {
+    avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+  });
+  if (!result.ok || (maxCost !== undefined && result.cost > maxCost)) return null;
+  return {
+    source: { kind: 'store', item: item.id, resource: item.resource, x: item.x, y: item.y },
+    goal: { x: item.x, y: item.y },
+    path: result.path,
+    cost: result.cost,
+  };
+}
+
+/**
+ * The nearest free tile beside the fire for `villager` to stand on and put wood in (one of its four
+ * sides). Null — none within `maxCost`.
+ */
+export function searchFireSide(world: World, villager: Villager, maxCost?: number): Found | null {
+  const { camp } = world;
+  const result = findNearest(
+    world.map,
+    world.objects,
+    { x: villager.x, y: villager.y },
+    (x, y) =>
+      Math.abs(x - camp.x) + Math.abs(y - camp.y) === 1 &&
+      objectAt(world.map, world.objects, x, y) === undefined &&
+      !isTaken(world, x, y, villager) &&
+      !isGoalOfAnother(world, { x, y }, villager),
+    {
+      avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+      ...(maxCost === undefined ? {} : { maxCost }),
+    },
+  );
+  if (!result.ok) return null;
+  return {
+    source: { kind: 'fire', x: camp.x, y: camp.y },
+    goal: result.tile,
+    path: result.path,
+    cost: result.cost,
+  };
+}
+
+/**
+ * Is (x, y) a place to sit or sleep at the fire within `ring` tiles of it (`ring` 0 — only straight
+ * to its left and right, the best places): to its side (not straight above or below it — one sits
+ * facing the fire sideways), bare, not the pile, nobody there or walking there.
+ */
+function isSeat(world: World, villager: Villager, x: number, y: number, ring: number): boolean {
+  const { camp, map, objects } = world;
+  const dx = x - camp.x;
+  const dy = y - camp.y;
+  const near =
+    ring === 0 ? Math.abs(dx) === 1 && dy === 0 : Math.max(Math.abs(dx), Math.abs(dy)) <= ring;
+  return (
+    dx !== 0 &&
+    near &&
+    tileSpeed(map, objects, x, y) > 0 &&
+    objectAt(map, objects, x, y) === undefined &&
+    !isPileTile(world, x, y) &&
+    !isTaken(world, x, y, villager) &&
+    !isGoalOfAnother(world, { x, y }, villager)
+  );
+}
+
+/**
+ * A place by the fire for `villager` to sit or sleep (step 1.9): the nearest by path of the two
+ * straight to its left and right (the two face each other across the fire), else of the tiles next
+ * to it, else within `fire.nearTiles`. Null — none within `maxCost`.
+ */
+export function searchSeat(world: World, villager: Villager, maxCost?: number): Found | null {
+  const from = { x: villager.x, y: villager.y };
+  const { nearTiles } = DATA.balance.fire;
+  // No seat is nearer than the fire less its ring: too far — no search.
+  if (maxCost !== undefined && leastCost(from, world.camp) - nearTiles * DIAGONAL > maxCost) {
+    return null;
+  }
+  for (const ring of [0, 1, nearTiles]) {
+    const result = findNearest(
+      world.map,
+      world.objects,
+      from,
+      (x, y) => isSeat(world, villager, x, y, ring),
+      {
+        avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+        ...(maxCost === undefined ? {} : { maxCost }),
+      },
+    );
+    if (result.ok) {
+      return {
+        source: { kind: 'spot', x: result.tile.x, y: result.tile.y },
+        goal: result.tile,
+        path: result.path,
+        cost: result.cost,
+      };
+    }
+  }
+  return null;
+}
+
 /** Availability of a source `cost` tiles of grass away: 1 beside it, ½ at the half distance. */
 export function availability(cost: number): number {
   const half = DATA.balance.ai.halfAvailabilityTiles;
@@ -304,7 +449,19 @@ export function reachFor(ceiling: number, best: number): number {
 }
 
 /** What a villager can set itself to do: every plan is one of these (step 1.8). */
-export type Activity = 'rest' | 'sleep' | 'eat' | 'drink' | 'haul' | 'order';
+export type Activity =
+  | 'rest'
+  | 'sleep'
+  | 'eat'
+  | 'drink'
+  | 'haul'
+  | 'kindle'
+  | 'stoke'
+  | 'sit'
+  | 'order';
+
+/** Activities at the fire (step 1.9): they need no search of the map for a source of a need. */
+export type FireActivity = 'kindle' | 'stoke' | 'sit';
 
 /** Activities met at a source one walks to (step 1.4). */
 export type ActivityId = 'eat' | 'drink';
@@ -318,7 +475,10 @@ export type Option = Exclude<Activity, 'order'>;
  * (the bush, the water, the observer's tile); `eat`, `drink` — beside it till full; `fetch` — walk
  * to an item lying loose; `pick_up`; `gather` — more of it near and the hands not full: `fetch`
  * and `pick_up` again; `carry` — walk to the pile; `put_down` — into the pile (what does not fit
- * is carried on).
+ * is carried on). The fire (step 1.9): `fetch_wood` — walk to a stack of wood in the pile; `take` —
+ * take as much as the fire takes; `to_fire` — walk to its side; `kindle` — light it; `stoke` — put
+ * the wood in; `sit` — walk to a place by it and sit, facing it; `bed` — walk to a place by it to
+ * sleep (if it is near enough; else sleep where one stands).
  */
 export type PlanStep =
   | 'stand'
@@ -331,7 +491,14 @@ export type PlanStep =
   | 'pick_up'
   | 'gather'
   | 'carry'
-  | 'put_down';
+  | 'put_down'
+  | 'fetch_wood'
+  | 'take'
+  | 'to_fire'
+  | 'kindle'
+  | 'stoke'
+  | 'sit'
+  | 'bed';
 
 /**
  * How a begun plan holds on (hysteresis): `firm` — broken off only for an option better than its
@@ -380,7 +547,7 @@ export const ACTIVITY: Readonly<Record<Activity, ActivityDef>> = {
     need: 'sleep',
     utility: (world, villager) => sleepWish(world, villager),
     hold: 'fresh',
-    steps: ['sleep'],
+    steps: ['bed', 'sleep'],
   },
   eat: { id: 'eat', need: 'food', utility: pressingOf('food'), hold: 'firm', steps: ['go', 'eat'] },
   drink: {
@@ -393,12 +560,91 @@ export const ACTIVITY: Readonly<Record<Activity, ActivityDef>> = {
   haul: {
     id: 'haul',
     need: null,
-    utility: () => DATA.balance.ai.haulUtility,
+    utility: (world) => DATA.balance.ai.haulUtility * woodNeed(world),
     hold: 'firm',
     steps: ['fetch', 'pick_up', 'gather', 'carry', 'put_down'],
   },
+  kindle: {
+    id: 'kindle',
+    need: null,
+    utility: (world, villager) => kindleWorth(world, villager),
+    hold: 'firm',
+    steps: ['fetch_wood', 'take', 'to_fire', 'kindle'],
+  },
+  stoke: {
+    id: 'stoke',
+    need: null,
+    utility: (world, villager) => stokeWorth(world, villager),
+    hold: 'firm',
+    steps: ['fetch_wood', 'take', 'to_fire', 'stoke'],
+  },
+  sit: {
+    id: 'sit',
+    need: null,
+    utility: (world, villager) => sitWorth(world, villager),
+    hold: 'fresh',
+    steps: ['go', 'sit'],
+  },
   order: { id: 'order', need: null, utility: null, hold: 'fixed', steps: ['go'] },
 };
+
+/**
+ * The context of work (step 1.9): the need of wood — 1 while the pile holds `fire.woodReserve`
+ * branches or more, up to 1 + `fire.woodBoost` when it is empty (and the people know fire).
+ */
+export function woodNeed(world: World): number {
+  const { woodReserve, woodBoost } = DATA.balance.fire;
+  if (!knowsFire(world) || woodReserve <= 0) return 1;
+  const shortage = Math.max(0, 1 - inPile(world, WOOD) / woodReserve);
+  return 1 + woodBoost * shortage;
+}
+
+/**
+ * The evening context of work (step 1.9): `fire.eveningWork` for a trip that would end in the
+ * evening or at night (now, plus there and back by the way found) while the fire burns — one does
+ * not set off for branches late in the day, one sits at the fire; else 1.
+ */
+export function eveningWork(world: World, cost: number): number {
+  if (!isBurning(world)) return 1;
+  const back = world.tick + Math.ceil(2 * cost * DATA.balance.movement.walkTicksPerTile);
+  return isEveningOrNight(back) || isEvening(world.tick) ? DATA.balance.fire.eveningWork : 1;
+}
+
+/**
+ * Light the fire (step 1.9): `fire.kindleUtility` when it does not burn, the pile holds
+ * `fire.kindleBranches` and nobody else tends it; else 0.
+ */
+export function kindleWorth(world: World, villager: Villager): number {
+  const { kindleBranches, kindleUtility } = DATA.balance.fire;
+  if (!knowsFire(world) || isBurning(world) || tendedByOther(world, villager)) return 0;
+  return inPile(world, WOOD) >= kindleBranches ? kindleUtility : 0;
+}
+
+/**
+ * Feed the fire (step 1.9): `fire.stokeUtility` × (1 − fuel / max)² — the less wood is left, the
+ * more urgent; in the evening, if what is left will not last till the morning, at least
+ * `fire.eveningStoke`. Only when it burns, takes an armful more, the pile has wood and nobody else
+ * tends it; else 0.
+ */
+export function stokeWorth(world: World, villager: Villager): number {
+  const { maxFuel, stokeUtility, eveningStoke } = DATA.balance.fire;
+  if (!isBurning(world) || fireRoom(world) < 1 || tendedByOther(world, villager)) return 0;
+  if (inPile(world, WOOD) < 1) return 0;
+  const { fuel } = world.fire;
+  const empty = 1 - fuel / maxFuel;
+  const worth = stokeUtility * empty * empty;
+  const short = isEvening(world.tick) && fuel < fuelTillMorning(world);
+  return short ? Math.max(worth, eveningStoke) : worth;
+}
+
+/**
+ * Sit at the fire (step 1.9): `fire.sitUtility` in the evening and at night while it burns; else 0.
+ * It is leisure: to one busy with a begun meal, drink or work (a firm plan) it is worth nothing.
+ */
+export function sitWorth(world: World, villager: Villager): number {
+  if (ACTIVITY[villager.plan.activity].hold === 'firm') return 0;
+  return isBurning(world) && isEveningOrNight(world.tick) ? DATA.balance.fire.sitUtility : 0;
+}
 
 /**
  * The character factor of the utility (GDD §2.3: a glutton eats sooner, a hard worker works
@@ -419,7 +665,14 @@ export type Choice =
   | { kind: 'rest'; utility: number }
   | { kind: 'sleep'; utility: number }
   | Trip
-  | Haul;
+  | Haul
+  | Tend;
+
+/**
+ * A choice at the fire (step 1.9): `kindle` and `stoke` walk to wood in the pile first (the found
+ * source is the stack), `sit` walks to its place by the fire.
+ */
+export type Tend = { kind: FireActivity; utility: number } & Found;
 
 /** A choice to walk to a loose item and carry it to the pile (step 1.7). */
 export type Haul = { kind: 'haul'; utility: number } & Found;
@@ -555,6 +808,8 @@ function weigh(
   note({ kind: 'sleep', utility: sleep, searched: false, nowhere: false });
   if (sleep > best.utility) best = { kind: 'sleep', utility: sleep };
   const work = score('haul');
+  // The fire (step 1.9): drawn after the others, so their numbers stay as they were.
+  const tending = FIRE_ACTIVITIES.map((id) => ({ id, ceiling: score(id) }));
   // What an option must beat to be of use: the best so far, and the plan under way.
   const beat = () => Math.max(best.utility, bar);
   // Not worth the way against the best of rest and sleep — a search in vain, remembered; against
@@ -596,12 +851,31 @@ function weigh(
       best = { kind: option.id, need: option.need, utility, ...found };
     }
   }
+  for (const { id, ceiling } of tending) {
+    if (id === current) {
+      note({ kind: id, utility: bar, searched: false, nowhere: false });
+      continue;
+    }
+    if (ceiling <= beat()) {
+      note({ kind: id, utility: ceiling, searched: false, nowhere: false });
+      continue;
+    }
+    const reach = reachFor(ceiling, beat());
+    const found =
+      id === 'sit' ? searchSeat(world, villager, reach) : searchWood(world, villager, reach);
+    const utility = found ? ceiling * availability(found.cost) : 0;
+    note({ kind: id, utility, searched: true, nowhere: found === null });
+    if (found && utility > best.utility) best = { kind: id, utility, ...found };
+  }
   if (current === 'haul') {
     note({ kind: 'haul', utility: bar, searched: false, nowhere: false });
     return best;
   }
   return haul(world, villager, work, best, beat(), vainIfFar(), note) ?? best;
 }
+
+/** Activities at the fire, in the order of their jitter draws (after all the others). */
+const FIRE_ACTIVITIES: readonly FireActivity[] = ['kindle', 'stoke', 'sit'];
 
 /**
  * Work (step 1.7): carry a loose item to the pile, if it beats `best` and `beat` — `ceiling` (the
@@ -633,12 +907,31 @@ function haul(
     note({ kind: 'haul', utility: 0, searched: false, nowhere: true });
     return null;
   }
-  const found = searchLoose(world, villager, { maxCost: reachFor(ceiling, beat) });
-  villager.noWork = found || !vainIfFar ? 0 : world.tick;
-  const utility = found ? ceiling * availability(found.cost) : 0;
+  // Work that would last into the evening is worth less (step 1.9): if that is too little to win,
+  // only work done by the evening is worth looking for — a shorter search.
+  let maxCost = reachFor(ceiling, beat);
+  if (isBurning(world) && ceiling * DATA.balance.fire.eveningWork <= beat) {
+    maxCost = Math.min(
+      maxCost,
+      untilEvening(world.tick) / (2 * DATA.balance.movement.walkTicksPerTile),
+    );
+  }
+  const found = searchLoose(world, villager, { maxCost });
+  const utility = found ? ceiling * availability(found.cost) * eveningWork(world, found.cost) : 0;
+  const useful = found !== null && utility > best.utility;
+  villager.noWork = useful || !vainIfFar ? 0 : world.tick;
   note({ kind: 'haul', utility, searched: true, nowhere: found === null });
-  if (!found || utility <= best.utility) return null;
+  if (!found || !useful) return null;
   return { kind: 'haul', utility, ...found };
+}
+
+/** Ticks from `tick` to the evening (step 1.9): 0 in the evening, till the next evening at night. */
+function untilEvening(tick: number): number {
+  const { tickOfDay } = calendarAt(tick);
+  const evening = PHASE_START.dusk - DATA.balance.fire.eveningTicks;
+  if (tickOfDay < evening) return evening - tickOfDay;
+  if (tickOfDay < PHASE_START.night) return 0;
+  return DATA.balance.time.ticksPerDay - tickOfDay + evening;
 }
 
 /**

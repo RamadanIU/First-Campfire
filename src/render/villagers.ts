@@ -12,6 +12,7 @@
  *     `strideTiles` (half a tile — at the pace of the sprite's 200 ms frames at ×1), so at ×20
  *     the legs keep pace with the ground and on pause they stop mid-stride (BACKLOG, 0.4).
  *   - Standing: the breathing `idle_*`, each villager with its own phase.
+ *   - Sitting by the fire (step 1.9): `sit_e` / `sit_w`, facing it, breathing.
  *   - Asleep (step 1.5): `man_asleep` / `woman_asleep` — lying on the ground, breathing slowly; the
  *     same swaps. A bubble of sleep floats over the head (./mapRenderer.ts, `drawSigns`).
  *   - Carrying (step 1.7): the load's look over the villager (./items.ts `loadLook` — a bundle held
@@ -112,6 +113,16 @@ export function strideOf(
 }
 
 /**
+ * The animation of an awake villager: walking, sitting by the fire sideways (step 1.9), standing.
+ */
+function animationOf(villager: Villager, walking: boolean): string {
+  if (walking) return `walk_${villager.facing}`;
+  const sideways = villager.facing === 'e' || villager.facing === 'w';
+  if (villager.action.kind === 'sit' && sideways) return `sit_${villager.facing}`;
+  return `idle_${villager.facing}`;
+}
+
+/**
  * Where (between the last two ticks, by `alpha`) and how a villager is drawn; `load` — how what it
  * carries looks (./items.ts `loadLook`), if anything.
  */
@@ -140,7 +151,7 @@ export function villagerPose(
     swap: swapOf(villager),
     x: feetX,
     y: feetY,
-    animation: asleep ? 'idle' : `${walking ? 'walk' : 'idle'}_${villager.facing}`,
+    animation: asleep ? 'idle' : animationOf(villager, walking),
     frame,
     phase: (villager.id * 617) % 1600,
     depth: feetY + DEPTH_AHEAD,

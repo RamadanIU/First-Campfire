@@ -4,7 +4,7 @@
  * a click on a line flies the camera there.
  *
  * Significant for now: people came (the creation of the world), a villager starves or thirsts,
- * faints from want of sleep, dies — with the reason. The rest of the journal (the turn of days and
+ * faints from want of sleep, dies — with the reason; the campfire is lit or goes out (step 1.9). The rest of the journal (the turn of days and
  * seasons, fireflies) is the rhythm of the world, not news.
  *
  * The journal only grows, so the feed reads each event once: `update` goes on from the last event
@@ -23,7 +23,7 @@ export interface FeedEntry {
   id: number;
   tick: number;
   type: WorldEvent['type'];
-  /** The villager it is about. */
+  /** The villager it is about (0 — none: the fire went out by itself). */
   villager: number;
   /** The line for the viewer: «Умерла женщина — голод». */
   text: string;
@@ -87,6 +87,33 @@ function toEntry(event: WorldEvent, sexes: Map<number, Sex>): FeedEntry | null {
             tick: event.tick,
             type: event.type,
             villager: event.villager,
+            text,
+            place: { x: event.x, y: event.y },
+          };
+    }
+    case 'fire_lit': {
+      sexes.set(event.villager, event.sex);
+      const text = feedText(event, event.sex);
+      return text === null
+        ? null
+        : {
+            id: event.id,
+            tick: event.tick,
+            type: event.type,
+            villager: event.villager,
+            text,
+            place: { x: event.x, y: event.y },
+          };
+    }
+    case 'fire_out': {
+      const text = feedText(event, undefined);
+      return text === null
+        ? null
+        : {
+            id: event.id,
+            tick: event.tick,
+            type: event.type,
+            villager: 0,
             text,
             place: { x: event.x, y: event.y },
           };

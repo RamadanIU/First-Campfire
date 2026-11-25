@@ -190,6 +190,8 @@ describe('гарантии генератора карты на зёрнах 1�
     expect(rivers).toBeGreaterThan(40);
     expect(rivers).toBeLessThan(90);
     const kinds = new Set(WORLDS.flatMap((w) => w.objects.list.map((o) => o.def)));
-    expect([...kinds].sort()).toEqual(DATA.objects.records.map((d) => d.id).sort());
+    // Every kind the generator places (those with a place; the hearth is built by the people).
+    const placed = DATA.objects.records.filter((d) => d.place !== null).map((d) => d.id);
+    expect([...kinds].sort()).toEqual(placed.sort());
   });
 });

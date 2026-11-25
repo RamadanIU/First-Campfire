@@ -26,5 +26,6 @@
   },
   { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1, "harvest": null, "litter": null },
   { "id": "flowers", "name": "Цветы", "sprite": "flowers", "walkable": true, "states": ["bloom"], "place": "meadow", "weight": 4, "harvest": null, "litter": null },
-  { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5, "harvest": null, "litter": null }
+  { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5, "harvest": null, "litter": null },
+  { "id": "campfire", "name": "Костёр", "sprite": "campfire", "walkable": false, "states": ["out", "burning"], "place": null, "weight": 0, "harvest": null, "litter": null }
 ]

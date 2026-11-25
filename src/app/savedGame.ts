@@ -36,21 +36,40 @@ export function randomSeed(random: () => number = Math.random): number {
 /**
  * The world of the address: `seed=`, fast-forwarded to `ticks=`. With `go=x,y` (debug) the first
  * villager is sent to that tile at the very start — the walk is reproducible by URL; with
- * `food=value@tick` (debug, step 1.8) its satiety becomes `value` at that tick on the way.
+ * `food=value@tick` (debug, step 1.8) its satiety becomes `value` at that tick on the way; with
+ * `douse=tick` (debug, step 1.9) the campfire loses its wood at that tick and goes out.
  */
 export function worldFromParams(params: LaunchParams): World {
   const world = createWorld(params.seed);
   const first = findVillager(world, 1);
   if (params.go && first) orderWalk(world, first, params.go);
-  const food = params.food;
-  if (food && food.tick <= params.ticks) {
-    runTicks(world, food.tick);
-    const villager = findVillager(world, 1);
-    if (villager) villager.needs.food = food.value;
-    runTicks(world, params.ticks - food.tick);
-  } else {
-    runTicks(world, params.ticks);
+  // Debug changes on the way to `ticks=`, in the order of their ticks.
+  const changes: { tick: number; apply: () => void }[] = [];
+  const { food, douse } = params;
+  if (food) {
+    changes.push({
+      tick: food.tick,
+      apply: () => {
+        const villager = findVillager(world, 1);
+        if (villager) villager.needs.food = food.value;
+      },
+    });
   }
+  if (douse !== null) {
+    changes.push({
+      tick: douse,
+      apply: () => {
+        world.fire.fuel = 0;
+      },
+    });
+  }
+  changes.sort((a, b) => a.tick - b.tick);
+  for (const change of changes) {
+    if (change.tick > params.ticks) break;
+    runTicks(world, change.tick - world.tick);
+    change.apply();
+  }
+  runTicks(world, params.ticks - world.tick);
   return world;
 }
 

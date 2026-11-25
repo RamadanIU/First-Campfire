@@ -60,12 +60,13 @@ const STILL: Placement[] = [
   { sprite: 'lean_to', x: 88, y: 82 },
   { sprite: 'branch_pile', x: 152, y: 86 },
   { sprite: 'bed', x: 142, y: 120 },
-  { sprite: 'man', x: 103, y: 100, animation: 'idle_e' },
+  // The two sit by the fire facing it (step 1.9: the sitting pose of the game).
+  { sprite: 'man', x: 103, y: 100, animation: 'sit_e' },
   {
     sprite: 'woman',
     x: 137,
     y: 100,
-    animation: 'idle_w',
+    animation: 'sit_w',
     swap: { skin_light: 'skin_tan', hair_brown: 'hair_black' },
     phase: 500,
   },

@@ -18,9 +18,10 @@
  *     stack: nothing falls within `items.litterSpacing` of another loose stack but onto it. Not
  *     above `items.maxLoose` stacks lie loose on the map: nothing rots yet.
  *
- * Conservation (docs/ARCHITECTURE.md, rule 5): `made` counts every unit that ever appeared; the
- * items on tiles and in the hands always add up to it (`countAll`, tests/items.test.ts). Only
- * falling makes things; moving them never changes the sum.
+ * Conservation (docs/ARCHITECTURE.md, rule 5): `made` counts every unit that ever appeared, `burned`
+ * every unit put into the fire (step 1.9, ./fire.ts); the items on tiles and in the hands always add
+ * up to the difference (`countAll`, tests/scenario.ts `brokenRules`). Only falling makes things and
+ * only the fire takes them away; moving them never changes the sum.
  *
  * Falls are not written to the journal: they happen several times a day and are of no news (the
  * tree beside the branches is their visible cause). Plain data (docs/ARCHITECTURE.md, rule 7).
@@ -60,8 +61,10 @@ export interface Items {
   list: Item[];
   /** The id of the next new stack (on a tile or in the hands). */
   nextId: number;
-  /** Every unit that ever appeared (fell from a tree): the items always add up to it. */
+  /** Every unit that ever appeared (fell from a tree): the items and the burnt add up to it. */
   made: number;
+  /** Every unit put into the fire (step 1.9, ./fire.ts): gone from the items, counted here. */
+  burned: number;
 }
 
 /** The camp of the people (step 1.7): its middle (the fire, step 1.9) and the place of the pile. */
@@ -80,7 +83,7 @@ const SIDES: readonly (readonly [number, number])[] = [
 ];
 
 export function createItems(): Items {
-  return { list: [], nextId: 1, made: 0 };
+  return { list: [], nextId: 1, made: 0, burned: 0 };
 }
 
 /** How many of a resource lie on one tile and are carried in the hands (data/resources.json). */
@@ -183,8 +186,12 @@ export function isPileTile(world: World, x: number, y: number): boolean {
   return canHold(world.map, world.objects, x, y);
 }
 
-/** How many more of `resource` tile (x, y) can take: 0 — another resource lies there, or nothing can. */
+/**
+ * How many more of `resource` tile (x, y) can take: 0 — another resource lies there, or nothing can
+ * (the middle of the camp is kept for the fire, step 1.9).
+ */
 export function roomAt(world: World, x: number, y: number, resource: string): number {
+  if (x === world.camp.x && y === world.camp.y) return 0;
   if (!canHold(world.map, world.objects, x, y)) return 0;
   const item = itemAt(world, x, y);
   if (!item) return stackOf(resource);

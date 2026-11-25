@@ -23,6 +23,7 @@ describe('parseParams', () => {
       debug: [],
       go: null,
       food: null,
+      douse: null,
       select: null,
       menu: false,
       worldFromUrl: true,
@@ -106,6 +107,13 @@ describe('parseParams', () => {
     expect(parseParams('?go=-1,4').go).toBeNull();
     expect(parseParams('?go=18').go).toBeNull();
     expect(parseParams('').go).toBeNull();
+  });
+
+  it('reads douse: the tick the campfire loses its wood (step 1.9); malformed — none', () => {
+    expect(parseParams('?douse=1130').douse).toBe(1130);
+    expect(parseParams('?douse=-1').douse).toBeNull();
+    expect(parseParams('?douse=x').douse).toBeNull();
+    expect(parseParams('').douse).toBeNull();
   });
 
   it('reads food: satiety@tick (0…100, tick ≥ 0); malformed — none', () => {

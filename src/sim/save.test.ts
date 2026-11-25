@@ -253,7 +253,10 @@ describe('плохие сохранения не роняют игру', () => {
       version: SAVE_VERSION + 2,
       migrations: {
         [SAVE_VERSION]: (w) => ({ ...w, weather: 'ясно' }),
-        [SAVE_VERSION + 1]: (w) => ({ ...w, weather: { sky: w.weather, wind: 0 } }),
+        [SAVE_VERSION + 1]: (w) => ({
+          ...w,
+          weather: { sky: w.weather, wind: 0 },
+        }),
       },
     });
     const upgraded = loaded(result) as World & Record<string, unknown>;
@@ -301,14 +304,15 @@ function shapeOf(value: unknown, path: string, out: Set<string>): void {
 }
 
 /**
- * Shape of a world over its first year: sampled every 10 ticks, by day and by night, all event
+ * Shape of a world over its first two years: sampled every 10 ticks, by day and by night, all event
  * types included — often enough to catch short actions (a walk to the water, a drink) that need
- * them only every few days (step 1.4, ADR-024).
+ * them only every few days (step 1.4, ADR-024). Two years since step 1.9: with the fire the first
+ * meal of world 1 came after its first year.
  */
 function sampleShape(): string[] {
   const out = new Set<string>();
   const world = createWorld(1);
-  for (let tick = 0; tick <= TICKS_PER_YEAR; tick += 10) {
+  for (let tick = 0; tick <= 2 * TICKS_PER_YEAR; tick += 10) {
     shapeOf(world, '', out);
     runTicks(world, 10);
   }
@@ -334,19 +338,24 @@ const CURRENT_SHAPE: string[] = [
   'camp.y: number',
   'camp: object',
   'events.list: array',
+  'events.list[].cause.activity: string',
   'events.list[].cause.event: number',
+  'events.list[].cause.kind = "decision"',
   'events.list[].cause.kind = "event"',
   'events.list[].cause.kind = "rule"',
   'events.list[].cause.rule: string',
+  'events.list[].cause.villager: number',
   'events.list[].cause: object',
   'events.list[].count: number',
   'events.list[].day: number',
+  'events.list[].first: boolean',
   'events.list[].id: number',
   'events.list[].phase: string',
   'events.list[].season: string',
   'events.list[].seed: number',
   'events.list[].sex: string',
   'events.list[].tick: number',
+  'events.list[].type = "fire_lit"',
   'events.list[].type = "fireflies_gone"',
   'events.list[].type = "fireflies_rose"',
   'events.list[].type = "phase_started"',
@@ -361,6 +370,11 @@ const CURRENT_SHAPE: string[] = [
   'events.list[]: object',
   'events.nextId: number',
   'events: object',
+  'fire.fed: number',
+  'fire.fuel: number',
+  'fire.lit: number',
+  'fire.object: number',
+  'fire: object',
   'fireflies.nextId: number',
   'fireflies.swarm: array',
   'fireflies.swarm[].id: number',
@@ -373,6 +387,7 @@ const CURRENT_SHAPE: string[] = [
   'fireflies.swarm[].y: number',
   'fireflies.swarm[]: object',
   'fireflies: object',
+  'items.burned: number',
   'items.list: array',
   'items.list[].count: number',
   'items.list[].id: number',
@@ -441,9 +456,13 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].action.kind = "drink"',
   'villagers.list[].action.kind = "eat"',
   'villagers.list[].action.kind = "idle"',
+  'villagers.list[].action.kind = "kindle"',
   'villagers.list[].action.kind = "pick_up"',
   'villagers.list[].action.kind = "put_down"',
+  'villagers.list[].action.kind = "sit"',
   'villagers.list[].action.kind = "sleep"',
+  'villagers.list[].action.kind = "stoke"',
+  'villagers.list[].action.kind = "take"',
   'villagers.list[].action.kind = "walk"',
   'villagers.list[].action.next: number',
   'villagers.list[].action.path: array',
@@ -454,8 +473,11 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].action.resource: string',
   'villagers.list[].action.source.item: number',
   'villagers.list[].action.source.kind = "bush"',
+  'villagers.list[].action.source.kind = "fire"',
   'villagers.list[].action.source.kind = "item"',
   'villagers.list[].action.source.kind = "pile"',
+  'villagers.list[].action.source.kind = "spot"',
+  'villagers.list[].action.source.kind = "store"',
   'villagers.list[].action.source.kind = "water"',
   'villagers.list[].action.source.object: number',
   'villagers.list[].action.source.resource: string',
@@ -491,8 +513,11 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].log[].options[].kind = "drink"',
   'villagers.list[].log[].options[].kind = "eat"',
   'villagers.list[].log[].options[].kind = "haul"',
+  'villagers.list[].log[].options[].kind = "kindle"',
   'villagers.list[].log[].options[].kind = "rest"',
+  'villagers.list[].log[].options[].kind = "sit"',
   'villagers.list[].log[].options[].kind = "sleep"',
+  'villagers.list[].log[].options[].kind = "stoke"',
   'villagers.list[].log[].options[].nowhere: boolean',
   'villagers.list[].log[].options[].searched: boolean',
   'villagers.list[].log[].options[].utility: number',
@@ -546,6 +571,7 @@ const SHAPE_HISTORY: Record<number, string> = {
   5: '5daf554442d2bbea', // step 1.5: sleep (need, action, faint); fireflies over the map
   6: '63b0fccd78514df5', // step 1.7: items (on tiles, in the hands), the camp, hauling, litter stream
   7: '5d50768a02d91b51', // step 1.8: plans of villagers and their journals of decisions
+  8: 'a898a8e18ce492d8', // step 1.9: the campfire, burnt wood, tending the fire, sitting at it
 };
 
 describe('форма мира и версия формата сохранения', () => {

@@ -167,11 +167,15 @@ export function isDaylight(light: Light): boolean {
   return light[0] >= 1 && light[1] >= 1 && light[2] >= 1;
 }
 
-/** A warm light «hole» in the night: centre and radius, px of the lit rectangle (step 1.9). */
+/**
+ * A warm light «hole» in the night: centre and radius, px of the lit rectangle (step 1.9);
+ * `strength` 0…1 (default 1) — how much of the firelight shows (by day none, at night all).
+ */
 export interface LightSource {
   readonly x: number;
   readonly y: number;
   readonly radius: number;
+  readonly strength?: number;
 }
 
 /** A canvas for the light map, reused from frame to frame (it only grows). */
@@ -230,8 +234,9 @@ function multiply(
     map.ctx.fillRect(0, 0, width, height);
     for (const source of lights) {
       // Ring by ring from the outside in: each ring is a squashed disc of its own light.
+      const strength = source.strength ?? 1;
       for (let step = 1; step <= LIGHT_STEPS; step++) {
-        const level = step / LIGHT_STEPS;
+        const level = (step / LIGHT_STEPS) * strength;
         const ring = source.radius * (1 - (step - 1) / LIGHT_STEPS);
         map.ctx.fillStyle = lightCss(lightGain(light, level));
         map.ctx.beginPath();
@@ -240,9 +245,26 @@ function multiply(
       }
     }
     ctx.drawImage(map.canvas, 0, 0, width, height, 0, 0, width, height);
+    // A multiply cannot brighten: the inner rings get a little warm glow added on top (the
+    // firelight is brighter than the night around it — as on the title screen, FIRELIGHT > 1).
+    ctx.globalCompositeOperation = 'lighter';
+    for (const source of lights) {
+      const strength = source.strength ?? 1;
+      for (let step = 2; step <= LIGHT_STEPS; step++) {
+        const ring = source.radius * (1 - (step - 1) / LIGHT_STEPS);
+        ctx.fillStyle = `rgba(${GLOW[0]},${GLOW[1]},${GLOW[2]},${GLOW_ALPHA * strength})`;
+        ctx.beginPath();
+        ctx.ellipse(source.x, source.y, ring, ring / 1.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
   ctx.restore();
 }
+
+/** The warm glow added over the inner rings of a fire's light: a palette colour, faint per ring. */
+const GLOW = paletteColor('fire.1');
+const GLOW_ALPHA = 0.045;
 
 /** The sky by day — palette colours: the zenith and the horizon. */
 const SKY = { zenith: paletteColor('water.2'), horizon: paletteColor('water.4') } as const;

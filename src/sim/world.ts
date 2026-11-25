@@ -8,6 +8,7 @@
  * every system in the fixed order of SYSTEMS; systems see the new tick.
  */
 import { createJournal, type EventJournal, emit } from './events.ts';
+import { createFire, type Fire, fireSystem } from './fire.ts';
 import {
   type Camp,
   createCamp,
@@ -51,6 +52,8 @@ export interface World {
   camp: Camp;
   /** Things lying on tiles — on the ground and in the pile (./items.ts, step 1.7). */
   items: Items;
+  /** The campfire on the middle of the camp (./fire.ts, step 1.9). */
+  fire: Fire;
 }
 
 /** A system updates one aspect of the world once per tick. */
@@ -61,14 +64,16 @@ export interface System {
 
 /**
  * Systems in the order they run every tick. The order is part of the rules: do not reorder.
- * Life (needs, health, death — ./life.ts) goes before the villagers act; litter (branches falling
- * from trees, ./items.ts — step 1.7) comes last.
+ * Life (needs, health, death — ./life.ts) goes before the villagers act; the fire (./fire.ts — step
+ * 1.9) burns after they have fed it; litter (branches falling from trees, ./items.ts — step 1.7)
+ * comes last.
  */
 export const SYSTEMS: readonly System[] = [
   calendarEventsSystem,
   firefliesSystem,
   lifeSystem,
   villagersSystem,
+  fireSystem,
   litterSystem,
 ];
 
@@ -99,6 +104,7 @@ export function createWorld(seed: number, options: WorldOptions = {}): World {
     villagers: createVillagers(),
     camp: createCamp(map, objects),
     items: createItems(),
+    fire: createFire(),
   };
   const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
   settleFirstPair(world, { kind: 'event', event: created.id });
