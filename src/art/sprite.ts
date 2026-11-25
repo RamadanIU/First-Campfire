@@ -144,6 +144,47 @@ export function sinkRows(text: string, from: number, to: number): string {
   return sunk.join('\n');
 }
 
+/** A part of a composed frame: a grid placed with its top-left corner at `x`, `y`. */
+export interface Layer {
+  readonly grid: string;
+  readonly x?: number;
+  readonly y?: number;
+  /**
+   * How the layer's characters change where they fall on something already drawn, e.g.
+   * `{ o: 's' }` — an arm in front of the body is parted from it by a line of skin shadow, not
+   * by the dark outline (that one stays on the silhouette's edge).
+   */
+  readonly over?: Readonly<Record<string, string>>;
+}
+
+/**
+ * A `width`×`height` frame put together from layers, like a paper doll (GDD §10.2): each later
+ * layer covers the earlier ones with its non-transparent pixels; whatever falls outside the frame
+ * is cut off. Parts drawn once (a head, an arm, legs in a pose) make every frame of a walk.
+ */
+export function composeFrame(width: number, height: number, layers: readonly Layer[]): string {
+  const cells = Array.from({ length: height }, () => Array<string>(width).fill(TRANSPARENT));
+  for (const { grid, x = 0, y = 0, over = {} } of layers) {
+    parseGrid(grid).forEach((row, r) => {
+      const line = cells[y + r];
+      if (!line) return;
+      [...row].forEach((symbol, c) => {
+        if (symbol === TRANSPARENT || x + c < 0 || x + c >= width) return;
+        const under = line[x + c];
+        line[x + c] = under !== TRANSPARENT ? (over[symbol] ?? symbol) : symbol;
+      });
+    });
+  }
+  return cells.map((row) => row.join('')).join('\n');
+}
+
+/** A grid with characters replaced by `map` (e.g. open eyes by closed ones for a blink). */
+export function recolorGrid(text: string, map: Readonly<Record<string, string>>): string {
+  return parseGrid(text)
+    .map((row) => [...row].map((c) => map[c] ?? c).join(''))
+    .join('\n');
+}
+
 /** Duration of every frame of an animation, ms. */
 export function frameDurations(animation: AnimationDef): number[] {
   const { frames, frameMs = DEFAULT_FRAME_MS } = animation;

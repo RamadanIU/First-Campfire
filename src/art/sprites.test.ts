@@ -116,55 +116,80 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
     const person = get(name);
     const directions = ['s', 'n', 'e', 'w'];
 
-    it('12×18, точка привязки между ступнями (GDD §10.1)', () => {
+    it('16×24 (ADR-033), точка привязки между ступнями', () => {
       expect(person).toMatchObject({
         kind: 'character',
-        width: 12,
-        height: 18,
-        anchor: { x: 6, y: 18 },
+        width: 16,
+        height: 24,
+        anchor: { x: 8, y: 24 },
       });
     });
 
-    it('стоит (дышит, 2 кадра) и идёт (4 кадра) в 4 направлениях, сидит у огня боком (2 кадра)', () => {
+    it('стоит (дышит, моргает), идёт (8 кадров), держит и несёт ношу над головой — в 4 направлениях; сидит у огня боком', () => {
       expect(Object.keys(person.animations)).toEqual([
         ...directions.map((d) => `idle_${d}`),
         ...directions.map((d) => `walk_${d}`),
         'sit_e',
         'sit_w',
+        ...directions.map((d) => `hold_${d}`),
+        ...directions.map((d) => `carry_${d}`),
       ]);
       for (const d of directions) {
-        expect(person.animations[`idle_${d}`]!.frames).toHaveLength(2);
-        expect(person.animations[`walk_${d}`]!.frames).toHaveLength(4);
+        expect(person.animations[`idle_${d}`]!.frames.length).toBeGreaterThanOrEqual(4);
+        expect(person.animations[`walk_${d}`]!.frames).toHaveLength(8);
+        expect(person.animations[`hold_${d}`]!.frames).toHaveLength(2);
+        expect(person.animations[`carry_${d}`]!.frames).toHaveLength(8);
       }
-      expect(person.animations.sit_e!.frames).toHaveLength(2);
-      expect(person.animations.sit_w!.frames).toHaveLength(2);
+      expect(person.animations.sit_e!.frames.length).toBeGreaterThanOrEqual(2);
+      expect(person.animations.sit_w!.frames).toHaveLength(person.animations.sit_e!.frames.length);
+    });
+
+    it.each(['s', 'n', 'e', 'w'])(
+      'ходьба %s: все 8 кадров разные — тело, руки и ноги движутся',
+      (d) => {
+        const frames = person.animations[`walk_${d}`]!.frames;
+        expect(new Set(frames).size).toBe(frames.length);
+      },
+    );
+
+    it('стоя лицом к зрителю и боком моргает: в цикле есть кадр с закрытыми глазами', () => {
+      for (const d of ['s', 'e']) {
+        const frames = person.animations[`idle_${d}`]!.frames;
+        const closed = frames.filter((frame) => !frame.includes('e'));
+        expect(closed.length, d).toBeGreaterThan(0);
+        expect(closed.length, d).toBeLessThan(frames.length);
+      }
     });
 
     it.each([
       ['idle_e', 'idle_w'],
+      ['walk_e', 'walk_w'],
       ['sit_e', 'sit_w'],
+      ['hold_e', 'hold_w'],
+      ['carry_e', 'carry_w'],
     ])(
       'влево — не зеркало вправо (%s): силуэт зеркальный, а свет остаётся слева-сверху',
       (right, left) => {
         const raster = rasterizeSprite(person, PALETTE);
-        const frame = (animation: string) =>
-          raster.animations.find((a) => a.name === animation)!.frames[0]!;
-        const east = frame(right);
-        const west = frame(left);
-        let sameSilhouette = true;
-        let differentColours = 0;
-        for (let y = 0; y < person.height; y++) {
-          for (let x = 0; x < person.width; x++) {
-            const e = (y * person.width + (person.width - 1 - x)) * 4;
-            const w = (y * person.width + x) * 4;
-            if (east.pixels[e + 3] !== west.pixels[w + 3]) sameSilhouette = false;
-            if (east.pixels.subarray(e, e + 3).join() !== west.pixels.subarray(w, w + 3).join()) {
-              differentColours++;
+        const frames = (animation: string) =>
+          raster.animations.find((a) => a.name === animation)!.frames;
+        frames(right).forEach((east, index) => {
+          const west = frames(left)[index]!;
+          let sameSilhouette = true;
+          let differentColours = 0;
+          for (let y = 0; y < person.height; y++) {
+            for (let x = 0; x < person.width; x++) {
+              const e = (y * person.width + (person.width - 1 - x)) * 4;
+              const w = (y * person.width + x) * 4;
+              if (east.pixels[e + 3] !== west.pixels[w + 3]) sameSilhouette = false;
+              if (east.pixels.subarray(e, e + 3).join() !== west.pixels.subarray(w, w + 3).join()) {
+                differentColours++;
+              }
             }
           }
-        }
-        expect(sameSilhouette).toBe(true);
-        expect(differentColours).toBeGreaterThan(5);
+          expect(sameSilhouette, `${left}, кадр ${index + 1}`).toBe(true);
+          expect(differentColours, `${left}, кадр ${index + 1}`).toBeGreaterThan(5);
+        });
       },
     );
 

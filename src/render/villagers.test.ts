@@ -51,7 +51,7 @@ function villager(fields: Partial<Villager> = {}): Villager {
 }
 
 /** Half a tile: the sprites' 200 ms walking frames at 4 ticks per tile, 10 ticks per second. */
-const STRIDE = 0.5;
+const STRIDE = 0.25;
 
 describe('житель на карте', () => {
   it('тона кожи и цвета волос — ряды палитры той же длины, сколько их у симуляции', () => {
@@ -114,14 +114,14 @@ describe('житель на карте', () => {
     for (const alpha of [0, 0.3, 0.7, 1]) expect(Number.isInteger(at(alpha).x)).toBe(true);
   });
 
-  it('кадр ходьбы — по пройденному пути: каждые полтайла, 4 кадра на два тайла', () => {
-    expect([0, 0.49, 0.5, 1, 1.5, 1.99, 2, 2.5].map((w) => walkFrame(w, STRIDE))).toEqual([
-      0, 0, 1, 2, 3, 3, 0, 1,
+  it('кадр ходьбы — по пройденному пути: каждую четверть тайла, 8 кадров на два тайла', () => {
+    expect([0, 0.24, 0.25, 0.5, 1, 1.75, 1.99, 2, 2.25].map((w) => walkFrame(w, STRIDE))).toEqual([
+      0, 0, 1, 2, 4, 7, 7, 0, 1,
     ]);
-    // Taken from the data and the sprite: 200 ms frames, 4 ticks per tile, 10 ticks per second.
+    // Taken from the data and the sprite: 100 ms frames, 4 ticks per tile, 10 ticks per second.
     const frameMs = SPRITES.find((s) => s.name === 'man')!.animations.walk_e!.frameMs;
-    expect(frameMs).toBe(200);
-    expect(strideOf(200, DATA.balance.movement.walkTicksPerTile, TIME.ticksPerSecond)).toBe(STRIDE);
+    expect(frameMs).toBe(100);
+    expect(strideOf(100, DATA.balance.movement.walkTicksPerTile, TIME.ticksPerSecond)).toBe(STRIDE);
   });
 
   it('на ×20 ноги шагают в ногу с землёй: тот же путь — те же кадры, на паузе — не шагают', () => {

@@ -1,50 +1,155 @@
-import { defineSprite, mirrorFrame, sinkRows } from '../sprite.ts';
-
-/**
- * Sitting on the ground facing right (step 1.9): knees up, hands on the knees — by the fire. The
- * exhale sinks the head and shoulders a pixel; facing left is the mirror with the skin's light kept
- * on the left.
- */
-const SIT_E = `
-    ............
-    ............
-    ............
-    ............
-    ....oooo....
-    ...ojjjjho..
-    ..ojjjjhhko.
-    .ojjjjhkKko.
-    .ojjhhkKoKko
-    .ojhhhkkkkso
-    .ojhhhhksso.
-    .ojhhhkkso..
-    .ojhGWwGgo..
-    .ohoGGKkkoo.
-    .oGGggGkKKKo
-    .oGgggfgoKso
-    .ofgfgfgoKso
-    ..ooooooooo.
-`;
-const SIT_W = mirrorFrame(SIT_E, { K: 's' });
+import {
+  PERSON_ANCHOR,
+  PERSON_HEIGHT,
+  PERSON_WIDTH,
+  type PersonParts,
+  personAnimations,
+} from '../people.ts';
+import { defineSprite } from '../sprite.ts';
 
 /*
- * A woman of epoch 0 (GDD §10.3), 12×18 with a 6×6 face: long hair, a rawhide dress to the
- * knees, a necklace of shells, bare arms and feet. The same animations as `man`: `idle_*` and
- * `walk_*` in four directions; facing left is facing right mirrored with the light moved back to
- * the left. Skin — `skin_light` ramp, hair — `hair_brown`; other tones are ramp swaps.
+ * A woman of epoch 0 (GDD §10.3), 16×24 (ADR-033): long hair with locks over the shoulders, a
+ * hide dress to the knees with a thong belt, a necklace of shells, bare arms and feet. Only the
+ * parts are drawn here — head, body, skirt (it sways with the steps) and the hair down the back;
+ * ../people.ts builds every animation from them in four directions.
+ * Skin is the `skin_light` ramp, hair `hair_brown` (with a highlight); the other five skin tones and
+ * four hair colours are ramp swaps (`variants`; the game combines them freely).
  */
+
+const parts: PersonParts = {
+  headS: `
+    ......oooo......
+    ....ooJJjjoo....
+    ...oJJJjjjjho...
+    ..oJJjjjjjjhho..
+    ..ojjjjhhjjjho..
+    ..ojhKKKKKkhjo..
+    ..ojhoeKKeohjo..
+    ..ojhKoKkokhjo..
+    ..ojhsKKkkshjo..
+    ..ojjoKsskojjo..
+    ..oJjjoooojjho..
+    ..ojjo....ojho..
+    ..ojho....ohho..
+    ...oo......oo...
+  `,
+  glanceS: `
+    ..ojhKoeKKeojo..
+    ..ojhKKoKkohjo..
+  `,
+  headN: `
+    ......oooo......
+    ....ooJJjjoo....
+    ...oJJJjjjjho...
+    ..oJJjjjjjjhho..
+    ..oJJjjjjjjjho..
+    ..oJjjjjhjjhho..
+    ..ojJjjjhjjjho..
+    ..ojJjjjhjjjho..
+    ..ohjjjjjjjhho..
+    ..ohjjhjjjhjho..
+    ..ohjjhjjjhjho..
+    ..ohjjhjjjhjho..
+    ...ohjjjjjjho...
+    ...ohjjjhjjho...
+    ....ohjjhjho....
+    .....ohhhho.....
+  `,
+  headE: `
+    ......oooo......
+    ....ooJJjjoo....
+    ...oJJJjjjjjo...
+    ..oJJjjjjjjjho..
+    ..ojjjjhjjjjKo..
+    ..ohjjjhhKKKKo..
+    ..ohjjjhoKKeKo..
+    ..ohjjjhsKKoKKo.
+    ..ohjjjhKKKkso..
+    ..ohjjjhoKsko...
+    ..ohjjjhoooo....
+  `,
+  backE: {
+    grid: `
+      ..ohjjho........
+      ..ohjhjo........
+      ..ohjjjo........
+      ...ohjho........
+      ...ohho.........
+      ....oo..........
+    `,
+    y: 11,
+  },
+  torsoS: `
+    .....oKkkso.....
+    ...ooGGgggfoo...
+    ..oGGgWwWwgffo..
+    ....oGgwWgfo....
+    ....oGggggfo....
+    ....offffffo....
+  `,
+  torsoN: `
+    .....okkkko.....
+    ...ooGGgggfoo...
+    ..oGGggggggffo..
+    ....oGggggfo....
+    ....oGggggfo....
+    ....offffffo....
+  `,
+  bodyE: `
+    .......oKso.....
+    ......oGGgfo....
+    .....oGGwWgfo...
+    ....oGGggggffo..
+    ....oGgggggffo..
+    .....offfffo....
+  `,
+  skirt: {
+    s: `
+      ...oGGgggggfo...
+      ...oGgggggffo...
+      ..oGgfgfgfgffo..
+    `,
+    n: `
+      ...oGGgggggfo...
+      ...oGgggggffo...
+      ..oGgfgfgfgffo..
+    `,
+    e: `
+      ....oGGggggfo...
+      ...oGGgggggffo..
+      ...ogfgfgfgfgo..
+    `,
+    y: 16,
+  },
+  lapE: {
+    grid: `
+      ..........ooo...
+      .........oGggo..
+      ........oGggfo..
+      .......oGgggfo..
+      .....ooGggfgo...
+      .....oGgfgfgo...
+    `,
+    y: 17,
+  },
+  limbEdge: 'f',
+  mirrorSwap: { J: 'h', G: 'f', W: 'w' },
+  hairShades: 'Jjh',
+};
 
 export default defineSprite({
   name: 'woman',
   title: 'Женщина (эпоха 0)',
   kind: 'character',
-  width: 12,
-  height: 18,
-  anchor: { x: 6, y: 18 },
+  width: PERSON_WIDTH,
+  height: PERSON_HEIGHT,
+  anchor: PERSON_ANCHOR,
   legend: {
     o: 'ink.0',
+    e: 'ink.0',
     h: 'hair_brown.0',
     j: 'hair_brown.1',
+    J: 'hair_brown.2',
     s: 'skin_light.0',
     k: 'skin_light.1',
     K: 'skin_light.2',
@@ -54,531 +159,7 @@ export default defineSprite({
     w: 'bone.1',
     W: 'bone.2',
   },
-  animations: {
-    idle_s: {
-      frames: [
-        `
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojhKKKkhho.
-          .ojKoKkosho.
-          .ojKKKkksho.
-          .ojhKKkkhho.
-          .ojjhKkshho.
-          .oKGWwWwgso.
-          .oKGGgggfso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-        `
-          ............
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojhKKKkhho.
-          .ojKoKkosho.
-          .ojKKKkksho.
-          .ojhKKkkhho.
-          .ojjhKkshho.
-          .oKGWwWwgso.
-          .oKGGgggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-      ],
-      frameMs: [900, 700],
-    },
-    idle_n: {
-      frames: [
-        `
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojjjjhhhho.
-          .ojjjhhhhho.
-          .ojjhhhhhho.
-          .ojhhhhhhho.
-          .ojhhhhhhho.
-          .oKjhhhhhso.
-          .oKohhhhoso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-        `
-          ............
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojjjjhhhho.
-          .ojjjhhhhho.
-          .ojjhhhhhho.
-          .ojhhhhhhho.
-          .ojhhhhhhho.
-          .oKjhhhhhso.
-          .oKohhhhoso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-      ],
-      frameMs: [900, 700],
-    },
-    idle_e: {
-      frames: [
-        `
-          ....oooo....
-          ...ojjjjho..
-          ..ojjjjhhko.
-          .ojjjjhkKko.
-          .ojjhhkKoKko
-          .ojhhhkkkkso
-          .ojhhhhksso.
-          .ojhhhkkso..
-          .ojhGWwGgo..
-          .ohoGGKkko..
-          ..oGGgKkso..
-          ..oGggKkfo..
-          ..oGgggffo..
-          ..ofgfgfgo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ....ooooo...
-          `,
-        `
-          ............
-          ....oooo....
-          ...ojjjjho..
-          ..ojjjjhhko.
-          .ojjjjhkKko.
-          .ojjhhkKoKko
-          .ojhhhkkkkso
-          .ojhhhhksso.
-          .ojhhhkkso..
-          .ojhGWwGgo..
-          .ohoGGKkko..
-          ..oGggKkfo..
-          ..oGgggffo..
-          ..ofgfgfgo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ....ooooo...
-          `,
-      ],
-      frameMs: [900, 700],
-    },
-    idle_w: {
-      frames: [
-        `
-          ....oooo....
-          ..ohjjjjo...
-          .okhhjjjjo..
-          .okskhjjjjo.
-          oksoskhhjjo.
-          oKkkkkhhhjo.
-          .oKKkhhhhjo.
-          ..oKkkhhhjo.
-          ..ogGwWGhjo.
-          ..okksGGoho.
-          ..oKksgGGo..
-          ..ofksggGo..
-          ..offgggGo..
-          ..ogfgfgfo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ...ooooo....
-          `,
-        `
-          ............
-          ....oooo....
-          ..ohjjjjo...
-          .okhhjjjjo..
-          .okskhjjjjo.
-          oksoskhhjjo.
-          oKkkkkhhhjo.
-          .oKKkhhhhjo.
-          ..oKkkhhhjo.
-          ..ogGwWGhjo.
-          ..okksGGoho.
-          ..ofksggGo..
-          ..offgggGo..
-          ..ogfgfgfo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ...ooooo....
-          `,
-      ],
-      frameMs: [900, 700],
-    },
-    walk_s: {
-      frames: [
-        `
-          ............
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojhKKKkhho.
-          .ojKoKkosho.
-          .ojKKKkksho.
-          .ojhKKkkhho.
-          .ojjhKkshho.
-          .oKGWwWwgso.
-          .oKGGgggfso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-        `
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojhKKKkhho.
-          .ojKoKkosho.
-          .ojKKKkksho.
-          .ojhKKkkhho.
-          .ojjhKkshho.
-          .oKGWwWwgso.
-          .oKGGgggfso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oKkooooo..
-          ...oo.......
-          `,
-        `
-          ............
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojhKKKkhho.
-          .ojKoKkosho.
-          .ojKKKkksho.
-          .ojhKKkkhho.
-          .ojjhKkshho.
-          .oKGWwWwgso.
-          .oKGGgggfso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-        `
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojhKKKkhho.
-          .ojKoKkosho.
-          .ojKKKkksho.
-          .ojhKKkkhho.
-          .ojjhKkshho.
-          .oKGWwWwgso.
-          .oKGGgggfso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oooookso..
-          .......oo...
-          `,
-      ],
-      frameMs: 200,
-    },
-    walk_n: {
-      frames: [
-        `
-          ............
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojjjjhhhho.
-          .ojjjhhhhho.
-          .ojjhhhhhho.
-          .ojhhhhhhho.
-          .ojhhhhhhho.
-          .oKjhhhhhso.
-          .oKohhhhoso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-        `
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojjjjhhhho.
-          .ojjjhhhhho.
-          .ojjhhhhhho.
-          .ojhhhhhhho.
-          .ojhhhhhhho.
-          .oKjhhhhhso.
-          .oKohhhhoso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oKkooooo..
-          ...oo.......
-          `,
-        `
-          ............
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojjjjhhhho.
-          .ojjjhhhhho.
-          .ojjhhhhhho.
-          .ojhhhhhhho.
-          .ojhhhhhhho.
-          .oKjhhhhhso.
-          .oKohhhhoso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ...oo..oo...
-          `,
-        `
-          ....oooo....
-          ..oojjjhoo..
-          .ojjjjjhhho.
-          .ojjjjhhhho.
-          .ojjjhhhhho.
-          .ojjhhhhhho.
-          .ojhhhhhhho.
-          .ojhhhhhhho.
-          .oKjhhhhhso.
-          .oKohhhhoso.
-          .oKGggggfso.
-          .okGGgggfko.
-          ..oGgggfffo.
-          ..ofgfgfgfo.
-          ..oKkookso..
-          ..oKkookso..
-          ..oooookso..
-          .......oo...
-          `,
-      ],
-      frameMs: 200,
-    },
-    walk_e: {
-      frames: [
-        `
-          ............
-          ....oooo....
-          ...ojjjjho..
-          ..ojjjjhhko.
-          .ojjjjhkKko.
-          .ojjhhkKoKko
-          .ojhhhkkkkso
-          .ojhhhhksso.
-          .ojhhhkkso..
-          .ojhGWwGgo..
-          .ohoGGKkko..
-          ..oGGgKkso..
-          ..oGggKkfo..
-          ..oGgggffo..
-          ..ofgfgfgo..
-          ...osKKko...
-          ..oso.oKko..
-          ..ooo..oooo.
-          `,
-        `
-          ....oooo....
-          ...ojjjjho..
-          ..ojjjjhhko.
-          .ojjjjhkKko.
-          .ojjhhkKoKko
-          .ojhhhkkkkso
-          .ojhhhhksso.
-          .ojhhhkkso..
-          .ojhGWwGgo..
-          .ohoGGKkko..
-          ..oGGgKkso..
-          ..oGggKkfo..
-          ..oGgggffo..
-          ..ofgfgfgo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ....ooooo...
-          `,
-        `
-          ............
-          ....oooo....
-          ...ojjjjho..
-          ..ojjjjhhko.
-          .ojjjjhkKko.
-          .ojjhhkKoKko
-          .ojhhhkkkkso
-          .ojhhhhksso.
-          .ojhhhkkso..
-          .ojhGWwGgo..
-          .ohoGGKkko..
-          ..oGGgKkso..
-          ..oGggKkfo..
-          ..oGgggffo..
-          ..ofgfgfgo..
-          ...oKKsso...
-          ..oKko.osso.
-          ..ooo..oooo.
-          `,
-        `
-          ....oooo....
-          ...ojjjjho..
-          ..ojjjjhhko.
-          .ojjjjhkKko.
-          .ojjhhkKoKko
-          .ojhhhkkkkso
-          .ojhhhhksso.
-          .ojhhhkkso..
-          .ojhGWwGgo..
-          .ohoGGKkko..
-          ..oGGgKkso..
-          ..oGggKkfo..
-          ..oGgggffo..
-          ..ofgfgfgo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ....ooooo...
-          `,
-      ],
-      frameMs: 200,
-    },
-    walk_w: {
-      frames: [
-        `
-          ............
-          ....oooo....
-          ..ohjjjjo...
-          .okhhjjjjo..
-          .okskhjjjjo.
-          oksoskhhjjo.
-          oKkkkkhhhjo.
-          .oKKkhhhhjo.
-          ..oKkkhhhjo.
-          ..ogGwWGhjo.
-          ..okksGGoho.
-          ..oKksgGGo..
-          ..ofksggGo..
-          ..offgggGo..
-          ..ogfgfgfo..
-          ...okssKo...
-          ..okso.oKo..
-          .oooo..ooo..
-          `,
-        `
-          ....oooo....
-          ..ohjjjjo...
-          .okhhjjjjo..
-          .okskhjjjjo.
-          oksoskhhjjo.
-          oKkkkkhhhjo.
-          .oKKkhhhhjo.
-          ..oKkkhhhjo.
-          ..ogGwWGhjo.
-          ..okksGGoho.
-          ..oKksgGGo..
-          ..ofksggGo..
-          ..offgggGo..
-          ..ogfgfgfo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ...ooooo....
-          `,
-        `
-          ............
-          ....oooo....
-          ..ohjjjjo...
-          .okhhjjjjo..
-          .okskhjjjjo.
-          oksoskhhjjo.
-          oKkkkkhhhjo.
-          .oKKkhhhhjo.
-          ..oKkkhhhjo.
-          ..ogGwWGhjo.
-          ..okksGGoho.
-          ..oKksgGGo..
-          ..ofksggGo..
-          ..offgggGo..
-          ..ogfgfgfo..
-          ...oKKsso...
-          .oKKo.okso..
-          .oooo..ooo..
-          `,
-        `
-          ....oooo....
-          ..ohjjjjo...
-          .okhhjjjjo..
-          .okskhjjjjo.
-          oksoskhhjjo.
-          oKkkkkhhhjo.
-          .oKKkhhhhjo.
-          ..oKkkhhhjo.
-          ..ogGwWGhjo.
-          ..okksGGoho.
-          ..oKksgGGo..
-          ..ofksggGo..
-          ..offgggGo..
-          ..ogfgfgfo..
-          ...oKkkso...
-          ...oKkkso...
-          ...oKkkso...
-          ...ooooo....
-          `,
-      ],
-      frameMs: 200,
-    },
-    sit_e: { frames: [SIT_E, sinkRows(SIT_E, 4, 12)], frameMs: [900, 700] },
-    sit_w: { frames: [SIT_W, sinkRows(SIT_W, 4, 12)], frameMs: [900, 700] },
-  },
-  shadow: { width: 8, height: 3, x: 1 },
+  animations: personAnimations(parts),
   variants: {
     skin_pale: { skin_light: 'skin_pale' },
     skin_tan: { skin_light: 'skin_tan' },
@@ -590,4 +171,5 @@ export default defineSprite({
     hair_red: { hair_brown: 'hair_red' },
     hair_blond: { hair_brown: 'hair_blond' },
   },
+  shadow: { width: 12, height: 4, x: 1 },
 });

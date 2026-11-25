@@ -70,11 +70,11 @@ export const RAMPS = [
   { name: 'skin_olive', title: 'кожа оливковая', colors: ['#8c5a39', '#b07a4b', '#cf9c69'] },
   { name: 'skin_brown', title: 'кожа коричневая', colors: ['#6a3d2a', '#91593a', '#b47a52'] },
   { name: 'skin_dark', title: 'кожа тёмная', colors: ['#45281f', '#673d2c', '#8d5b40'] },
-  { name: 'hair_black', title: 'волосы чёрные', colors: ['#2b2228', '#4a3b40'] },
-  { name: 'hair_brown', title: 'волосы тёмно-русые', colors: ['#45291c', '#6a432f'] },
-  { name: 'hair_chestnut', title: 'волосы каштановые', colors: ['#6e3a22', '#9a5a36'] },
-  { name: 'hair_red', title: 'волосы рыжие', colors: ['#9a421f', '#cc6a30'] },
-  { name: 'hair_blond', title: 'волосы светлые', colors: ['#a8844a', '#d8b870'] },
+  { name: 'hair_black', title: 'волосы чёрные', colors: ['#2b2228', '#4a3b40', '#6e5d60'] },
+  { name: 'hair_brown', title: 'волосы тёмно-русые', colors: ['#45291c', '#6a432f', '#946645'] },
+  { name: 'hair_chestnut', title: 'волосы каштановые', colors: ['#6e3a22', '#9a5a36', '#c4804c'] },
+  { name: 'hair_red', title: 'волосы рыжие', colors: ['#9a421f', '#cc6a30', '#ec9a4e'] },
+  { name: 'hair_blond', title: 'волосы светлые', colors: ['#a8844a', '#d8b870', '#f2dc9e'] },
   // Clothes of epoch 0: hides and furs, bone and shell ornaments (GDD §10.3).
   { name: 'hide', title: 'сыромятная кожа, шкуры', colors: ['#5c4331', '#8a6a48', '#b39468'] },
   {

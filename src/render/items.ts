@@ -8,9 +8,10 @@
  *     steps of size are the animations `small`, `medium`, `idle` (full); a resource without a
  *     pile sprite — its icon laid one per third of a stack, each a little apart. No shift: the
  *     tiles of the pile join into one heap.
- *   - In the hands (`loadLook`): the resource's carried look (`carry` — e.g. a bundle held over the
- *     head with raised arms, recoloured to the carrier's skin; its anchor on the line of the
- *     shoulders), or else its icon over the head; bobbing with the steps (./villagers.ts).
+ *   - In the hands (`loadLook`): held overhead in both raised hands (the carrier's `hold_*` and
+ *     `carry_*` animations, ADR-033) — the resource's carried look (`carry`, e.g. a bundle of
+ *     branches) or else its icon, its anchor where the hands are; bobbing with the steps
+ *     (./villagers.ts).
  *
  * Depth: like an object's (the anchor's y): a villager on the same tile is drawn in front. Only the
  * heaps of the pile cast a shadow; a stack or an icon lying on the ground is flat.
@@ -23,16 +24,15 @@ import type { Item } from '../sim/items.ts';
 export const PILE_STEPS = ['small', 'medium', 'idle'] as const;
 
 /**
- * Where a load is drawn, its anchor's height over the carrier's feet, px: a carried look stands on
- * the line of the shoulders (row 8 of the 18 of a villager); an icon lies on the head.
+ * Where a load is drawn, its anchor's height over the carrier's feet, px: on the raised hands
+ * (row 4 of the 24 of a villager, ADR-033) — a bundle lies across them, an icon sits between them.
  */
-export const LOAD = { shoulders: -10, head: -17 } as const;
+export const LOAD = { hands: -20, icon: -20 } as const;
 
-/** How a load is drawn over its carrier: the sprite, its height, recoloured to the skin or not. */
+/** How a load is drawn over its carrier: the sprite and its height. */
 export interface LoadLook {
   readonly sprite: string;
   readonly y: number;
-  readonly skin: boolean;
 }
 
 /** Where on its tile an item lies: as an object's anchor (./mapRenderer.ts). */
@@ -113,7 +113,5 @@ export function itemPoses(item: Item): ItemPose[] {
 /** How a load of `resource` is drawn in the hands (data/resources.json `carry`, else `sprite`). */
 export function loadLook(resource: string): LoadLook {
   const { carry, sprite } = DATA.resources.get(resource);
-  return carry !== null
-    ? { sprite: carry, y: LOAD.shoulders, skin: true }
-    : { sprite, y: LOAD.head, skin: false };
+  return carry !== null ? { sprite: carry, y: LOAD.hands } : { sprite, y: LOAD.icon };
 }

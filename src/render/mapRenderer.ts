@@ -79,7 +79,7 @@ export interface MapRenderer {
 }
 
 /** Where the bubble of sleep floats: its tail tip from a sleeper's anchor, px (over the head). */
-export const SLEEP_BUBBLE = { sprite: 'bubble_sleep', x: -3, y: -9 } as const;
+export const SLEEP_BUBBLE = { sprite: 'bubble_sleep', x: -6, y: -11 } as const;
 
 /** Where on its tile an object stands: the anchor's offset from the tile's top-left corner. */
 const ANCHOR = { x: TILE_SIZE / 2, y: TILE_SIZE - 3 } as const;
@@ -386,9 +386,12 @@ export function createMapRenderer(
           ...(person.frame === null ? { timeMs: timeMs + person.phase } : { frame: person.frame }),
         });
         if (person.load) {
-          sheet.draw(ctx, person.load.sprite, person.load.x - view.x, person.load.y - view.y, {
-            swap: person.load.swap,
-          });
+          sheet.draw(
+            ctx,
+            person.load.sprite,
+            person.load.x - view.x + shiver,
+            person.load.y - view.y,
+          );
         }
       };
       const drawThing = (thing: ItemPose) => {

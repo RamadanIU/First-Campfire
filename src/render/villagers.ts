@@ -3,25 +3,27 @@
  * which animation and frame — pure functions of the villager, the interpolation `alpha` and the
  * presentation time (docs/ART.md, «Жители»).
  *
- *   - Sprite `man` or `woman` (12×18); skin and hair — palette swaps of `skin_light` and
+ *   - Sprite `man` or `woman` (16×24, ADR-033); skin and hair — palette swaps of `skin_light` and
  *     `hair_brown` by the villager's indices (GDD §10.2: 6 tones, 5 colours).
  *   - Position: between the previous and the current tick by `alpha` (GameLoop.alpha), so the
  *     walk is smooth whatever the frame rate; the feet stand where an object's anchor would
  *     (the middle of the tile, 3 px above its lower edge), in whole pixels.
- *   - Walking: the frame is picked by the distance walked, not by the clock: one frame per
- *     `strideTiles` (half a tile — at the pace of the sprite's 200 ms frames at ×1), so at ×20
- *     the legs keep pace with the ground and on pause they stop mid-stride (BACKLOG, 0.4).
+ *   - Walking: the frame of the eight-frame walk is picked by the distance walked, not by the
+ *     clock: one frame per `strideTiles` (a quarter of a tile — at the pace of the sprite's 100 ms
+ *     frames at ×1), so at ×20 the legs keep pace with the ground and on pause they stop
+ *     mid-stride (BACKLOG, 0.4).
  *   - Standing: the breathing `idle_*`, each villager with its own phase.
  *   - Sitting by the fire (step 1.9): `sit_e` / `sit_w`, facing it, breathing.
  *   - Asleep (step 1.5): `man_asleep` / `woman_asleep` — lying on the ground, breathing slowly; the
  *     same swaps. A bubble of sleep floats over the head (./mapRenderer.ts, `drawSigns`).
- *   - Carrying (step 1.7): the load's look over the villager (./items.ts `loadLook` — a bundle held
- *     up in raised arms, with the villager's skin); walking, it sinks a pixel with the body on the
- *     strides (frames 0 and 2), so the bundle bobs with the steps.
+ *   - Carrying (step 1.7): arms raised — `carry_*` walking, `hold_*` standing (ADR-033) — and the
+ *     load's look on the hands (./items.ts `loadLook`); walking, it sinks with the hands on the low
+ *     frames of the walk (../art/people.ts `walkBob`), so the bundle bobs with the steps.
  *   - Depth: like an object's (anchor y), a little in front of the low flowers and grass of its
  *     own tile (they stand up to 2 px lower), never in front of anything of the row below.
  */
 import type { PaletteSwap } from '../art/palette.ts';
+import { WALK_FRAMES, walkBob } from '../art/people.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { isShivering } from '../sim/needs.ts';
 import type { Villager } from '../sim/villagers.ts';
@@ -50,8 +52,6 @@ export const HAIR_RAMPS = [
 export const FEET = { x: TILE_SIZE / 2, y: TILE_SIZE - 3 } as const;
 /** Depth in front of the low decorations of the villager's own tile (shifted ≤ 2 px down). */
 const DEPTH_AHEAD = 2.5;
-/** Frames of the walking cycle (docs/ART.md: stride, passing, other stride, passing). */
-const WALK_FRAMES = 4;
 
 /** Sprites of a villager: standing and walking, or asleep on the ground (step 1.5). */
 export type VillagerSprite = 'man' | 'woman' | 'man_asleep' | 'woman_asleep';
@@ -75,12 +75,11 @@ export interface VillagerPose {
   readonly asleep: boolean;
   /** Shivering with cold (step 1.10, src/sim/needs.ts `isShivering`): awake, it jitters by a pixel. */
   readonly shivering: boolean;
-  /** What it carries (step 1.7): the load's sprite, its anchor and swap; or null. */
+  /** What it carries (step 1.7): the load's sprite and its anchor on the raised hands; or null. */
   readonly load: {
     readonly sprite: string;
     readonly x: number;
     readonly y: number;
-    readonly swap: PaletteSwap;
   } | null;
 }
 
@@ -116,13 +115,14 @@ export function strideOf(
 }
 
 /**
- * The animation of an awake villager: walking, sitting by the fire sideways (step 1.9), standing.
+ * The animation of an awake villager: walking, sitting by the fire sideways (step 1.9), standing;
+ * with a load — arms up, walking or standing (ADR-033).
  */
-function animationOf(villager: Villager, walking: boolean): string {
-  if (walking) return `walk_${villager.facing}`;
+function animationOf(villager: Villager, walking: boolean, loaded: boolean): string {
+  if (walking) return `${loaded ? 'carry' : 'walk'}_${villager.facing}`;
   const sideways = villager.facing === 'e' || villager.facing === 'w';
   if (villager.action.kind === 'sit' && sideways) return `sit_${villager.facing}`;
-  return `idle_${villager.facing}`;
+  return `${loaded ? 'hold' : 'idle'}_${villager.facing}`;
 }
 
 /**
@@ -146,29 +146,22 @@ export function villagerPose(
   const walked = Math.max(0, villager.walked - (1 - alpha) * lastStep);
   const frame = walking ? walkFrame(walked, strideTiles) : null;
   const feetX = Math.round(x * TILE_SIZE + FEET.x);
-  // On a stride (frames 0 and 2) the body is a pixel lower, and the load with it.
-  const bob = frame !== null && frame % 2 === 0 ? 1 : 0;
+  // On the low frames of the walk the body is a pixel lower, and the hands with the load.
+  const bob = frame !== null ? walkBob(frame) : 0;
+  const loaded = load !== null && !asleep;
   return {
     id: villager.id,
     sprite: asleep ? `${spriteOf(villager)}_asleep` : spriteOf(villager),
     swap: swapOf(villager),
     x: feetX,
     y: feetY,
-    animation: asleep ? 'idle' : animationOf(villager, walking),
+    animation: asleep ? 'idle' : animationOf(villager, walking, loaded),
     frame,
     phase: (villager.id * 617) % 1600,
     depth: feetY + DEPTH_AHEAD,
     walking,
     asleep,
     shivering: !asleep && isShivering(villager.needs.warmth),
-    load:
-      load === null || asleep
-        ? null
-        : {
-            sprite: load.sprite,
-            x: feetX,
-            y: feetY + load.y + bob,
-            swap: load.skin ? swapOf(villager) : {},
-          },
+    load: loaded ? { sprite: load.sprite, x: feetX, y: feetY + load.y + bob } : null,
   };
 }

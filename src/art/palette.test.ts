@@ -44,8 +44,9 @@ describe('палитра игры', () => {
       0,
     );
     const world = all - count(['shadow', 'ui']);
+    // 69 colours of step 0.4 (ADR-013) + a highlight for each of the five hair colours (ADR-033).
     expect(world).toBeGreaterThanOrEqual(56);
-    expect(world).toBeLessThanOrEqual(72);
+    expect(world).toBeLessThanOrEqual(76);
   });
 
   it('шесть тонов кожи и пять цветов волос — ряды одной длины, подменяют друг друга', () => {

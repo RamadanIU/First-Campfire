@@ -60,12 +60,12 @@ describe('как выглядят предметы (шаг 1.7)', () => {
     }
   });
 
-  it('ноша: вязанка веток на линии плеч в цвет кожи; без особого вида — значок на голове', () => {
-    expect(loadLook('branches')).toEqual({ sprite: 'carry_bundle', y: LOAD.shoulders, skin: true });
-    expect(loadLook('stones')).toEqual({ sprite: 'stones', y: LOAD.head, skin: false });
+  it('ноша: вязанка веток на поднятых руках; без особого вида — значок между руками', () => {
+    expect(loadLook('branches')).toEqual({ sprite: 'carry_bundle', y: LOAD.hands });
+    expect(loadLook('stones')).toEqual({ sprite: 'stones', y: LOAD.icon });
   });
 
-  it('житель с ношей: вязанка над ним, на шаге качается с телом; во сне ноши нет', () => {
+  it('житель с ношей: руки вверх, вязанка на руках, на шаге качается с телом; во сне ноши нет', () => {
     const villager = {
       id: 1,
       sex: 'male',
@@ -93,16 +93,20 @@ describe('как выглядят предметы (шаг 1.7)', () => {
     const look = loadLook('branches');
     const stride = villagerPose(villager, 1, 0.5, look);
     expect(stride.frame).toBe(0);
+    expect(stride.animation).toBe('carry_e');
     expect(stride.load).toEqual({
       sprite: 'carry_bundle',
       x: stride.x,
-      y: stride.y + LOAD.shoulders + 1,
-      swap: { skin_light: 'skin_tan' },
+      y: stride.y + LOAD.hands + 1,
     });
-    const passing = villagerPose({ ...villager, walked: 0.5 }, 1, 0.5, look);
-    expect(passing.frame).toBe(1);
-    expect(passing.load!.y).toBe(passing.y + LOAD.shoulders);
-    expect(villagerPose(villager, 1, 0.5, null).load).toBeNull();
+    const passing = villagerPose({ ...villager, walked: 1 }, 1, 0.5, look);
+    expect(passing.frame).toBe(2);
+    expect(passing.load!.y).toBe(passing.y + LOAD.hands);
+    const empty = villagerPose(villager, 1, 0.5, null);
+    expect(empty.load).toBeNull();
+    expect(empty.animation).toBe('walk_e');
+    const standing = { ...villager, toX: 10, progress: 0, prevX: 10, action: { kind: 'rest' } };
+    expect(villagerPose(standing as unknown as Villager, 1, 0.5, look).animation).toBe('hold_e');
     const still = {
       ...villager,
       toX: 10,
