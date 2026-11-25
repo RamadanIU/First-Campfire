@@ -15,7 +15,7 @@ import { canHold, countAll, isPileTile, stackOf } from '../src/sim/items.ts';
 import { createMap, setGround } from '../src/sim/map.ts';
 import type { GeneratedMap } from '../src/sim/mapgen.ts';
 import { createObjects, placeObject } from '../src/sim/objects.ts';
-import { placeVillager } from '../src/sim/villagers.ts';
+import { carries, placeVillager } from '../src/sim/villagers.ts';
 import { createWorld, type World } from '../src/sim/world.ts';
 
 const GROUND: Record<string, string> = {
@@ -87,15 +87,18 @@ export function meadow(width: number, height: number): string[] {
 
 /**
  * Every rule items keep (step 1.7; a violation — a message, none — an empty list): all that lies
- * and is carried adds up to all that fell, one stack per tile within its size, stacks only where
- * things may lie and the pile's on its tiles, a load only while the plan is to haul.
+ * and is carried plus all that was burnt (step 1.9) adds up to all that fell, one stack per tile
+ * within its size, stacks only where things may lie and the pile's on its tiles, nothing on the
+ * middle of the camp (the fire), a load only while the plan carries things (work, the fire).
  */
 export function brokenRules(world: World): string[] {
   const broken: string[] = [];
   const all = countAll(world);
   const total = Object.values(all).reduce((sum, n) => sum + n, 0);
-  if (total !== world.items.made) {
-    broken.push(`предметов ${total}, а упало ${world.items.made} (тик ${world.tick})`);
+  if (total + world.items.burned !== world.items.made) {
+    broken.push(
+      `предметов ${total} и сожжено ${world.items.burned}, а упало ${world.items.made} (тик ${world.tick})`,
+    );
   }
   const tiles = new Set<string>();
   for (const item of world.items.list) {
@@ -107,6 +110,9 @@ export function brokenRules(world: World): string[] {
     }
     if (!canHold(world.map, world.objects, item.x, item.y)) {
       broken.push(`стопка #${item.id} на тайле ${at}, где ничего не может лежать`);
+    }
+    if (item.x === world.camp.x && item.y === world.camp.y) {
+      broken.push(`стопка #${item.id} на месте костра ${at}`);
     }
     if ((item.place === 'pile') !== isPileTile(world, item.x, item.y)) {
       broken.push(`стопка #${item.id} (${item.place}) на ${at} — не своё место`);
@@ -121,13 +127,17 @@ export function brokenRules(world: World): string[] {
       broken.push(`ноша жителя ${villager.id}: ${load.count}`);
     }
     if (ids.includes(load.id)) broken.push(`id ноши ${load.id} и на земле`);
+    const { action } = villager;
     const hauling =
-      villager.action.kind === 'pick_up' ||
-      villager.action.kind === 'put_down' ||
-      (villager.action.kind === 'walk' &&
-        (villager.action.purpose === 'fetch' || villager.action.purpose === 'carry'));
-    if (!hauling) broken.push(`житель ${villager.id} держит ношу, делая «${villager.action.kind}»`);
-    if (villager.plan.activity !== 'haul') {
+      action.kind === 'pick_up' ||
+      action.kind === 'put_down' ||
+      action.kind === 'take' ||
+      action.kind === 'kindle' ||
+      action.kind === 'stoke' ||
+      (action.kind === 'walk' &&
+        (action.purpose === 'fetch' || action.purpose === 'carry' || action.purpose === 'fire'));
+    if (!hauling) broken.push(`житель ${villager.id} держит ношу, делая «${action.kind}»`);
+    if (!carries(villager.plan)) {
       broken.push(`житель ${villager.id} держит ношу, а план — «${villager.plan.activity}»`);
     }
   }

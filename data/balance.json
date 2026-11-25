@@ -65,6 +65,24 @@
     "startLitter": 40,
     "litterCheckTicks": 10
   },
+  "fire": {
+    "fuelPerDay": { "spring": 1, "summer": 1, "autumn": 1, "winter": 3 },
+    "maxFuel": 4,
+    "kindleBranches": 3,
+    "kindleTicks": 40,
+    "stokeTicks": 8,
+    "kindleUtility": 0.4,
+    "stokeUtility": 0.6,
+    "eveningStoke": 2,
+    "eveningWork": 0.5,
+    "sitUtility": 0.35,
+    "eveningTicks": 80,
+    "nearTiles": 2,
+    "sleepWalkTiles": 8,
+    "heatRadius": 4,
+    "woodReserve": 20,
+    "woodBoost": 0.2
+  },
   "map": {
     "width": 64,
     "height": 64,

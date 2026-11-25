@@ -14,6 +14,7 @@ import {
   remember,
   searchSource,
   sleepWish,
+  woodNeed,
 } from './minds.ts';
 import { objectAt, takeFood } from './objects.ts';
 
@@ -100,8 +101,11 @@ describe('упрямство: начатое бросают только рад�
     const villager = world.villagers.list[0]!;
     villager.needs.food = 80;
     const firm = 1 + keepMargin;
+    // Work is worth its utility now, if more than when chosen: with an empty pile the need of wood
+    // (step 1.9) raises it by `fire.woodBoost`.
+    expect(woodNeed(world)).toBeCloseTo(1 + DATA.balance.fire.woodBoost, 12);
     expect(holdOf(world, villager, { activity: 'haul', utility: 0.18 })).toBeCloseTo(
-      haulUtility * firm,
+      haulUtility * woodNeed(world) * firm,
       12,
     );
     expect(holdOf(world, villager, { activity: 'eat', utility: 0.3 })).toBeCloseTo(0.3 * firm, 12);

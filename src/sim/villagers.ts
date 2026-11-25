@@ -34,6 +34,11 @@
  *     down (`items.putDownTicks`). A load is held only while the plan is to haul: one who does
  *     anything else (goes to eat, lies down to sleep, dies) lets it go where it stands — nothing is
  *     lost.
+ *   - The fire (step 1.9, ./fire.ts): to light or feed it, the villager walks to a stack of wood in
+ *     the pile, takes as much as the fire takes (`items.pickUpTicks`), carries it to a side of the
+ *     fire and lights it (`fire.kindleTicks`) or puts it in (`fire.stokeTicks`). In the evening it
+ *     walks to a place by the burning fire and sits facing it; at night it goes to sleep by the fire
+ *     (if the hearth is within `fire.sleepWalkTiles`), else where it stands.
  *   - Otherwise it rests (the default plan): stands `villagers.restTicks`, then walks to a free tile
  *     within `villagers.wanderRadius` of home, and again.
  *   - The observer's debug order (`orderWalk`, the scene `world` with `debug=1`) sends a villager
@@ -47,6 +52,7 @@
  */
 import { DATA } from '../data/index.ts';
 import { type Cause, emit } from './events.ts';
+import { feedFire, fireRoom, hearthOf, isBurning, lightFire, WOOD } from './fire.ts';
 import { dropLoad, findItem, isPileTile, lay, pileSpot, type Stack, takeItem } from './items.ts';
 import { inside } from './map.ts';
 import {
@@ -62,7 +68,9 @@ import {
   type PlanStep,
   reconsider,
   remember,
+  searchFireSide,
   searchLoose,
+  searchSeat,
   type Why,
 } from './minds.ts';
 import {
@@ -93,20 +101,36 @@ export const LOOKS = { skinTones: 6, hairColors: 5 } as const;
 
 /**
  * Why a villager walks: to stroll near home, because the observer sent it (debug), to eat or to
- * drink (step 1.4), to fetch something lying loose or to carry the load to the pile (step 1.7).
+ * drink (step 1.4), to fetch something lying loose or to carry the load to the pile (step 1.7); to
+ * take wood from the pile, to carry it to the fire, to sit by the fire, to lie down by it (step 1.9).
  */
-export type WalkPurpose = 'wander' | 'order' | 'eat' | 'drink' | 'fetch' | 'carry';
+export type WalkPurpose =
+  | 'wander'
+  | 'order'
+  | 'eat'
+  | 'drink'
+  | 'fetch'
+  | 'carry'
+  | 'wood'
+  | 'fire'
+  | 'sit'
+  | 'bed';
 
 /**
  * What a walk leads to. A need is met (step 1.4) beside a bush with food — object `object` on
  * its tile — or beside water; work (step 1.7) is done on the tile itself: picking up item `item`
- * lying there, putting the load down in the pile.
+ * lying there, putting the load down in the pile. The fire (step 1.9): taking wood from stack
+ * `item` of the pile (`store`, on its tile), lighting or feeding the fire at (x, y) (`fire`, beside
+ * it), sitting or sleeping on a place by it (`spot`, on the tile).
  */
 export type Source =
   | { kind: 'bush'; object: number; x: number; y: number }
   | { kind: 'water'; x: number; y: number }
   | { kind: 'item'; item: number; resource: string; x: number; y: number }
-  | { kind: 'pile'; resource: string; x: number; y: number };
+  | { kind: 'pile'; resource: string; x: number; y: number }
+  | { kind: 'store'; item: number; resource: string; x: number; y: number }
+  | { kind: 'fire'; x: number; y: number }
+  | { kind: 'spot'; x: number; y: number };
 
 export type VillagerAction =
   /** Stands (breathes) until tick `until`, thinking now and then (./minds.ts); then strolls. */
@@ -136,7 +160,15 @@ export type VillagerAction =
   /** Picks up item `item` (of `resource`) lying on its tile; done at tick `until` (step 1.7). */
   | { kind: 'pick_up'; item: number; resource: string; until: number }
   /** Puts its load of `resource` down on its tile of the pile; done at tick `until` (step 1.7). */
-  | { kind: 'put_down'; resource: string; until: number };
+  | { kind: 'put_down'; resource: string; until: number }
+  /** Takes wood from stack `item` of the pile on its tile; done at tick `until` (step 1.9). */
+  | { kind: 'take'; item: number; resource: string; until: number }
+  /** Lights the fire beside it with the wood it holds; done at tick `until` (step 1.9). */
+  | { kind: 'kindle'; until: number }
+  /** Puts the wood it holds into the burning fire beside it; done at tick `until` (step 1.9). */
+  | { kind: 'stoke'; until: number }
+  /** Sits by the fire, facing it, until the mind prefers anything else (step 1.9). */
+  | { kind: 'sit' };
 
 export interface Villager {
   id: number;
@@ -252,6 +284,14 @@ export function removeVillager(world: World, id: number): void {
   list.splice(index, 1);
 }
 
+/**
+ * Does the plan carry things (a load is held only while it does): work (step 1.7), lighting and
+ * feeding the fire (step 1.9).
+ */
+export function carries(plan: Plan): boolean {
+  return plan.activity === 'haul' || plan.activity === 'kindle' || plan.activity === 'stoke';
+}
+
 /** Does another villager than `self` stand on tile (x, y) or step onto it? */
 export function isTaken(world: World, x: number, y: number, self?: Villager): boolean {
   for (const other of world.villagers.list) {
@@ -261,9 +301,13 @@ export function isTaken(world: World, x: number, y: number, self?: Villager): bo
   return false;
 }
 
-/** A tile to stand on: passable, bare (no flowers or bushes underfoot), nobody there. */
+/**
+ * A tile to stand on: passable, bare (no flowers or bushes underfoot), nobody there, not the middle
+ * of the camp (the place of the fire, step 1.9).
+ */
 function canStandOn(world: World, x: number, y: number, self?: Villager): boolean {
   return (
+    (x !== world.camp.x || y !== world.camp.y) &&
     tileSpeed(world.map, world.objects, x, y) > 0 &&
     objectAt(world.map, world.objects, x, y) === undefined &&
     !isTaken(world, x, y, self)
@@ -565,9 +609,44 @@ function startPlan(
     bar,
     'ahead' in choice ? (choice.ahead ?? null) : null,
   );
-  if (choice.kind === 'rest') rest(world, villager);
-  else if (choice.kind === 'sleep') villager.action = { kind: 'sleep', fainted: false };
-  else walkFor(world, villager, choice.kind === 'haul' ? 'fetch' : choice.kind, choice);
+  switch (choice.kind) {
+    case 'rest':
+      rest(world, villager);
+      return;
+    case 'sleep':
+      bed(world, villager);
+      return;
+    case 'haul':
+      walkFor(world, villager, 'fetch', choice);
+      return;
+    case 'kindle':
+    case 'stoke':
+      if (villager.load?.resource === WOOD) {
+        // Wood in the hands already (it was carrying branches to the pile): straight to the fire.
+        villager.plan.steps = [choice.kind];
+        toFire(world, villager);
+      } else {
+        walkFor(world, villager, 'wood', choice);
+      }
+      return;
+    case 'sit':
+      walkFor(world, villager, 'sit', choice);
+      return;
+    default:
+      walkFor(world, villager, choice.kind, choice);
+  }
+}
+
+/**
+ * The step `bed` of the plan of sleep (step 1.9): walk to a place by the fire if the hearth is
+ * within `fire.sleepWalkTiles`; there already, or none near — lie down here.
+ */
+function bed(world: World, villager: Villager): void {
+  const found = hearthOf(world)
+    ? searchSeat(world, villager, DATA.balance.fire.sleepWalkTiles)
+    : null;
+  if (found && found.path.length > 0) walkFor(world, villager, 'bed', found);
+  else nextStep(world, villager);
 }
 
 /** Walk to a found source; standing there already — the next step of the plan at once. */
@@ -605,12 +684,25 @@ function nextStep(world: World, villager: Villager, source: Source | null = null
     case 'sleep':
       villager.action = { kind: 'sleep', fainted: false };
       return;
+    case 'bed':
+      bed(world, villager);
+      return;
     case 'eat':
     case 'drink':
     case 'pick_up':
     case 'put_down':
+    case 'take':
+    case 'sit':
       if (source) begin(world, villager, source);
       else fail(world, villager, 0);
+      return;
+    case 'kindle':
+    case 'stoke':
+      if (source) tend(world, villager, source);
+      else fail(world, villager, 0);
+      return;
+    case 'to_fire':
+      toFire(world, villager);
       return;
     case 'gather':
       gather(world, villager);
@@ -620,6 +712,7 @@ function nextStep(world: World, villager: Villager, source: Source | null = null
       return;
     case 'go':
     case 'fetch':
+    case 'fetch_wood':
       // A walk is begun with its source (`startPlan`, `gather`); met here — the plan is broken.
       fail(world, villager, 0);
       return;
@@ -683,6 +776,25 @@ function begin(world: World, villager: Villager, source: Source): void {
       resource: source.resource,
       until: world.tick + putDownTicks,
     };
+    return;
+  }
+  if (source.kind === 'store') {
+    villager.action = {
+      kind: 'take',
+      item: source.item,
+      resource: source.resource,
+      until: world.tick + pickUpTicks,
+    };
+    return;
+  }
+  if (source.kind === 'spot') {
+    const { camp } = world;
+    villager.facing = facingOf(camp.x - villager.x, camp.y - villager.y);
+    villager.action = { kind: 'sit' };
+    return;
+  }
+  if (source.kind === 'fire') {
+    fail(world, villager, 0);
     return;
   }
   villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
@@ -778,6 +890,66 @@ function putDown(
 }
 
 /**
+ * Taking wood from the pile (step 1.9): when done, as much as the fire takes (at least one armful,
+ * as far as the stack and the hands allow) goes into the hands, and the plan goes on (`to_fire`).
+ * Nothing in the hands — the plan fails.
+ */
+function take(world: World, villager: Villager, action: Extract<VillagerAction, { kind: 'take' }>) {
+  if (world.tick < action.until) return;
+  const item = findItem(world, action.item);
+  if (item && item.place === 'pile' && item.x === villager.x && item.y === villager.y) {
+    takeItem(world, villager, item, Math.max(1, Math.floor(fireRoom(world))));
+  }
+  if (!villager.load) fail(world, villager, 0);
+  else nextStep(world, villager);
+}
+
+/** Carry the wood to the fire: walk to a free side of it. No way there — the plan fails. */
+function toFire(world: World, villager: Villager): void {
+  const found = villager.load ? searchFireSide(world, villager) : null;
+  if (!found) {
+    fail(world, villager);
+    return;
+  }
+  walkFor(world, villager, 'fire', found);
+}
+
+/** Beside the fire with wood: face it and light it, or put the wood in (step 1.9). */
+function tend(world: World, villager: Villager, source: Source): void {
+  if (!canUse(world, source, villager.x, villager.y) || !villager.load) {
+    fail(world, villager, 0);
+    return;
+  }
+  villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
+  // Whatever the plan said: a fire that went out meanwhile is lit again, one lit meanwhile is fed.
+  const { kindleTicks, stokeTicks } = DATA.balance.fire;
+  villager.action = !isBurning(world)
+    ? { kind: 'kindle', until: world.tick + kindleTicks }
+    : { kind: 'stoke', until: world.tick + stokeTicks };
+}
+
+/**
+ * Lighting or feeding the fire, when done: the wood goes in (./fire.ts) and the plan is carried
+ * out. Lighting has to wait while someone stands on the place of the hearth to be built.
+ */
+function fireWork(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'kindle' | 'stoke' }>,
+) {
+  if (world.tick < action.until) return;
+  if (action.kind === 'kindle' || !isBurning(world)) {
+    if (!lightFire(world, villager)) {
+      action.until = world.tick + DATA.balance.villagers.giveWayTicks;
+      return;
+    }
+  } else {
+    feedFire(world, villager);
+  }
+  nextStep(world, villager);
+}
+
+/**
  * Eating at a bush: a bite every `eating.biteTicks` until full (the plan is done) or the bush is
  * bare (it fails: think again at once).
  */
@@ -847,8 +1019,8 @@ function gain(villager: Villager, need: Meal, amount: number): void {
  */
 function decide(world: World, villager: Villager): boolean {
   if (villager.needs.sleep <= 0 && villager.action.kind !== 'sleep') faint(world, villager);
-  // A load is held only while hauling: anything else (sleep, a meal…) lets it go here.
-  if (villager.load && villager.plan.activity !== 'haul') dropLoad(world, villager);
+  // A load is held only while carrying: anything else (sleep, a meal…) lets it go here.
+  if (villager.load && !carries(villager.plan)) dropLoad(world, villager);
   const action = villager.action;
   if (action.kind === 'sleep' && action.fainted) {
     if (villager.needs.sleep >= DATA.balance.sleeping.faintWakePoints) {
@@ -859,11 +1031,12 @@ function decide(world: World, villager: Villager): boolean {
   const thinking =
     thinkingDue(world, villager) || (action.kind === 'idle' && world.tick >= action.until);
   if (thinking && think(world, villager)) {
-    if (villager.load && villager.plan.activity !== 'haul') dropLoad(world, villager);
+    if (villager.load && !carries(villager.plan)) dropLoad(world, villager);
     return stepOn(world, villager);
   }
   switch (action.kind) {
     case 'sleep':
+    case 'sit':
       return false;
     case 'eat':
       eat(world, villager, action);
@@ -876,6 +1049,13 @@ function decide(world: World, villager: Villager): boolean {
       break;
     case 'put_down':
       putDown(world, villager, action);
+      break;
+    case 'take':
+      take(world, villager, action);
+      break;
+    case 'kindle':
+    case 'stoke':
+      fireWork(world, villager, action);
       break;
     case 'idle':
       if (world.tick >= action.until) nextStep(world, villager);
@@ -981,8 +1161,8 @@ export const villagersSystem: System = {
       villager.prevX = at.x;
       villager.prevY = at.y;
       act(world, villager);
-      // Stopped hauling (lay down to sleep on the way, gave up a blocked path…): the load stays here.
-      if (villager.load && villager.plan.activity !== 'haul') dropLoad(world, villager);
+      // Stopped carrying (lay down to sleep on the way, gave up a blocked path…): the load stays here.
+      if (villager.load && !carries(villager.plan)) dropLoad(world, villager);
     }
   },
 };

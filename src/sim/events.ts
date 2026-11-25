@@ -9,18 +9,27 @@
  * New event types are added to `EventBody` below; `type` is a snake_case id.
  */
 import type { DayPhase, Season } from './calendar.ts';
+import type { Activity } from './minds.ts';
 import type { Need } from './needs.ts';
 import type { Sex } from './villagers.ts';
 import type { World } from './world.ts';
 
 /** Why an event happened. Later steps add decisions… */
 export type Cause =
-  /** A law of the world itself: `genesis` (the world's creation), `calendar` (time passing). */
-  | { kind: 'rule'; rule: 'genesis' | 'calendar' }
+  /**
+   * A law of the world itself: `genesis` (the world's creation), `calendar` (time passing), `fuel`
+   * (step 1.9: the wood of a fire burnt out).
+   */
+  | { kind: 'rule'; rule: 'genesis' | 'calendar' | 'fuel' }
   /** Another event of the journal, by id. */
   | { kind: 'event'; event: number }
   /** A need of a villager (step 1.4): its scale fell to zero. */
-  | { kind: 'need'; villager: number; need: Need };
+  | { kind: 'need'; villager: number; need: Need }
+  /**
+   * A decision of a villager (step 1.9): what its mind set itself to do — its journal of decisions
+   * (./minds.ts `Decision`) says why.
+   */
+  | { kind: 'decision'; villager: number; activity: Activity };
 
 /** What a villager died of (step 1.4). Later: cold, old age, illness… (GDD §4.3). */
 export type DeathReason = 'hunger' | 'thirst';
@@ -45,6 +54,23 @@ export type EventBody =
    * `sleeping.faintWakePoints`. The cause is the event of its sleep running out.
    */
   | { type: 'villager_fainted'; villager: number; sex: Sex; x: number; y: number }
+  /**
+   * A villager lit the campfire (step 1.9): the cause is its decision to kindle it. `first` — the
+   * hearth was built just now (the first fire of the camp).
+   */
+  | {
+      type: 'fire_lit';
+      villager: number;
+      sex: Sex;
+      x: number;
+      y: number;
+      first: boolean;
+    }
+  /**
+   * The campfire went out (step 1.9): its wood burnt out (the cause — the rule `fuel`). `lit` — the
+   * event of its lighting; `burned` — armfuls of wood it burnt since then.
+   */
+  | { type: 'fire_out'; x: number; y: number; lit: number; burned: number }
   /**
    * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
    * out first. Could food and water be reached from where it died (`foodReachable`,
