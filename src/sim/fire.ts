@@ -103,6 +103,15 @@ export function burnPerTick(world: World): number {
 }
 
 /**
+ * Armfuls the fire needs to burn from `world.tick` till the morning (the start of tomorrow's day,
+ * when the people are up), at its season's rate now.
+ */
+export function fuelTillMorning(world: World): number {
+  const { tickOfDay } = calendarAt(world.tick);
+  return burnPerTick(world) * (TIME.ticksPerDay - tickOfDay + PHASE_START.day);
+}
+
+/**
  * Warmth of the campfire at tile (x, y), 0…1: 1 within a tile of a burning fire, fading evenly to
  * 0 at `fire.heatRadius` tiles; 0 — no fire burning (a source of heat for step 1.10).
  */

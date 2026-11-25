@@ -41,9 +41,10 @@
  * The fire (step 1.9, ./fire.ts): `kindle` — light it when it does not burn and the pile holds
  * branches enough (worth more than work); `stoke` — feed it, the more urgent the less wood is left
  * in it, more so in the evening (it has to last the night); one villager at a time tends it. Both
- * take wood from the pile, carry it to the fire and put it in. `sit` — in the evening sit at the
+ * take wood from the pile, carry it to the fire and put it in; in the evening the fire is fed to
+ * last the night. `sit` — in the evening sit at the
  * burning fire, facing it (leisure: a begun meal, drink or work is not broken off for it, and
- * in the evening new work is worth less, `fire.eveningWork`); at night sleep wins, and one goes to sleep beside the fire (the step
+ * work that would last into the evening is worth less, `fire.eveningWork`); at night sleep wins, and one goes to sleep beside the fire (the step
  * `bed` of the plan of sleep — if the hearth is near enough, else where one stands).
  *
  * Where: food is a bush (an object with `harvest` in data/objects.json) that still has some, and
@@ -55,6 +56,7 @@ import { DATA } from '../data/index.ts';
 import { calendarAt } from './calendar.ts';
 import {
   fireRoom,
+  fuelTillMorning,
   isBurning,
   isEvening,
   isEveningOrNight,
@@ -555,7 +557,7 @@ export const ACTIVITY: Readonly<Record<Activity, ActivityDef>> = {
   haul: {
     id: 'haul',
     need: null,
-    utility: (world) => DATA.balance.ai.haulUtility * woodNeed(world) * eveningWork(world),
+    utility: (world) => DATA.balance.ai.haulUtility * woodNeed(world),
     hold: 'firm',
     steps: ['fetch', 'pick_up', 'gather', 'carry', 'put_down'],
   },
@@ -595,11 +597,14 @@ export function woodNeed(world: World): number {
 }
 
 /**
- * The evening context of work (step 1.9): `fire.eveningWork` in the evening while the fire burns
- * (one does not set off for branches at dusk — one sits at the fire), else 1.
+ * The evening context of work (step 1.9): `fire.eveningWork` for a trip that would end in the
+ * evening or at night (now, plus there and back by the way found) while the fire burns — one does
+ * not set off for branches late in the day, one sits at the fire; else 1.
  */
-export function eveningWork(world: World): number {
-  return isBurning(world) && isEvening(world.tick) ? DATA.balance.fire.eveningWork : 1;
+export function eveningWork(world: World, cost: number): number {
+  if (!isBurning(world)) return 1;
+  const back = world.tick + Math.ceil(2 * cost * DATA.balance.movement.walkTicksPerTile);
+  return isEveningOrNight(back) || isEvening(world.tick) ? DATA.balance.fire.eveningWork : 1;
 }
 
 /**
@@ -613,15 +618,20 @@ export function kindleWorth(world: World, villager: Villager): number {
 }
 
 /**
- * Feed the fire (step 1.9): `fire.stokeUtility` × (1 − fuel / max)², × `fire.eveningStoke` in the
- * evening — when it burns, takes an armful more, the pile has wood and nobody else tends it; else 0.
+ * Feed the fire (step 1.9): `fire.stokeUtility` × (1 − fuel / max)² — the less wood is left, the
+ * more urgent; in the evening, if what is left will not last till the morning, at least
+ * `fire.eveningStoke`. Only when it burns, takes an armful more, the pile has wood and nobody else
+ * tends it; else 0.
  */
 export function stokeWorth(world: World, villager: Villager): number {
   const { maxFuel, stokeUtility, eveningStoke } = DATA.balance.fire;
   if (!isBurning(world) || fireRoom(world) < 1 || tendedByOther(world, villager)) return 0;
   if (inPile(world, WOOD) < 1) return 0;
-  const empty = 1 - world.fire.fuel / maxFuel;
-  return stokeUtility * empty * empty * (isEvening(world.tick) ? eveningStoke : 1);
+  const { fuel } = world.fire;
+  const empty = 1 - fuel / maxFuel;
+  const worth = stokeUtility * empty * empty;
+  const short = isEvening(world.tick) && fuel < fuelTillMorning(world);
+  return short ? Math.max(worth, eveningStoke) : worth;
 }
 
 /**
@@ -896,7 +906,7 @@ function haul(
   }
   const found = searchLoose(world, villager, { maxCost: reachFor(ceiling, beat) });
   villager.noWork = found || !vainIfFar ? 0 : world.tick;
-  const utility = found ? ceiling * availability(found.cost) : 0;
+  const utility = found ? ceiling * availability(found.cost) * eveningWork(world, found.cost) : 0;
   note({ kind: 'haul', utility, searched: true, nowhere: found === null });
   if (!found || utility <= best.utility) return null;
   return { kind: 'haul', utility, ...found };
