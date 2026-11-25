@@ -113,6 +113,37 @@ export function parseGrid(text: string): string[] {
   return rows;
 }
 
+/**
+ * A frame mirrored left to right, with characters swapped pairwise by `swap` (e.g. the light and
+ * the shadow of the skin: light falls from the upper left whichever way one faces, docs/ART.md).
+ */
+export function mirrorFrame(text: string, swap: Readonly<Record<string, string>> = {}): string {
+  const back: Record<string, string> = {};
+  for (const [a, b] of Object.entries(swap)) {
+    back[a] = b;
+    back[b] = a;
+  }
+  return parseGrid(text)
+    .map((row) =>
+      [...row]
+        .reverse()
+        .map((c) => back[c] ?? c)
+        .join(''),
+    )
+    .join('\n');
+}
+
+/**
+ * The exhale of a breathing pose: rows `from` … `to` − 1 sink a pixel (row `to` is hidden under
+ * them, row `from` is left empty) — head and shoulders go down, the rest stays.
+ */
+export function sinkRows(text: string, from: number, to: number): string {
+  const rows = parseGrid(text);
+  const empty = '.'.repeat(rows[0]?.length ?? 0);
+  const sunk = [...rows.slice(0, from), empty, ...rows.slice(from, to), ...rows.slice(to + 1)];
+  return sunk.join('\n');
+}
+
 /** Duration of every frame of an animation, ms. */
 export function frameDurations(animation: AnimationDef): number[] {
   const { frames, frameMs = DEFAULT_FRAME_MS } = animation;

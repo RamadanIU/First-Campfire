@@ -1,10 +1,38 @@
-import { defineSprite } from '../sprite.ts';
+import { defineSprite, mirrorFrame, sinkRows } from '../sprite.ts';
+
+/**
+ * Sitting on the ground facing right (step 1.9): knees up, hands on the knees — by the fire. The
+ * exhale sinks the head and shoulders a pixel; facing left is the mirror with the skin's light kept
+ * on the left.
+ */
+const SIT_E = `
+    ............
+    ............
+    ............
+    ............
+    ....oooo....
+    ...ojjjjho..
+    ..ojjjjhhKo.
+    ..ojjjhKKKo.
+    ..ohhhKKoKKo
+    ..ohhhKkkkko
+    ...ohjjhhho.
+    ..odcdjhho..
+    .odcddKKko..
+    .odcdKKkkoo.
+    .oddcGGkKKKo
+    .ofgfggfoKso
+    .oGgggffoKso
+    ..ooooooooo.
+`;
+const SIT_W = mirrorFrame(SIT_E, { K: 's' });
 
 /*
  * A man of epoch 0 (GDD §10.3), 12×18 with a 6×6 face: a fur cape over the shoulders, a necklace
  * of teeth, a rawhide loincloth, bare arms and feet; short hair and a beard.
  * Animations in four directions: `idle_*` — breathing (head and shoulders sink a pixel on the
- * exhale), `walk_*` — four frames: stride (body a pixel lower), passing, the other stride, passing.
+ * exhale), `walk_*` — four frames: stride (body a pixel lower), passing, the other stride, passing;
+ * `sit_e`, `sit_w` — sitting by the fire (step 1.9).
  * Light falls from the upper left, so facing left (`*_w`) is not a mirror of facing right: it is
  * mirrored and then the skin's light and shadow are swapped back (docs/ART.md).
  * Skin is drawn with the `skin_light` ramp, hair with `hair_brown`; the other five skin tones and
@@ -555,6 +583,8 @@ export default defineSprite({
       ],
       frameMs: 200,
     },
+    sit_e: { frames: [SIT_E, sinkRows(SIT_E, 4, 12)], frameMs: [900, 700] },
+    sit_w: { frames: [SIT_W, sinkRows(SIT_W, 4, 12)], frameMs: [900, 700] },
   },
   shadow: { width: 8, height: 3, x: 1 },
   variants: {

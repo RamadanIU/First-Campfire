@@ -1,4 +1,31 @@
-import { defineSprite } from '../sprite.ts';
+import { defineSprite, mirrorFrame, sinkRows } from '../sprite.ts';
+
+/**
+ * Sitting on the ground facing right (step 1.9): knees up, hands on the knees — by the fire. The
+ * exhale sinks the head and shoulders a pixel; facing left is the mirror with the skin's light kept
+ * on the left.
+ */
+const SIT_E = `
+    ............
+    ............
+    ............
+    ............
+    ....oooo....
+    ...ojjjjho..
+    ..ojjjjhhko.
+    .ojjjjhkKko.
+    .ojjhhkKoKko
+    .ojhhhkkkkso
+    .ojhhhhksso.
+    .ojhhhkkso..
+    .ojhGWwGgo..
+    .ohoGGKkkoo.
+    .oGGggGkKKKo
+    .oGgggfgoKso
+    .ofgfgfgoKso
+    ..ooooooooo.
+`;
+const SIT_W = mirrorFrame(SIT_E, { K: 's' });
 
 /*
  * A woman of epoch 0 (GDD §10.3), 12×18 with a 6×6 face: long hair, a rawhide dress to the
@@ -548,6 +575,8 @@ export default defineSprite({
       ],
       frameMs: 200,
     },
+    sit_e: { frames: [SIT_E, sinkRows(SIT_E, 4, 12)], frameMs: [900, 700] },
+    sit_w: { frames: [SIT_W, sinkRows(SIT_W, 4, 12)], frameMs: [900, 700] },
   },
   shadow: { width: 8, height: 3, x: 1 },
   variants: {

@@ -22,9 +22,38 @@ describe('лента событий', () => {
     const before = feed.entries;
     runTicks(world, 2000);
     expect(world.events.list.length).toBeGreaterThan(20);
+    // The only news of these days: the fire lit on the first day (step 1.9).
+    feed.update(world);
+    expect(feed.entries.filter((e) => e.type !== 'fire_lit')).toEqual(before);
+    expect(feed.entries.filter((e) => e.type === 'fire_lit')).toHaveLength(1);
     expect(feed.update(world)).toBe(false);
-    expect(feed.entries).toBe(before);
-    expect(feed.update(world)).toBe(false);
+  });
+
+  it('костёр (шаг 1.9): «Мужчина развёл первый костёр», «Костёр погас — прогорели дрова» — с местом', () => {
+    const world = createWorld(1);
+    const feed = createFeed();
+    const { camp } = world;
+    emit(
+      world,
+      { type: 'fire_lit', villager: 1, sex: 'male', x: camp.x, y: camp.y, first: true },
+      { kind: 'decision', villager: 1, activity: 'kindle' },
+    );
+    emit(
+      world,
+      { type: 'fire_out', x: camp.x, y: camp.y, lit: 3, burned: 7 },
+      { kind: 'rule', rule: 'fuel' },
+    );
+    emit(
+      world,
+      { type: 'fire_lit', villager: 2, sex: 'female', x: camp.x, y: camp.y, first: false },
+      { kind: 'decision', villager: 2, activity: 'kindle' },
+    );
+    feed.update(world);
+    expect(feed.entries.slice(0, 3).map((e) => [e.text, e.place])).toEqual([
+      ['Женщина развела костёр', { x: camp.x, y: camp.y }],
+      ['Костёр погас — прогорели дрова', { x: camp.x, y: camp.y }],
+      ['Мужчина развёл первый костёр', { x: camp.x, y: camp.y }],
+    ]);
   });
 
   it('голод, обморок и смерть — с причиной и местом; пол берётся из прихода', () => {

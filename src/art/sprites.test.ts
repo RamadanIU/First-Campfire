@@ -125,38 +125,48 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
       });
     });
 
-    it('стоит (дышит, 2 кадра) и идёт (4 кадра) в 4 направлениях', () => {
+    it('стоит (дышит, 2 кадра) и идёт (4 кадра) в 4 направлениях, сидит у огня боком (2 кадра)', () => {
       expect(Object.keys(person.animations)).toEqual([
         ...directions.map((d) => `idle_${d}`),
         ...directions.map((d) => `walk_${d}`),
+        'sit_e',
+        'sit_w',
       ]);
       for (const d of directions) {
         expect(person.animations[`idle_${d}`]!.frames).toHaveLength(2);
         expect(person.animations[`walk_${d}`]!.frames).toHaveLength(4);
       }
+      expect(person.animations.sit_e!.frames).toHaveLength(2);
+      expect(person.animations.sit_w!.frames).toHaveLength(2);
     });
 
-    it('влево — не зеркало вправо: силуэт зеркальный, а свет остаётся слева-сверху', () => {
-      const raster = rasterizeSprite(person, PALETTE);
-      const frame = (animation: string) =>
-        raster.animations.find((a) => a.name === animation)!.frames[0]!;
-      const east = frame('idle_e');
-      const west = frame('idle_w');
-      let sameSilhouette = true;
-      let differentColours = 0;
-      for (let y = 0; y < person.height; y++) {
-        for (let x = 0; x < person.width; x++) {
-          const e = (y * person.width + (person.width - 1 - x)) * 4;
-          const w = (y * person.width + x) * 4;
-          if (east.pixels[e + 3] !== west.pixels[w + 3]) sameSilhouette = false;
-          if (east.pixels.subarray(e, e + 3).join() !== west.pixels.subarray(w, w + 3).join()) {
-            differentColours++;
+    it.each([
+      ['idle_e', 'idle_w'],
+      ['sit_e', 'sit_w'],
+    ])(
+      'влево — не зеркало вправо (%s): силуэт зеркальный, а свет остаётся слева-сверху',
+      (right, left) => {
+        const raster = rasterizeSprite(person, PALETTE);
+        const frame = (animation: string) =>
+          raster.animations.find((a) => a.name === animation)!.frames[0]!;
+        const east = frame(right);
+        const west = frame(left);
+        let sameSilhouette = true;
+        let differentColours = 0;
+        for (let y = 0; y < person.height; y++) {
+          for (let x = 0; x < person.width; x++) {
+            const e = (y * person.width + (person.width - 1 - x)) * 4;
+            const w = (y * person.width + x) * 4;
+            if (east.pixels[e + 3] !== west.pixels[w + 3]) sameSilhouette = false;
+            if (east.pixels.subarray(e, e + 3).join() !== west.pixels.subarray(w, w + 3).join()) {
+              differentColours++;
+            }
           }
         }
-      }
-      expect(sameSilhouette).toBe(true);
-      expect(differentColours).toBeGreaterThan(5);
-    });
+        expect(sameSilhouette).toBe(true);
+        expect(differentColours).toBeGreaterThan(5);
+      },
+    );
 
     it('6 тонов кожи и 5 цветов волос; перекраска меняет только свой ряд, оттенок в оттенок', () => {
       const variants = Object.values(person.variants ?? {});

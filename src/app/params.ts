@@ -76,6 +76,12 @@ export interface LaunchParams {
    * URL (the hysteresis of the mind, `debug=mind`).
    */
   food: { value: number; tick: number } | null;
+  /**
+   * Debug (step 1.9): `douse=1130` — at tick 1130 of a world given by the address (on the way to
+   * `ticks=`) the wood in the campfire is gone: it goes out on the next tick, reproducible by URL
+   * (a dead fire at night, lighting it again in the morning).
+   */
+  douse: number | null;
   /** The villager chosen at the start (step 1.6: its frame and card); null — none. */
   select: number | null;
   /** The menu «Мир» of the observer's panel is open at the start (step 1.6). */
@@ -103,6 +109,7 @@ export const DEFAULT_PARAMS: LaunchParams = {
   debug: [],
   go: null,
   food: null,
+  douse: null,
   select: null,
   menu: false,
   worldFromUrl: false,
@@ -193,6 +200,7 @@ export function parseParams(search: string): LaunchParams {
     debug: parseDebug(query.get('debug')),
     go: parseTile(query.get('go')),
     food: parseFood(query.get('food')),
+    douse: parseInteger(query.get('douse'), 0),
     select: parseInteger(query.get('select'), 1),
     menu: query.get('menu') === '1',
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,

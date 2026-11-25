@@ -82,6 +82,17 @@ describe('житель на карте', () => {
     expect(villagerPose(villager({ sex: 'female' }), 0, STRIDE).sprite).toBe('woman');
   });
 
+  it('сидит у огня (шаг 1.9): сидячая поза боком, лицом к огню; дышит', () => {
+    const east = villagerPose(villager({ facing: 'e', action: { kind: 'sit' } }), 1, STRIDE);
+    expect(east).toMatchObject({ sprite: 'man', animation: 'sit_e', frame: null, walking: false });
+    const west = villagerPose(villager({ facing: 'w', action: { kind: 'sit' } }), 1, STRIDE);
+    expect(west.animation).toBe('sit_w');
+    // Sideways only: facing the viewer or away, it stands (there is no such sitting pose).
+    expect(
+      villagerPose(villager({ facing: 's', action: { kind: 'sit' } }), 1, STRIDE).animation,
+    ).toBe('idle_s');
+  });
+
   it('идёт: место — между прошлым и нынешним тиком по alpha, целыми пикселями', () => {
     const walking = villager({
       x: 10,

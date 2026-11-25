@@ -11,6 +11,7 @@ import {
   drawRefused,
   NEED_BARS_HEIGHT,
 } from '../render/debugOverlay.ts';
+import { burningFire, drawFlames, drawSmoke, drawSparks, fireLight } from '../render/fire.ts';
 import { drawFireflies } from '../render/fireflies.ts';
 import { daylightAt, hazeAt, shadeRect } from '../render/lighting.ts';
 import { createMapRenderer } from '../render/mapRenderer.ts';
@@ -18,7 +19,6 @@ import { drawPlaceMark, drawSelection, PLACE_MARK_MS } from '../render/selection
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
 import { calendarAt, TIME } from '../sim/calendar.ts';
-import { findCampSite } from '../sim/mapgen.ts';
 import { ACTIVITY, holdOf } from '../sim/minds.ts';
 import type { Tile } from '../sim/path.ts';
 import { findVillager, orderWalk } from '../sim/villagers.ts';
@@ -50,8 +50,8 @@ export interface MindNotes {
  * or a finger, zoomed by the wheel, a pinch or +/− (the zoom glides between the steps), moved by
  * WASD / arrows; four zoom steps ×0.5…×4, never beyond the edges of the map.
  *
- *   `cam=x,y` — where the camera looks (tiles, may be fractional; by default — the camp site,
- *   src/sim/mapgen.ts `findCampSite`, where life will happen); `zoom=` — the step (by default
+ *   `cam=x,y` — where the camera looks (tiles, may be fractional; by default — the camp,
+ *   `world.camp`: the camp site of the map, where life happens and the fire burns); `zoom=` — the step (by default
  *   ×2 «улица», ADR-022).
  *
  * Only what is in sight is drawn: the part of the world under the camera, one canvas pixel per
@@ -136,12 +136,11 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   const renderer = createMapRenderer(sheet, art, world);
   renderer.prepare();
   const size = { width: renderer.width, height: renderer.height };
-  const camp = findCampSite(world.map, world.objects);
+  // The camp of the world (its middle — the fire, step 1.9; the camp site of the map, step 1.7).
+  const { camp } = world;
   const focus = params.cam
     ? { x: params.cam.x * TILE_SIZE, y: params.cam.y * TILE_SIZE }
-    : camp
-      ? { x: (camp.x + 0.5) * TILE_SIZE, y: (camp.y + 0.5) * TILE_SIZE }
-      : { x: size.width / 2, y: size.height / 2 };
+    : { x: (camp.x + 0.5) * TILE_SIZE, y: (camp.y + 0.5) * TILE_SIZE };
   const camera = createCameraControl(size, focus, params.zoom);
   const frozen = params.frame !== null;
   /** Where between the last two ticks the world is drawn (frozen — exactly at the tick). */
@@ -353,14 +352,23 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
       if (layout.view.width > 0 && layout.view.height > 0) {
         const alpha = tickAlpha();
         renderer.draw(ctx, timeMs, layout.view, alpha);
+        // The campfire (step 1.9): smoke is lit like the world; the warm circle of light, the
+        // flames and the sparks are the fire's own light.
+        const fire = burningFire(world);
+        const { x: viewX, y: viewY } = layout.view;
+        if (fire) drawSmoke(ctx, fire, viewX, viewY, timeMs);
         // The light of the moment shown (between the last two ticks), over world pixels: crisp at
         // every zoom. Fireflies and signs shine over it, the debug overlay stays readable.
         if (params.light) {
           const shown = Math.max(0, world.tick - 1 + alpha);
           const time = shown % TIME.ticksPerDay;
           const { width, height } = layout.view;
-          shadeRect(ctx, width, height, daylightAt(time), [], hazeAt(time));
+          const light = daylightAt(time);
+          const glow = fire ? fireLight(fire, light, viewX, viewY, timeMs) : null;
+          shadeRect(ctx, width, height, light, glow ? [glow] : [], hazeAt(time));
+          if (fire && glow) drawFlames(ctx, sheet, fire, viewX, viewY, timeMs);
         }
+        if (fire) drawSparks(ctx, fire, viewX, viewY, timeMs);
         drawFireflies(ctx, layout.view, world.fireflies.swarm, alpha);
         renderer.drawSigns(ctx, timeMs, layout.view, alpha);
         if (placeMark) {

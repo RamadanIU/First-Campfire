@@ -58,6 +58,10 @@ function feedIcon(entry: FeedEntry, world: World): string {
       return 'hud_death';
     case 'villager_fainted':
       return 'bubble_sleep';
+    case 'fire_lit':
+      return 'hud_fire';
+    case 'fire_out':
+      return 'hud_fire_out';
     default: {
       const event = world.events.list[entry.id - 1];
       return event?.type === 'need_ran_out' && event.need === 'water'
