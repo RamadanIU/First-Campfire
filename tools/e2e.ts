@@ -932,15 +932,17 @@ try {
     await page.waitForTimeout(100);
     check(await page.isHidden('.hud-card'), 'Escape — выбор снят');
 
-    // The event feed: a click flies the camera to the place.
+    // The event feed: a click flies the camera to the place. Two arrivals and (step 1.9) the
+    // first fire, lit on the first day.
     const lines = await page.evaluate<number>("document.querySelectorAll('.hud-event').length");
+    const feedText = await text(page, '.hud-feed-list');
     check(
-      lines === 2 && (await text(page, '.hud-feed-list')).includes('Пришла женщина'),
-      `лента: ${lines} строки — ${await text(page, '.hud-feed-list')}`,
+      lines === 3 && feedText.includes('Пришла женщина') && feedText.includes('первый костёр'),
+      `лента: ${lines} строки — ${feedText}`,
     );
     await mouseDrag(page, { x: 900, y: 400 }, { x: 300, y: 400 });
     const away = await camera(page);
-    await page.click('.hud-event');
+    await page.click('.hud-event:has-text("Пришла женщина")');
     const flying = (await camera(page)).flying;
     await page.waitForTimeout(1100);
     const there = await camera(page);

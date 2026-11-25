@@ -78,7 +78,7 @@
     "sitUtility": 0.35,
     "eveningTicks": 40,
     "nearTiles": 2,
-    "sleepWalkTiles": 8,
+    "sleepWalkTiles": 6,
     "heatRadius": 4,
     "woodReserve": 20,
     "woodBoost": 0.2

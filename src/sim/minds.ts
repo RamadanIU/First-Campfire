@@ -53,7 +53,7 @@
  * the goal another one is walking to.
  */
 import { DATA } from '../data/index.ts';
-import { calendarAt } from './calendar.ts';
+import { calendarAt, PHASE_START } from './calendar.ts';
 import {
   fireRoom,
   fuelTillMorning,
@@ -77,7 +77,7 @@ import {
   urgency,
 } from './needs.ts';
 import { defOf, objectAt } from './objects.ts';
-import { findNearest, type Tile, tileSpeed } from './path.ts';
+import { DIAGONAL, findNearest, findPath, leastCost, type Tile, tileSpeed } from './path.ts';
 import { floatRange } from './rng.ts';
 import { isGoalOfAnother, isTaken, type Source, type Villager } from './villagers.ts';
 import type { World } from './world.ts';
@@ -334,20 +334,15 @@ export function searchWood(world: World, villager: Villager, maxCost?: number): 
   }
   if (!target) return null;
   const item = target;
-  const result = findNearest(
-    world.map,
-    world.objects,
-    { x: villager.x, y: villager.y },
-    (x, y) => x === item.x && y === item.y,
-    {
-      avoid: (x: number, y: number) => isTaken(world, x, y, villager),
-      ...(maxCost === undefined ? {} : { maxCost }),
-    },
-  );
-  if (!result.ok) return null;
+  const from = { x: villager.x, y: villager.y };
+  if (maxCost !== undefined && leastCost(from, item) > maxCost) return null;
+  const result = findPath(world.map, world.objects, from, item, {
+    avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+  });
+  if (!result.ok || (maxCost !== undefined && result.cost > maxCost)) return null;
   return {
     source: { kind: 'store', item: item.id, resource: item.resource, x: item.x, y: item.y },
-    goal: result.tile,
+    goal: { x: item.x, y: item.y },
     path: result.path,
     cost: result.cost,
   };
@@ -383,17 +378,19 @@ export function searchFireSide(world: World, villager: Villager, maxCost?: numbe
 }
 
 /**
- * Is (x, y) a place to sit or sleep at the fire within `ring` tiles of it: to its side (not
- * straight above or below it — one sits facing the fire sideways), bare, not the pile, nobody
- * there or walking there.
+ * Is (x, y) a place to sit or sleep at the fire within `ring` tiles of it (`ring` 0 — only straight
+ * to its left and right, the best places): to its side (not straight above or below it — one sits
+ * facing the fire sideways), bare, not the pile, nobody there or walking there.
  */
 function isSeat(world: World, villager: Villager, x: number, y: number, ring: number): boolean {
   const { camp, map, objects } = world;
   const dx = x - camp.x;
   const dy = y - camp.y;
+  const near =
+    ring === 0 ? Math.abs(dx) === 1 && dy === 0 : Math.max(Math.abs(dx), Math.abs(dy)) <= ring;
   return (
     dx !== 0 &&
-    Math.max(Math.abs(dx), Math.abs(dy)) <= ring &&
+    near &&
     tileSpeed(map, objects, x, y) > 0 &&
     objectAt(map, objects, x, y) === undefined &&
     !isPileTile(world, x, y) &&
@@ -403,12 +400,18 @@ function isSeat(world: World, villager: Villager, x: number, y: number, ring: nu
 }
 
 /**
- * A place by the fire for `villager` to sit or sleep (step 1.9): the nearest by path among the
- * tiles next to it, else within `fire.nearTiles`. Null — none within `maxCost`.
+ * A place by the fire for `villager` to sit or sleep (step 1.9): the nearest by path of the two
+ * straight to its left and right (the two face each other across the fire), else of the tiles next
+ * to it, else within `fire.nearTiles`. Null — none within `maxCost`.
  */
 export function searchSeat(world: World, villager: Villager, maxCost?: number): Found | null {
   const from = { x: villager.x, y: villager.y };
-  for (const ring of [1, DATA.balance.fire.nearTiles]) {
+  const { nearTiles } = DATA.balance.fire;
+  // No seat is nearer than the fire less its ring: too far — no search.
+  if (maxCost !== undefined && leastCost(from, world.camp) - nearTiles * DIAGONAL > maxCost) {
+    return null;
+  }
+  for (const ring of [0, 1, nearTiles]) {
     const result = findNearest(
       world.map,
       world.objects,
@@ -904,12 +907,31 @@ function haul(
     note({ kind: 'haul', utility: 0, searched: false, nowhere: true });
     return null;
   }
-  const found = searchLoose(world, villager, { maxCost: reachFor(ceiling, beat) });
-  villager.noWork = found || !vainIfFar ? 0 : world.tick;
+  // Work that would last into the evening is worth less (step 1.9): if that is too little to win,
+  // only work done by the evening is worth looking for — a shorter search.
+  let maxCost = reachFor(ceiling, beat);
+  if (isBurning(world) && ceiling * DATA.balance.fire.eveningWork <= beat) {
+    maxCost = Math.min(
+      maxCost,
+      untilEvening(world.tick) / (2 * DATA.balance.movement.walkTicksPerTile),
+    );
+  }
+  const found = searchLoose(world, villager, { maxCost });
   const utility = found ? ceiling * availability(found.cost) * eveningWork(world, found.cost) : 0;
+  const useful = found !== null && utility > best.utility;
+  villager.noWork = useful || !vainIfFar ? 0 : world.tick;
   note({ kind: 'haul', utility, searched: true, nowhere: found === null });
-  if (!found || utility <= best.utility) return null;
+  if (!found || !useful) return null;
   return { kind: 'haul', utility, ...found };
+}
+
+/** Ticks from `tick` to the evening (step 1.9): 0 in the evening, till the next evening at night. */
+function untilEvening(tick: number): number {
+  const { tickOfDay } = calendarAt(tick);
+  const evening = PHASE_START.dusk - DATA.balance.fire.eveningTicks;
+  if (tickOfDay < evening) return evening - tickOfDay;
+  if (tickOfDay < PHASE_START.night) return 0;
+  return DATA.balance.time.ticksPerDay - tickOfDay + evening;
 }
 
 /**
