@@ -6,6 +6,7 @@
  *   ~  shallow water               =  deep water
  *   T  oak (blocks the way)        B  berry bush (blocks)        o  boulder (blocks)
  *   *  flowers (walkable)          "  tall grass (walkable)
+ *   H  hazel — nuts (blocks)       R  roots (blocks) — winter food, step 1.10
  *
  * The world is a real one — `createWorld(seed, { map })` — so its villagers, systems and streams
  * are the game's own; only the map is given.
@@ -14,9 +15,10 @@
 import { canHold, countAll, isPileTile, stackOf } from '../src/sim/items.ts';
 import { createMap, setGround } from '../src/sim/map.ts';
 import type { GeneratedMap } from '../src/sim/mapgen.ts';
+import { FULL } from '../src/sim/needs.ts';
 import { createObjects, placeObject } from '../src/sim/objects.ts';
 import { carries, placeVillager } from '../src/sim/villagers.ts';
-import { createWorld, type World } from '../src/sim/world.ts';
+import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
 
 const GROUND: Record<string, string> = {
   '.': 'grass',
@@ -31,6 +33,8 @@ const OBJECTS: Record<string, string> = {
   o: 'boulder',
   '*': 'flowers',
   '"': 'tall_grass',
+  H: 'hazel',
+  R: 'roots',
 };
 
 function gcd(a: number, b: number): number {
@@ -80,6 +84,21 @@ export function worldOn(
   return world;
 }
 
+/**
+ * One tick in a «mild climate» (step 1.10): after it every villager is warm again. For scenarios of
+ * the other needs on maps without trees (no wood — no fire), where winter would kill first; cold has
+ * scenarios of its own (tests/warmth.test.ts).
+ */
+export function stepWarm(world: World): void {
+  stepWorld(world);
+  for (const villager of world.villagers.list) villager.needs.warmth = FULL;
+}
+
+/** `ticks` ticks in a mild climate (`stepWarm`). */
+export function runWarm(world: World, ticks: number): void {
+  for (let i = 0; i < ticks; i++) stepWarm(world);
+}
+
 /** An open meadow `width`×`height` of grass. */
 export function meadow(width: number, height: number): string[] {
   return Array.from({ length: height }, () => '.'.repeat(width));
@@ -87,7 +106,7 @@ export function meadow(width: number, height: number): string[] {
 
 /**
  * Every rule items keep (step 1.7; a violation — a message, none — an empty list): all that lies
- * and is carried plus all that was burnt (step 1.9) adds up to all that fell, one stack per tile
+ * and is carried plus all that was burnt (step 1.9) and rotted (step 1.10) adds up to all that fell, one stack per tile
  * within its size, stacks only where things may lie and the pile's on its tiles, nothing on the
  * middle of the camp (the fire), a load only while the plan carries things (work, the fire).
  */
@@ -95,9 +114,9 @@ export function brokenRules(world: World): string[] {
   const broken: string[] = [];
   const all = countAll(world);
   const total = Object.values(all).reduce((sum, n) => sum + n, 0);
-  if (total + world.items.burned !== world.items.made) {
+  if (total + world.items.burned + world.items.rotted !== world.items.made) {
     broken.push(
-      `предметов ${total} и сожжено ${world.items.burned}, а упало ${world.items.made} (тик ${world.tick})`,
+      `предметов ${total}, сожжено ${world.items.burned} и сгнило ${world.items.rotted}, а упало ${world.items.made} (тик ${world.tick})`,
     );
   }
   const tiles = new Set<string>();

@@ -1,5 +1,6 @@
 import { PALETTE, type PaletteSwap, parseColorName, toHex } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
+import { OBJECT_SWAPS, TERRAIN_SWAPS } from '../art/seasons.ts';
 import { SHADOW_COLOR } from '../art/sprite.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import { PALETTE_SCENE } from '../ui/texts.ts';
@@ -26,13 +27,20 @@ function escapeHtml(text: string): string {
 
 /**
  * How many sprites use each colour `ramp.N`: in their legend, through a recolouring variant
- * (other skin tones and hair colours) or as the colour of their shadow.
+ * (other skin tones and hair colours), through a season (step 1.10) or as the colour of their shadow.
  */
 function usage(): Map<string, number> {
   const counts = new Map<string, number>();
   for (const sprite of SPRITES) {
     const colors = new Set<string>(Object.values(sprite.legend));
-    for (const swap of Object.values(sprite.variants ?? {})) {
+    // The seasons (step 1.10): tiles take the swap of the ground, objects the swap of the objects.
+    const seasonal =
+      sprite.kind === 'tile'
+        ? Object.values(TERRAIN_SWAPS)
+        : sprite.kind === 'object'
+          ? Object.values(OBJECT_SWAPS)
+          : [];
+    for (const swap of [...Object.values(sprite.variants ?? {}), ...seasonal]) {
       for (const color of Object.values(sprite.legend)) {
         const parsed = parseColorName(color)!;
         const target = (swap as Record<string, string | undefined>)[parsed.ramp];
@@ -49,6 +57,9 @@ export function createPaletteScene({ canvas, ui, params }: SceneContext): Scene 
   const used = usage();
   const background = toHex(PALETTE.ramps.get('ui')![0]!);
   const total = PALETTE.defs.reduce((n, ramp) => n + ramp.colors.length, 0);
+  const seasonal = PALETTE.defs
+    .filter((ramp) => ramp.season)
+    .reduce((n, ramp) => n + ramp.colors.length, 0);
   const service = PALETTE.defs
     .filter((ramp) => SERVICE.has(ramp.name))
     .reduce((n, ramp) => n + ramp.colors.length, 0);
@@ -56,7 +67,7 @@ export function createPaletteScene({ canvas, ui, params }: SceneContext): Scene 
   const root = document.createElement('div');
   root.className = `gallery palette${params.ui ? '' : ' bare'}`;
   root.style.background = background;
-  root.innerHTML = `<header class="gallery-head"><h1>${PALETTE_SCENE.title}</h1><p>${PALETTE_SCENE.intro(total - service, PALETTE.defs.length)}</p></header>`;
+  root.innerHTML = `<header class="gallery-head"><h1>${PALETTE_SCENE.title}</h1><p>${PALETTE_SCENE.intro(total - service - seasonal, seasonal, PALETTE.defs.length)}</p></header>`;
 
   const table = document.createElement('div');
   table.className = 'ramps';

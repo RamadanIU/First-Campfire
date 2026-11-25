@@ -19,6 +19,7 @@ import type { Activity, Considered, Decision, Hold, PlanStep, Why } from '../sim
 import type { Need } from '../sim/needs.ts';
 import type { LoadError, LoadWarning } from '../sim/save.ts';
 import type { Plan, Sex, Villager } from '../sim/villagers.ts';
+import type { WeatherKind } from '../sim/weather.ts';
 
 // ── Numbers and plural forms ─────────────────────────────────────────────────────────────────
 
@@ -184,7 +185,7 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
     case 'put_down':
       return `складывает ${handled(action.resource, name).what} в кучу`;
     case 'eat':
-      return 'ест ягоды';
+      return `ест ${name(action.food).toLowerCase()}`;
     case 'drink':
       return 'пьёт';
     case 'sleep':
@@ -196,7 +197,7 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
     case 'stoke':
       return 'подкладывает дрова в костёр';
     case 'sit':
-      return 'сидит у костра';
+      return villager.plan.activity === 'warm' ? 'греется у костра' : 'сидит у костра';
   }
 }
 
@@ -205,13 +206,14 @@ export const SCALE_NAME = {
   food: 'Сытость',
   water: 'Жажда',
   sleep: 'Сон',
+  warmth: 'Тепло',
   health: 'Здоровье',
 } as const;
 
 /** A line of the debug panel for a villager (`debug=needs`): doing what, its scales. */
 export function needsLine(villager: Villager, name: (resource: string) => string): string {
   const round = (value: number) => Math.round(value);
-  return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager, name)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · здоровье ${round(villager.health)}`;
+  return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager, name)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · тепло ${round(villager.needs.warmth)} · здоровье ${round(villager.health)}`;
 }
 
 // ── The mind of a villager: plans and decisions (step 1.8, `debug=mind`) ────────────────────
@@ -226,6 +228,7 @@ export const ACTIVITY_NAME: Record<Activity, string> = {
   kindle: 'развести огонь',
   stoke: 'подложить дров',
   sit: 'у огня',
+  warm: 'греться',
   order: 'приказ',
 };
 
@@ -316,7 +319,11 @@ export const MIND = {
   when: (day: number, phase: DayPhase) => `${day}-й день, ${PHASE_NAME[phase]}`,
 } as const;
 
-export const DIED_OF: Record<DeathReason, string> = { hunger: 'голод', thirst: 'жажда' };
+export const DIED_OF: Record<DeathReason, string> = {
+  hunger: 'голод',
+  thirst: 'жажда',
+  cold: 'холод',
+};
 
 /** «умерла на 104-й день — голод» — of a dead villager; `day` — the day of the world, from 1. */
 export function deathNote(sex: Sex, day: number, reason: DeathReason): string {
@@ -343,18 +350,22 @@ const RAN_OUT: Record<Need, string> = {
   food: 'голодает',
   water: 'мучается жаждой',
   sleep: 'валится с ног от усталости',
+  warmth: 'замерзает',
 };
 
 const NEED_GONE: Record<Need, string> = {
   food: 'кончилась сытость',
   water: 'кончилась вода',
   sleep: 'кончились силы — не спал',
+  warmth: 'кончилось тепло — обморожение',
 };
 
 const RULE_CAUSE: Record<Extract<Cause, { kind: 'rule' }>['rule'], string> = {
   genesis: 'начало всего',
   calendar: 'ход времени',
   fuel: 'прогорели дрова',
+  weather: 'погода переменилась сама',
+  rain: 'залило дождём',
 };
 
 /** An event of the journal in words, as the debug journal shows it. */
@@ -384,7 +395,24 @@ export function describeEvent(event: WorldEvent): string {
       return `${event.sex === 'male' ? 'развёл' : 'развела'} костёр житель ${event.villager}${event.first ? ' (первый костёр стоянки)' : ''}`;
     case 'fire_out':
       return `костёр погас (сжёг ${formatCount(event.burned)} ${plural(event.burned, ['охапку', 'охапки', 'охапок'])})`;
+    case 'weather_changed':
+      return `погода: ${WEATHER_NAME[event.from]} → ${WEATHER_NAME[event.to]}`;
   }
+}
+
+/** Kinds of weather in words (step 1.10): the journal, the panel. */
+export const WEATHER_NAME: Record<WeatherKind, string> = {
+  clear: 'ясно',
+  cloudy: 'облачно',
+  rain: 'дождь',
+  snow: 'снег',
+};
+
+/** «−6°», «+12°», «0°» — a temperature for the panel (step 1.10), rounded to a degree. */
+export function temperatureText(degrees: number): string {
+  const whole = Math.round(degrees);
+  if (whole === 0) return '0°';
+  return `${whole > 0 ? '+' : '−'}${Math.abs(whole)}°`;
 }
 
 /**
@@ -421,7 +449,9 @@ export function feedText(event: WorldEvent, sex: Sex | undefined): string | null
         ? `${capitalize(who)} ${female ? 'развела' : 'развёл'} первый костёр`
         : `${capitalize(who)} ${female ? 'развела' : 'развёл'} костёр`;
     case 'fire_out':
-      return 'Костёр погас — прогорели дрова';
+      return event.cause.kind === 'rule' && event.cause.rule === 'rain'
+        ? 'Костёр залило дождём'
+        : 'Костёр погас — прогорели дрова';
     default:
       return null;
   }
@@ -529,6 +559,9 @@ export const HUD = {
   population: (n: number) => `${formatCount(n)}`,
   populationTitle: (n: number) => `Жителей: ${formatCount(n)}`,
   phaseTitle: (phase: DayPhase) => `Время суток: ${PHASE_NAME[phase]}`,
+  /** The weather in the top bar (step 1.10): «Погода: снег, −8°». */
+  weatherTitle: (kind: WeatherKind, degrees: number) =>
+    `Погода: ${WEATHER_NAME[kind]}, ${temperatureText(degrees)}`,
   speedLabel: 'Скорость',
   speedTitle: (speed: number, key: string) =>
     speed === 0 ? `Пауза (${key})` : `Скорость ×${speed} (клавиша ${key})`,
@@ -606,8 +639,8 @@ export const STYLESHEET = {
 /** Scene `palette` (step 0.4). */
 export const PALETTE_SCENE = {
   title: 'Мастер-палитра',
-  intro: (colours: number, ramps: number) =>
-    `${colours} цветов мира + цвет тени + служебные · ${ramps} рядов, в каждом цвета идут от тёмного к светлому · под образцом — имя цвета, код и сколько спрайтов его используют`,
+  intro: (colours: number, seasonal: number, ramps: number) =>
+    `${colours} цветов мира + цвет тени + служебные + ${seasonal} сезонных (шаг 1.10: подмена травы, песка и листвы весной, осенью и зимой) · ${ramps} рядов, в каждом цвета идут от тёмного к светлому · под образцом — имя цвета, код и сколько спрайтов его используют`,
   alpha: (percent: number) => ` · прозрачность ${percent} %`,
   screens: 'экраны',
   people: (skins: number, hairs: number) =>
@@ -663,7 +696,13 @@ export const GALLERY = {
 /** Scene `data` (step 0.5). */
 export const DATA_SCENE = {
   categories: { food: 'Еда', material: 'Материалы', product: 'Изделия' },
-  places: { forest: 'лес', edge: 'опушка', scatter: 'россыпь', meadow: 'луг' },
+  places: {
+    forest: 'лес',
+    edge: 'опушка',
+    scatter: 'россыпь',
+    meadow: 'луг',
+    forage: 'корм у опушки',
+  },
   yes: 'да',
   no: 'нет',
   none: '—',

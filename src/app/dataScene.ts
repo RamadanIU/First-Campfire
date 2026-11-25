@@ -13,7 +13,7 @@ import {
 } from '../data/tables.ts';
 import { createSpriteSheet, type SpriteSheet } from '../render/spriteSheet.ts';
 import { DAYS_PER_YEAR, TICKS_PER_SEASON, TICKS_PER_YEAR } from '../sim/calendar.ts';
-import { DATA_SCENE, FORMS, plural } from '../ui/texts.ts';
+import { DATA_SCENE, FORMS, plural, SEASON_NAME } from '../ui/texts.ts';
 import { checkDataRefs } from './dataRefs.ts';
 import type { Scene, SceneContext } from './scene.ts';
 
@@ -146,7 +146,7 @@ export function objectRows(data: GameData): ObjectRow[] {
     harvest:
       def.harvest === null
         ? DATA_SCENE.none
-        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, DATA_SCENE.unitRations)} → ${def.harvest.empty}`,
+        : `${data.resources.get(def.harvest.food).name} · ${withUnit(def.harvest.rations, DATA_SCENE.unitRations)} → ${def.harvest.empty} · ${def.harvest.seasons.map((season) => SEASON_NAME[season]).join(', ')}`,
     litter:
       def.litter === null
         ? DATA_SCENE.none

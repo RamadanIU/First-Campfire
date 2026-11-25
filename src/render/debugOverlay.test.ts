@@ -22,10 +22,10 @@ describe('шкалы нужд над головой (debug=needs)', () => {
     expect(barFill(100)).toBe(NEED_BARS.width);
   });
 
-  it('рамка над головой, четыре полосы: сытость, жажда, сон, здоровье — сверху вниз', () => {
+  it('рамка над головой, пять полос: сытость, жажда, сон, тепло (1.10), здоровье — сверху вниз', () => {
     const { ctx, rects } = recorder();
     const view = { x: 100, y: 200, width: 64, height: 64 };
-    drawNeeds(ctx, view, 130, 240, { food: 50, water: 100, sleep: 25, health: 0 });
+    drawNeeds(ctx, view, 130, 240, { food: 50, water: 100, sleep: 25, warmth: 75, health: 0 });
     const [frame, ...bars] = rects;
     // The frame ends 2 px above the head, in view coordinates.
     expect(frame).toMatchObject({
@@ -38,6 +38,7 @@ describe('шкалы нужд над головой (debug=needs)', () => {
       [OVERLAY_COLORS.food, 6],
       [OVERLAY_COLORS.water, 12],
       [OVERLAY_COLORS.sleep, 3],
+      [OVERLAY_COLORS.warmth, 9],
       [OVERLAY_COLORS.health, 0],
     ]);
     expect(filled.map((r) => r.y)).toEqual([
@@ -45,6 +46,7 @@ describe('шкалы нужд над головой (debug=needs)', () => {
       frame!.y + 4,
       frame!.y + 7,
       frame!.y + 10,
+      frame!.y + 13,
     ]);
   });
 });

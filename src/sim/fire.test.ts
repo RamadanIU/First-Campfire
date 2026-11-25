@@ -100,9 +100,14 @@ describe('костёр: огонь и дрова', () => {
   });
 
   it('вечер — с fire.eveningTicks до заката и до ночи; дров «до утра» — по нынешнему расходу', () => {
-    const { eveningTicks } = DATA.balance.fire;
+    const eveningTicks = DATA.balance.fire.eveningTicks.spring;
     expect(isEvening(tickAt(1, 240 - eveningTicks - 1))).toBe(false);
     expect(isEvening(tickAt(1, 240 - eveningTicks))).toBe(true);
+    // Step 1.10: a winter evening comes earlier.
+    const winter = DATA.balance.fire.eveningTicks.winter;
+    expect(winter).toBeGreaterThan(eveningTicks);
+    expect(isEvening(tickAt(10, 240 - winter))).toBe(true);
+    expect(isEvening(tickAt(10, 240 - winter - 1))).toBe(false);
     expect(isEvening(tickAt(1, 279))).toBe(true);
     expect(isEvening(tickAt(1, 280))).toBe(false);
     expect(isEveningOrNight(tickAt(1, 280))).toBe(true);

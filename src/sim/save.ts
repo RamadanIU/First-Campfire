@@ -36,7 +36,7 @@ export const SAVE_FORMAT = 'first-campfire/world';
  * Version of the save format. Raise it (and add a line to the shape history in ./save.test.ts)
  * whenever the shape of the world changes; from stage 5 also add a migration to MIGRATIONS.
  */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /** Turns the world of save format version N (the key) into the world of version N + 1. */
 export type Migration = (world: Record<string, unknown>) => Record<string, unknown>;

@@ -25,6 +25,7 @@
     "food": { "emptyDays": 25, "deathDays": 40 },
     "water": { "emptyDays": 15, "deathDays": 20 },
     "sleep": { "emptyDays": 1.5 },
+    "warmth": { "comfort": 10, "pointsPerDegreeDay": 6, "deathDays": 1, "shiverPoints": 40 },
     "healDays": 2
   },
   "sleeping": {
@@ -76,12 +77,28 @@
     "eveningStoke": 0.5,
     "eveningWork": 0.6,
     "sitUtility": 0.35,
-    "eveningTicks": 40,
+    "eveningTicks": { "spring": 40, "summer": 40, "autumn": 40, "winter": 120 },
     "nearTiles": 2,
     "sleepWalkTiles": 6,
+    "coldSleepWalkTiles": 60,
+    "coldSleepBelow": 0,
+    "heat": 35,
+    "rainOutTicks": 150,
     "heatRadius": 4,
     "woodReserve": 20,
     "woodBoost": 0.2
+  },
+  "weather": {
+    "seasonTemp": { "spring": 12, "summer": 20, "autumn": 8, "winter": -6 },
+    "phaseTemp": { "dawn": -3, "day": 3, "dusk": 0, "night": -5 },
+    "kindTemp": { "clear": 0, "cloudy": -1, "rain": -3, "snow": -2 },
+    "spellTicks": { "min": 120, "max": 480 },
+    "chances": {
+      "spring": { "clear": 45, "cloudy": 35, "rain": 20, "snow": 0 },
+      "summer": { "clear": 55, "cloudy": 30, "rain": 15, "snow": 0 },
+      "autumn": { "clear": 30, "cloudy": 40, "rain": 30, "snow": 0 },
+      "winter": { "clear": 30, "cloudy": 35, "rain": 0, "snow": 35 }
+    }
   },
   "map": {
     "width": 64,
@@ -91,6 +108,7 @@
     "forestPercent": 40,
     "bushes": { "min": 12, "max": 22 },
     "boulders": { "min": 5, "max": 10 },
+    "forage": { "min": 8, "max": 14 },
     "meadowDecorPercent": 7,
     "camp": { "size": 5, "waterDistance": 12, "forestDistance": 10 }
   }

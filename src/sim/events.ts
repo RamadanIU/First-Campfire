@@ -12,15 +12,17 @@ import type { DayPhase, Season } from './calendar.ts';
 import type { Activity } from './minds.ts';
 import type { Need } from './needs.ts';
 import type { Sex } from './villagers.ts';
+import type { WeatherKind } from './weather.ts';
 import type { World } from './world.ts';
 
 /** Why an event happened. Later steps add decisions… */
 export type Cause =
   /**
    * A law of the world itself: `genesis` (the world's creation), `calendar` (time passing), `fuel`
-   * (step 1.9: the wood of a fire burnt out).
+   * (step 1.9: the wood of a fire burnt out), `weather` (step 1.10: the weather changed by itself),
+   * `rain` (step 1.10: the rain soaked the fire out).
    */
-  | { kind: 'rule'; rule: 'genesis' | 'calendar' | 'fuel' }
+  | { kind: 'rule'; rule: 'genesis' | 'calendar' | 'fuel' | 'weather' | 'rain' }
   /** Another event of the journal, by id. */
   | { kind: 'event'; event: number }
   /** A need of a villager (step 1.4): its scale fell to zero. */
@@ -31,8 +33,8 @@ export type Cause =
    */
   | { kind: 'decision'; villager: number; activity: Activity };
 
-/** What a villager died of (step 1.4). Later: cold, old age, illness… (GDD §4.3). */
-export type DeathReason = 'hunger' | 'thirst';
+/** What a villager died of (step 1.4; cold — step 1.10). Later: old age, illness… (GDD §4.3). */
+export type DeathReason = 'hunger' | 'thirst' | 'cold';
 
 /** What happened. One member per event type. */
 export type EventBody =
@@ -42,6 +44,8 @@ export type EventBody =
   | { type: 'phase_started'; phase: DayPhase; day: number }
   | { type: 'fireflies_rose'; count: number }
   | { type: 'fireflies_gone'; count: number }
+  /** The weather changed (step 1.10): its spell was over; the cause is the rule `weather`. */
+  | { type: 'weather_changed'; from: WeatherKind; to: WeatherKind }
   /** A villager came to the world: the first two at its creation (step 1.3). */
   | { type: 'villager_arrived'; villager: number; sex: Sex; x: number; y: number }
   /**
@@ -67,14 +71,16 @@ export type EventBody =
       first: boolean;
     }
   /**
-   * The campfire went out (step 1.9): its wood burnt out (the cause — the rule `fuel`). `lit` — the
+   * The campfire went out (step 1.9): its wood burnt out (the cause — the rule `fuel`; step 1.10 — `rain`
+   * if it rained: the rain soaked it out). `lit` — the
    * event of its lighting; `burned` — armfuls of wood it burnt since then.
    */
   | { type: 'fire_out'; x: number; y: number; lit: number; burned: number }
   /**
    * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
-   * out first. Could food and water be reached from where it died (`foodReachable`,
-   * `waterReachable`)? Death of a need that could be met is a mistake of the mind (GDD §15.2).
+   * out first. Could food, water and warmth be reached from where it died (`foodReachable`,
+   * `waterReachable`, `warmReachable`)? Death of a need that could be met is a mistake of the mind
+   * (GDD §15.2).
    */
   | {
       type: 'villager_died';
@@ -85,6 +91,11 @@ export type EventBody =
       reason: DeathReason;
       foodReachable: boolean;
       waterReachable: boolean;
+      /**
+       * Could it have warmed itself (step 1.10): a place by a burning fire in reach, or one that
+       * could be lit (wood in the pile, no rain)? Death of cold with warmth in reach is a mistake too.
+       */
+      warmReachable: boolean;
     };
 
 export type EventType = EventBody['type'];

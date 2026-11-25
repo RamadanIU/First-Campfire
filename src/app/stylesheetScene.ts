@@ -73,6 +73,10 @@ export const STILL: Placement[] = [
   { sprite: 'berry_bush', x: 82, y: 166, animation: 'ripe' },
   { sprite: 'berry_bush', x: 42, y: 178, animation: 'empty' },
   { sprite: 'berry_bush', x: 92, y: 198, animation: 'ripe' },
+  // Winter food (step 1.10): a hazel with nuts, roots — one patch whole, one dug.
+  { sprite: 'hazel', x: 26, y: 166, animation: 'nuts' },
+  { sprite: 'roots_patch', x: 70, y: 218, animation: 'whole' },
+  { sprite: 'roots_patch', x: 126, y: 214, animation: 'dug' },
   // The south-west.
   { sprite: 'tree', x: 30, y: 240, phase: 700 },
   { sprite: 'tree_young', x: 14, y: 196, phase: 200 },

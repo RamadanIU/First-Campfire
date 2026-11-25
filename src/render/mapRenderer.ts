@@ -23,15 +23,23 @@
  *     shadows in the live layer (only those near the view: up to a hundred stacks lie about the
  *     map). A villager's load is drawn over its head, right after the villager.
  *
+ * Seasons (step 1.10, src/art/seasons.ts): the ground of each season is its own set of chunk layers,
+ * made when the season is first shown (the two last seasons are kept); objects are drawn with the
+ * season's recolouring — autumn leaves, snow on the crowns in winter; a bush out of season shows
+ * its empty state; flowers do not bloom in winter. Villagers who shiver with cold
+ * (src/sim/needs.ts `isShivering`) jitter by a pixel.
+ *
  * Signs (step 1.5) — bubbles of sleep over the sleepers — are drawn separately (`drawSigns`), after
  * the light of the time of day: they stay readable at night.
  *
  * Only reads the world. Draws one canvas pixel per world pixel; scaling is the caller's.
  */
+
+import { objectSwap, type SeasonId } from '../art/seasons.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { type TerrainArt, terrainStateTimes } from '../art/terrain.ts';
 import { DATA } from '../data/index.ts';
-import { TIME } from '../sim/calendar.ts';
+import { calendarAt, TIME } from '../sim/calendar.ts';
 import { chunkGrid, chunkRect, groundAt } from '../sim/map.ts';
 import { defOf, type MapObject } from '../sim/objects.ts';
 import type { World } from '../sim/world.ts';
@@ -110,7 +118,29 @@ export function placementOf(object: MapObject): Placement {
   };
 }
 
-export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: World): MapRenderer {
+/**
+ * The state an object is drawn in this season (step 1.10): a bush with food out of its harvest's
+ * seasons looks picked clean (raspberries in winter); otherwise its own state.
+ */
+export function seasonalState(object: MapObject, season: SeasonId): string {
+  const harvest = defOf(object).harvest;
+  if (harvest && !(harvest.seasons as readonly string[]).includes(season)) return harvest.empty;
+  return object.state;
+}
+
+/** The ground of every season (src/art/seasons.ts): the art of the season shown is used. */
+export type SeasonalArt = Readonly<Record<SeasonId, TerrainArt>>;
+
+/** What season the world shows now (its calendar). */
+function seasonOf(world: World): SeasonId {
+  return calendarAt(world.tick).season;
+}
+
+export function createMapRenderer(
+  sheet: SpriteSheet,
+  arts: SeasonalArt,
+  world: World,
+): MapRenderer {
   const { map } = world;
   const width = map.width * TILE_SIZE;
   const height = map.height * TILE_SIZE;
@@ -118,7 +148,9 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
 
   const grid = chunkGrid(map);
   const chunks: {
-    layer: TerrainLayer;
+    /** Ground layers by season, made when a season is first shown. */
+    layers: Map<SeasonId, TerrainLayer>;
+    rect: { x: number; y: number; width: number; height: number };
     x: number;
     y: number;
     /** Ground with shadows, by state of the ground. */
@@ -128,13 +160,37 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
     for (let cx = 0; cx < grid.cols; cx++) {
       const rect = chunkRect(map, cx, cy);
       chunks.push({
-        layer: createTerrainLayer(art, at, rect.width, rect.height, rect),
+        layers: new Map(),
+        rect,
         x: rect.x * TILE_SIZE,
         y: rect.y * TILE_SIZE,
         pictures: new Map(),
       });
     }
   }
+  /** The season whose ground was shown last (the one before it is kept too). */
+  let shownSeason: SeasonId | null = null;
+  let keptSeason: SeasonId | null = null;
+  /** The ground layer of a chunk in `season`: made on first use; at most two seasons are kept. */
+  const layerOf = (chunk: (typeof chunks)[number], season: SeasonId): TerrainLayer => {
+    if (season !== shownSeason) {
+      keptSeason = shownSeason;
+      shownSeason = season;
+      for (const other of chunks) {
+        for (const kept of [...other.layers.keys()]) {
+          if (kept !== shownSeason && kept !== keptSeason) other.layers.delete(kept);
+        }
+      }
+    }
+    let layer = chunk.layers.get(season);
+    if (!layer) {
+      const { rect } = chunk;
+      layer = createTerrainLayer(arts[season], at, rect.width, rect.height, rect);
+      chunk.layers.set(season, layer);
+    }
+    return layer;
+  };
+  const art = arts.summer;
   const chunkPx = map.chunkSize * TILE_SIZE;
 
   const shadows = document.createElement('canvas');
@@ -243,14 +299,15 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
 
   /** The ground of a chunk with the shadows on it, at `timeMs`. */
   function pictureOf(chunk: (typeof chunks)[number], timeMs: number): HTMLCanvasElement {
-    const key = chunk.layer.stateAt(timeMs);
+    const layer = layerOf(chunk, seasonOf(world));
+    const key = layer.stateAt(timeMs);
     let picture = chunk.pictures.get(key);
     if (!picture) {
       picture = document.createElement('canvas');
       picture.width = chunkPx;
       picture.height = chunkPx;
       const ctx = picture.getContext('2d')!;
-      ctx.drawImage(chunk.layer.canvasAt(timeMs), 0, 0);
+      ctx.drawImage(layer.canvasAt(timeMs), 0, 0);
       ctx.globalAlpha = sheet.shadowOpacity;
       ctx.drawImage(shadows, chunk.x, chunk.y, chunkPx, chunkPx, 0, 0, chunkPx, chunkPx);
       chunk.pictures.set(key, picture);
@@ -264,7 +321,7 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
     prepare() {
       rebuild();
       for (const chunk of chunks) {
-        chunk.layer.composeAll();
+        layerOf(chunk, seasonOf(world)).composeAll();
         for (const timeMs of terrainStateTimes(art)) pictureOf(chunk, timeMs);
       }
     },
@@ -301,10 +358,12 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
       const right = view.x + view.width;
       const bottom = view.y + view.height;
 
+      const season = seasonOf(world);
+      const swap = objectSwap(season);
       for (const chunk of chunks) {
         if (chunk.x >= right || chunk.y >= bottom) continue;
         if (chunk.x + chunkPx <= view.x || chunk.y + chunkPx <= view.y) continue;
-        ctx.drawImage(chunk.layer.canvasAt(timeMs), chunk.x - view.x, chunk.y - view.y);
+        ctx.drawImage(layerOf(chunk, season).canvasAt(timeMs), chunk.x - view.x, chunk.y - view.y);
       }
 
       const alpha = ctx.globalAlpha;
@@ -318,7 +377,10 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
         const top = person.y - entry.anchor.y;
         if (left >= right || top >= bottom || left + entry.width <= view.x) return;
         if (top + entry.height <= view.y) return;
-        sheet.draw(ctx, person.sprite, person.x - view.x, person.y - view.y, {
+        // Shivering with cold (step 1.10): a pixel to the side every other moment.
+        const shiver =
+          person.shivering && Math.floor((timeMs + person.phase) / 100) % 2 === 1 ? 1 : 0;
+        sheet.draw(ctx, person.sprite, person.x - view.x + shiver, person.y - view.y, {
           animation: person.animation,
           swap: person.swap,
           ...(person.frame === null ? { timeMs: timeMs + person.phase } : { frame: person.frame }),
@@ -355,10 +417,15 @@ export function createMapRenderer(sheet: SpriteSheet, art: TerrainArt, world: Wo
           continue;
         }
         const { placement, object } = item;
+        const def = defOf(object);
+        // Flowers do not bloom in winter (step 1.10): the tile is snow.
+        if (season === 'winter' && def.id === 'flowers') continue;
         const entry = sheet.entry(placement.sprite);
+        const state = seasonalState(object, season);
         sheet.draw(ctx, placement.sprite, placement.x - view.x, placement.y - view.y, {
-          animation: entry.animations.has(object.state) ? object.state : entry.defaultAnimation,
+          animation: entry.animations.has(state) ? state : entry.defaultAnimation,
           timeMs: timeMs + (placement.phase ?? 0),
+          swap,
         });
       }
       for (; next < figures.length; next++) drawFigure(figures[next]!);

@@ -807,6 +807,24 @@ button.menu-card:focus-visible {
   display: inline-flex;
 }
 
+/* The weather and the temperature (step 1.10). */
+.hud-weather {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.hud-weather-icon[hidden] {
+  display: none;
+}
+
+.hud-temperature {
+  font-size: 14px;
+  font-weight: bold;
+  color: #a8dde3;
+}
+
 .pixel-icon {
   display: block;
   image-rendering: pixelated;
@@ -1171,6 +1189,10 @@ button.menu-card:focus-visible {
 
 .hud-scale-sleep .hud-scale-fill {
   background: #f0e9d6;
+}
+
+.hud-scale-warmth .hud-scale-fill {
+  background: #e8692c;
 }
 
 .hud-scale-health .hud-scale-fill {

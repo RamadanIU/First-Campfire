@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { DATA } from '../src/data/index.ts';
 import { calendarAt, PHASE_START, tickAt } from '../src/sim/calendar.ts';
+import type { Cause } from '../src/sim/events.ts';
 import { hearthOf, WOOD } from '../src/sim/fire.ts';
 import { inPile, lay, pileTiles, stackOf } from '../src/sim/items.ts';
 import { objectAt } from '../src/sim/objects.ts';
@@ -29,6 +30,11 @@ function run(world: World, ticks: number, each?: () => void): void {
     if (broken.length > 0) throw new Error(broken.join('; '));
     each?.();
   }
+}
+
+/** Was it the rain that put the fire out (step 1.10)? */
+function isRain(cause: Cause): boolean {
+  return cause.kind === 'rule' && cause.rule === 'rain';
 }
 
 /** Is the villager at the fire: within `fire.nearTiles` of it? */
@@ -135,30 +141,41 @@ describe('критерий: без дров костёр гаснет, при н
     expect(out.tick - lit.tick).toBe(DAY - 1);
   });
 
-  it('опушка и луг, целый год (с зимой): разведённый костёр ни разу не гас, дрова подкладывают', () => {
+  it('опушка и луг, целый год (с зимой): без дров костёр не гас ни разу, дрова подкладывают', () => {
     const world = worldOn(EDGE);
     run(world, 12 * DAY);
-    expect(world.events.list.filter((e) => e.type === 'fire_lit')).toHaveLength(1);
-    expect(world.events.list.filter((e) => e.type === 'fire_out')).toEqual([]);
-    // A year of burning: 9 days × 1 + 3 winter days × 3, give or take the first day.
+    const outs = world.events.list.filter((e) => e.type === 'fire_out');
+    // Only the rain may put it out — never a want of wood; and then it is lit again.
+    expect(outs.filter((e) => !isRain(e.cause))).toEqual([]);
+    const lit = world.events.list.filter((e) => e.type === 'fire_lit');
+    expect(lit).toHaveLength(1 + outs.length);
+    // A year of burning: 9 days × 1 + 3 winter days × 3, give or take the first day (the wood in a
+    // fire the rain put out stays in it — step 1.10).
     expect(world.items.burned).toBeGreaterThanOrEqual(16);
-    expect(world.items.burned).toBeLessThanOrEqual(DATA.balance.fire.maxFuel + 18);
+    expect(world.items.burned).toBeLessThanOrEqual(DATA.balance.fire.maxFuel * lit.length + 18);
   });
 
-  it('20 миров × год: костёр разведён в первые двое суток и не гаснет', () => {
+  it('20 миров × год: костёр разведён в первые двое суток и без дров не гаснет', () => {
     const days: number[] = [];
+    let rainedOut = 0;
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld(seed);
       for (let tick = 0; tick < 12 * DAY; tick++) stepWorld(world);
       const lit = world.events.list.filter((e) => e.type === 'fire_lit');
       expect(lit.length, `зерно ${seed}`).toBeGreaterThanOrEqual(1);
       days.push(calendarAt(lit[0]!.tick).day);
+      const outs = world.events.list.filter((e) => e.type === 'fire_out');
       expect(
-        world.events.list.filter((e) => e.type === 'fire_out'),
+        outs.filter((e) => !isRain(e.cause)),
         `зерно ${seed}`,
       ).toEqual([]);
+      rainedOut += outs.length;
+      // Rained out — lit again (a fire that went out on the last day may still be out).
+      expect(lit.length, `зерно ${seed}`).toBeGreaterThanOrEqual(outs.length);
     }
     expect(Math.max(...days), `первый костёр, день: ${days.join(', ')}`).toBeLessThanOrEqual(2);
+    // The rule of the rain does work in the real worlds (step 1.10).
+    expect(rainedOut).toBeGreaterThan(0);
   }, 60_000);
 });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DATA } from '../data/index.ts';
 import { TIME } from './calendar.ts';
 import {
   FULL,
@@ -7,11 +8,13 @@ import {
   harmPerTick,
   healPerTick,
   isSated,
+  isShivering,
   liveTick,
   portionOf,
   satietyPerRation,
   sleepPerTick,
   urgency,
+  warmthPerTick,
 } from './needs.ts';
 
 const DAY = TIME.ticksPerDay;
@@ -60,7 +63,8 @@ describe('тик жизни', () => {
     expect(Number(ranOut[1]!.split('@')[1])).toBeLessThanOrEqual(6001);
     expect(ranOut[1]).toMatch(/^water@/);
     expect(ranOut[2]).toMatch(/^food@/);
-    expect(needs).toEqual({ food: 0, water: 0, sleep: 0 });
+    // Warmth (step 1.10) follows the temperature, comfortable by default: it stays full.
+    expect(needs).toEqual({ food: 0, water: 0, sleep: 0, warmth: FULL });
     // Sleep at zero harms nothing: only thirst and hunger did.
     // Thirst has harmed health for ≈ 5 000 ticks, hunger for ≈ 1 000.
     expect(health).toBeCloseTo(FULL - 5000 * harmPerTick('water') - 1000 * harmPerTick('food'), 0);
@@ -92,5 +96,32 @@ describe('тик жизни', () => {
     expect(result.health).toBeCloseTo(50 + healPerTick(), 12);
     expect(liveTick(fullNeeds(), FULL).health).toBe(FULL);
     expect(result.empty).toEqual([]);
+  });
+
+  it('тепло (шаг 1.10): ниже удобной температуры убывает, выше — прибывает, на нуле — обморожение и вред здоровью', () => {
+    const { comfort, pointsPerDegreeDay, deathDays, shiverPoints } = DATA.balance.needs.warmth;
+    expect(warmthPerTick(comfort)).toBe(0);
+    expect(warmthPerTick(comfort - 10) * TIME.ticksPerDay).toBeCloseTo(-10 * pointsPerDegreeDay, 9);
+    expect(warmthPerTick(comfort + 5)).toBeGreaterThan(0);
+    // By default (no temperature given) it is comfortable: warmth stays.
+    const needs = { ...fullNeeds(), warmth: 50 };
+    liveTick(needs, FULL);
+    expect(needs.warmth).toBe(50);
+    // Frost: falls to zero, marked once; then it harms health in `deathDays`.
+    needs.warmth = 0.01;
+    const first = liveTick(needs, FULL, false, comfort - 20);
+    expect(first.ranOut).toEqual(['warmth']);
+    expect(liveTick(needs, FULL, false, comfort - 20).ranOut).toEqual([]);
+    expect(FULL / harmPerTick('warmth')).toBeCloseTo(deathDays * DAY, 9);
+    expect(liveTick(needs, 50, false, comfort - 20).health).toBeCloseTo(
+      50 - harmPerTick('warmth'),
+      9,
+    );
+    // By the fire it comes back, never above full.
+    needs.warmth = FULL - 0.01;
+    liveTick(needs, FULL, false, comfort + 30);
+    expect(needs.warmth).toBe(FULL);
+    expect(isShivering(shiverPoints - 1)).toBe(true);
+    expect(isShivering(shiverPoints)).toBe(false);
   });
 });

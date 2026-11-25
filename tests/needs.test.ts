@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DATA } from '../src/data/index.ts';
+import { calendarAt } from '../src/sim/calendar.ts';
 import type { WorldEvent } from '../src/sim/events.ts';
 import { findEvent } from '../src/sim/events.ts';
 import { hashState } from '../src/sim/hash.ts';
@@ -16,8 +17,8 @@ import { FULL, fallPerTick, portionOf, satietyPerRation } from '../src/sim/needs
 import { objectAt } from '../src/sim/objects.ts';
 import { loadWorld, saveWorld } from '../src/sim/save.ts';
 import { isStepping, orderWalk, type Villager } from '../src/sim/villagers.ts';
-import { createWorld, runTicks, stepWorld, type World } from '../src/sim/world.ts';
-import { worldOn } from './scenario.ts';
+import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
+import { runWarm, stepWarm, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 
@@ -25,11 +26,15 @@ function events<T extends WorldEvent['type']>(world: World, type: T) {
   return world.events.list.filter((e): e is Extract<WorldEvent, { type: T }> => e.type === type);
 }
 
-/** Run until everyone is dead or `ticks` pass; returns the ticks run. */
-function runUntilAllDead(world: World, ticks: number): number {
+/**
+ * Run until everyone is dead or `ticks` pass; returns the ticks run. `warm` — in a mild climate
+ * (`stepWarm`: maps without trees have no fire, and winter would kill first — step 1.10).
+ */
+function runUntilAllDead(world: World, ticks: number, warm = false): number {
   let run = 0;
   while (world.villagers.list.length > 0 && run < ticks) {
-    stepWorld(world);
+    if (warm) stepWarm(world);
+    else stepWorld(world);
     run++;
   }
   return run;
@@ -96,7 +101,7 @@ describe('критерий: смерть от голода и от жажды �
       { x: 1, y: 1 },
       { x: 10, y: 4 },
     ]);
-    runUntilAllDead(world, 80 * DAY);
+    runUntilAllDead(world, 80 * DAY, true);
     expect(world.villagers.list).toEqual([]);
     const ranOut = events(world, 'need_ran_out');
     expect(ranOut.map((e) => e.need)).toEqual(['food', 'food']);
@@ -125,12 +130,14 @@ describe('критерий: смерть от голода и от жажды �
       { x: 1, y: 2 },
       { x: 10, y: 3 },
     ]);
-    runUntilAllDead(world, 50 * DAY);
+    runUntilAllDead(world, 50 * DAY, true);
     expect(world.villagers.list).toEqual([]);
     const deaths = events(world, 'villager_died');
     expect(deaths).toHaveLength(2);
     for (const death of deaths) {
-      expect(death).toMatchObject({ reason: 'thirst', foodReachable: true, waterReachable: false });
+      // Berries are in reach — unless it is winter (step 1.10: no berries in winter).
+      const ripe = calendarAt(death.tick).season !== 'winter';
+      expect(death).toMatchObject({ reason: 'thirst', foodReachable: ripe, waterReachable: false });
       const cause = death.cause.kind === 'event' ? findEvent(world, death.cause.event) : undefined;
       expect(cause).toMatchObject({ type: 'need_ran_out', need: 'water' });
       expect(cause!.tick).toBeGreaterThanOrEqual(15 * DAY - 2);
@@ -185,7 +192,7 @@ describe('критерий: житель не умирает при доступ
     ]);
     // Plenty of berries on every bush: the scales go round many times — a meal every ten days.
     for (const object of world.objects.list) object.stock = 100;
-    runTicks(world, 150 * DAY);
+    runWarm(world, 150 * DAY);
     expect(world.villagers.list).toHaveLength(2);
     expect(events(world, 'need_ran_out')).toEqual([]);
     for (const v of world.villagers.list) expect(v.health).toBe(FULL);
@@ -297,7 +304,7 @@ describe('выбор: нужда² × доступность', () => {
       { x: 1, y: 1 },
     ]);
     const villager = world.villagers.list[0]!;
-    villager.needs = { sleep: FULL, ...needs };
+    villager.needs = { sleep: FULL, warmth: FULL, ...needs };
     return { world, villager };
   }
 

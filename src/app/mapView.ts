@@ -1,5 +1,6 @@
 import { PALETTE, toHex } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
+import { SEASON_IDS, terrainSwap } from '../art/seasons.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { prepareTerrain, TERRAIN_LOOKS } from '../art/terrain.ts';
 import { DATA } from '../data/index.ts';
@@ -14,10 +15,11 @@ import {
 import { burningFire, drawFlames, drawSmoke, drawSparks, fireLight } from '../render/fire.ts';
 import { drawFireflies } from '../render/fireflies.ts';
 import { daylightAt, hazeAt, shadeRect } from '../render/lighting.ts';
-import { createMapRenderer } from '../render/mapRenderer.ts';
+import { createMapRenderer, type SeasonalArt } from '../render/mapRenderer.ts';
 import { drawPlaceMark, drawSelection, PLACE_MARK_MS } from '../render/selection.ts';
 import { createSpriteSheet } from '../render/spriteSheet.ts';
 import type { VillagerPose } from '../render/villagers.ts';
+import { drawWeather, weatherTint } from '../render/weather.ts';
 import { calendarAt, TIME } from '../sim/calendar.ts';
 import { ACTIVITY, holdOf } from '../sim/minds.ts';
 import type { Tile } from '../sim/path.ts';
@@ -61,7 +63,8 @@ export interface MindNotes {
  *
  * The light of the time of day (step 1.5, src/render/lighting.ts) lies over the drawn world — rosy
  * dawn, day as drawn, golden dusk, blue night (`light=0` — always as drawn); fireflies glow over it
- * at night, bubbles of sleep float over the sleepers.
+ * at night, bubbles of sleep float over the sleepers. Step 1.10: the season recolours the map, clouds
+ * dim the light, rain and snow fall (src/render/weather.ts).
  *
  *   `debug=1` (step 1.3) — paths of the villagers are drawn as lines; a click on a villager
  *   chooses it, a click on a tile sends the chosen one there (the first by default). A refused
@@ -132,8 +135,14 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   bindSpeedKeys(loop, window);
 
   const sheet = createSpriteSheet(SPRITES, PALETTE);
-  const art = prepareTerrain(TERRAIN_LOOKS, SPRITES, PALETTE);
-  const renderer = createMapRenderer(sheet, art, world);
+  // The ground of every season (step 1.10): recoloured tiles, composed when first shown.
+  const arts = Object.fromEntries(
+    SEASON_IDS.map((season) => [
+      season,
+      prepareTerrain(TERRAIN_LOOKS, SPRITES, PALETTE, terrainSwap(season)),
+    ]),
+  ) as SeasonalArt;
+  const renderer = createMapRenderer(sheet, arts, world);
   renderer.prepare();
   const size = { width: renderer.width, height: renderer.height };
   // The camp of the world (its middle — the fire, step 1.9; the camp site of the map, step 1.7).
@@ -357,13 +366,16 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
         const fire = burningFire(world);
         const { x: viewX, y: viewY } = layout.view;
         if (fire) drawSmoke(ctx, fire, viewX, viewY, timeMs);
+        // Rain and snow (step 1.10): lit like the world — dark at night.
+        drawWeather(ctx, layout.view, world.weather.kind, timeMs);
         // The light of the moment shown (between the last two ticks), over world pixels: crisp at
         // every zoom. Fireflies and signs shine over it, the debug overlay stays readable.
         if (params.light) {
           const shown = Math.max(0, world.tick - 1 + alpha);
           const time = shown % TIME.ticksPerDay;
           const { width, height } = layout.view;
-          const light = daylightAt(time);
+          // Under clouds the light is dimmer (step 1.10).
+          const light = weatherTint(daylightAt(time), world.weather.kind);
           const glow = fire ? fireLight(fire, light, viewX, viewY, timeMs) : null;
           shadeRect(ctx, width, height, light, glow ? [glow] : [], hazeAt(time));
           if (fire && glow) drawFlames(ctx, sheet, fire, viewX, viewY, timeMs);

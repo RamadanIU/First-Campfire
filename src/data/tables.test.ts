@@ -174,7 +174,7 @@ describe('испорченная запись даёт понятную ошиб
         oak(t).place = 'forst';
       }),
     ).toEqual([
-      'data/objects.json · запись «oak» · поле «place»: ожидается одно из: forest (лес), edge (опушка), scatter (россыпь), meadow (луг) или null (не появляется при сотворении карты), получено "forst"',
+      'data/objects.json · запись «oak» · поле «place»: ожидается одно из: forest (лес), edge (опушка), scatter (россыпь), meadow (луг), forage (корм у опушки) или null (не появляется при сотворении карты), получено "forst"',
     ]);
     expect(
       problemsWith((t) => {
@@ -202,8 +202,20 @@ describe('испорченная запись даёт понятную ошиб
       food: 'berries',
       rations: 4,
       empty: 'empty',
+      // Step 1.10: no berries in winter (GDD §3.2).
+      seasons: ['spring', 'summer', 'autumn'],
     });
     expect(DATA.objects.get('oak').harvest).toBeNull();
+    expect(
+      problemsWith((t) => {
+        harvest(t).seasons = ['summer', 'winer'];
+      }),
+    ).toHaveLength(1);
+    expect(
+      problemsWith((t) => {
+        harvest(t).seasons = ['summer', 'summer'];
+      }),
+    ).toEqual(['data/objects.json · запись «berry_bush»: сезоны harvest.seasons повторяются']);
     expect(
       problemsWith((t) => {
         harvest(t).food = 'beries';
@@ -237,6 +249,8 @@ describe('испорченная запись даёт понятную ошиб
       food: { emptyDays: 25, deathDays: 40 },
       water: { emptyDays: 15, deathDays: 20 },
       sleep: { emptyDays: 1.5 },
+      // Warmth (step 1.10): GDD §4.2 «зависит от погоды и одежды» — numbers of ADR-030.
+      warmth: { comfort: 10, pointsPerDegreeDay: 6, deathDays: 1, shiverPoints: 40 },
       healDays: 2,
     });
     // Sleep (step 1.5): GDD §4.2 — 1.5 days, the ground ×0.5.

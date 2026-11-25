@@ -16,8 +16,11 @@
  *     one a day in summer, three in winter); at most `fire.maxFuel` lie in it. With no fuel left it
  *     goes out — an event caused by the rule `fuel`; lighting is an event caused by the villager's
  *     decision.
- *   - Warmth (`warmthAt`, for step 1.10): full beside a burning fire, fading to nothing at
- *     `fire.heatRadius` tiles.
+ *   - Warmth (`warmthAt`): full beside a burning fire, fading to nothing at `fire.heatRadius` tiles;
+ *     step 1.10 — it warms by `fire.heat` degrees (./weather.ts `feltAt`).
+ *   - Rain (step 1.10): a fire without a roof gets soaked — `wet` counts the ticks of rain on it, and
+ *     at `fire.rainOutTicks` it goes out by the rule `rain`, whatever wood is in it; the wet wood
+ *     stays in the hearth and burns again once the fire is lit anew. Out of the rain it dries as fast. It cannot be lit in the rain (./minds.ts `kindleWorth`).
  *   - Fire is known from the start for now; the technology «Огонь» of stage 4 will switch it on —
  *     the one condition is `knowsFire`.
  *
@@ -38,16 +41,18 @@ export const WOOD = 'branches';
 export interface Fire {
   /** Id of the hearth (the object `campfire` on the middle of the camp); 0 — not built yet. */
   object: number;
-  /** Armfuls of wood left in the fire, 0 … `fire.maxFuel`; 0 when out. */
+  /** Armfuls of wood left in the fire, 0 … `fire.maxFuel`; when out — 0, or the wet wood the rain put out. */
   fuel: number;
   /** While it burns — the id of the event of its lighting; 0 — out. */
   lit: number;
   /** Armfuls put into it since it was lit. */
   fed: number;
+  /** Ticks of rain soaked into it (step 1.10): at `fire.rainOutTicks` the rain puts it out. */
+  wet: number;
 }
 
 export function createFire(): Fire {
-  return { object: 0, fuel: 0, lit: 0, fed: 0 };
+  return { object: 0, fuel: 0, lit: 0, fed: 0, wet: 0 };
 }
 
 /**
@@ -82,14 +87,20 @@ export function tendedByOther(world: World, self: Villager): boolean {
 }
 
 /**
- * Is it evening at `tick`: from `fire.eveningTicks` before dusk to nightfall — the time to sit at
+ * Is it evening at `tick`: from `fire.eveningTicks` of the season before dusk to nightfall — the time to sit at
  * the fire and to feed it for the night.
  */
 export function isEvening(tick: number): boolean {
   const { tickOfDay } = calendarAt(tick);
-  return (
-    tickOfDay >= PHASE_START.dusk - DATA.balance.fire.eveningTicks && tickOfDay < PHASE_START.night
-  );
+  return tickOfDay >= eveningStart(tick) && tickOfDay < PHASE_START.night;
+}
+
+/**
+ * The tick of the day the evening of `tick`'s day begins: `fire.eveningTicks` of its season before
+ * dusk (step 1.10: in winter earlier — a short frosty day, one is home by the fire before dark).
+ */
+export function eveningStart(tick: number): number {
+  return PHASE_START.dusk - DATA.balance.fire.eveningTicks[calendarAt(tick).season];
 }
 
 /** Is it evening or night at `tick` (one sits at the fire till one goes to sleep)? */
@@ -113,7 +124,7 @@ export function fuelTillMorning(world: World): number {
 
 /**
  * Warmth of the campfire at tile (x, y), 0…1: 1 within a tile of a burning fire, fading evenly to
- * 0 at `fire.heatRadius` tiles; 0 — no fire burning (a source of heat for step 1.10).
+ * 0 at `fire.heatRadius` tiles; 0 — no fire burning (the heat it gives — ./weather.ts `feltAt`).
  */
 export function warmthAt(world: World, x: number, y: number): number {
   if (!isBurning(world)) return 0;
@@ -177,7 +188,7 @@ export function lightFire(world: World, villager: Villager): boolean {
     fire.object = placeObject(world.map, world.objects, 'campfire', camp.x, camp.y).id;
     first = true;
   }
-  fire.fuel = 0;
+  // Wood the rain put out (step 1.10) is still there: it catches again with the new.
   fire.fed = 0;
   feedFire(world, villager);
   hearthOf(world)!.state = 'burning';
@@ -197,27 +208,36 @@ export function lightFire(world: World, villager: Villager): boolean {
   return true;
 }
 
-/** The fire goes out: no wood left (the rule `fuel`). */
+/** The fire goes out: no wood left (the rule `fuel`), or soaked by the rain (the rule `rain`, step 1.10). */
 function goOut(world: World): void {
   const { fire, camp } = world;
   const hearth = hearthOf(world);
   if (hearth) hearth.state = 'out';
+  const rained = fire.wet >= DATA.balance.fire.rainOutTicks;
   emit(
     world,
     { type: 'fire_out', x: camp.x, y: camp.y, lit: fire.lit, burned: fire.fed },
-    { kind: 'rule', rule: 'fuel' },
+    { kind: 'rule', rule: rained ? 'rain' : 'fuel' },
   );
-  fire.fuel = 0;
+  // Put out by the rain, the wet wood stays in the hearth and burns when it is lit again.
+  if (!rained) fire.fuel = 0;
   fire.lit = 0;
   fire.fed = 0;
+  fire.wet = 0;
 }
 
-/** The fire burns its wood, evenly by its season's rate; none left — it goes out. */
+/**
+ * The fire burns its wood, evenly by its season's rate; none left — it goes out. The rain (step
+ * 1.10) soaks it, a tick a tick, and dries off the same way; soaked through — it goes out.
+ */
 export const fireSystem: System = {
   id: 'fire',
   step(world) {
     if (!isBurning(world)) return;
-    world.fire.fuel -= burnPerTick(world);
-    if (world.fire.fuel <= 1e-9) goOut(world);
+    const { fire } = world;
+    const raining = world.weather.kind === 'rain';
+    fire.wet = raining ? fire.wet + 1 : Math.max(0, fire.wet - 1);
+    fire.fuel -= burnPerTick(world);
+    if (fire.fuel <= 1e-9 || fire.wet >= DATA.balance.fire.rainOutTicks) goOut(world);
   },
 };

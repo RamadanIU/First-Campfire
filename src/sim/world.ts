@@ -25,12 +25,13 @@ import { createRng, type Rng } from './rng.ts';
 import { calendarEventsSystem } from './systems/calendarEvents.ts';
 import { createFireflies, type Fireflies, firefliesSystem } from './systems/fireflies.ts';
 import { createVillagers, settleFirstPair, type Villagers, villagersSystem } from './villagers.ts';
+import { createWeather, type Weather, weatherSystem } from './weather.ts';
 
 /**
  * Named random streams, one per system. A new system adds its name to the end; streams are
  * derived from (seed, name), so adding one does not change the numbers of the others.
  */
-export const RNG_STREAMS = ['fireflies', 'map', 'villagers', 'minds', 'items'] as const;
+export const RNG_STREAMS = ['fireflies', 'map', 'villagers', 'minds', 'items', 'weather'] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 export interface World {
@@ -54,6 +55,8 @@ export interface World {
   items: Items;
   /** The campfire on the middle of the camp (./fire.ts, step 1.9). */
   fire: Fire;
+  /** The weather now (./weather.ts, step 1.10); the temperature follows from it and the calendar. */
+  weather: Weather;
 }
 
 /** A system updates one aspect of the world once per tick. */
@@ -64,12 +67,14 @@ export interface System {
 
 /**
  * Systems in the order they run every tick. The order is part of the rules: do not reorder.
- * Life (needs, health, death — ./life.ts) goes before the villagers act; the fire (./fire.ts — step
- * 1.9) burns after they have fed it; litter (branches falling from trees, ./items.ts — step 1.7)
- * comes last.
+ * The weather (./weather.ts — step 1.10) changes first, after the calendar: life feels the
+ * temperature of this tick. Life (needs, health, death — ./life.ts) goes before the villagers act;
+ * the fire (./fire.ts — step 1.9) burns after they have fed it; litter (branches falling from trees,
+ * ./items.ts — step 1.7) comes last.
  */
 export const SYSTEMS: readonly System[] = [
   calendarEventsSystem,
+  weatherSystem,
   firefliesSystem,
   lifeSystem,
   villagersSystem,
@@ -105,6 +110,7 @@ export function createWorld(seed: number, options: WorldOptions = {}): World {
     camp: createCamp(map, objects),
     items: createItems(),
     fire: createFire(),
+    weather: createWeather(rng.weather),
   };
   const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
   settleFirstPair(world, { kind: 'event', event: created.id });
