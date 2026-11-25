@@ -124,7 +124,10 @@ export function shortDateText(now: DateParts): string {
 export const WHO: Record<Sex, string> = { male: 'мужчина', female: 'женщина' };
 
 /** «Мужчина», «Женщина» — the title of a villager's card. */
-export const WHO_TITLE: Record<Sex, string> = { male: 'Мужчина', female: 'Женщина' };
+export const WHO_TITLE: Record<Sex, string> = {
+  male: 'Мужчина',
+  female: 'Женщина',
+};
 
 /** A villager in words: «мужчина (житель 1)». */
 export function villagerName(sex: Sex | undefined, id: number): string {
@@ -140,6 +143,8 @@ const WALKS_TO = {
   fire: 'несёт дрова к костру',
   sit: 'идёт к костру',
   bed: 'идёт спать к костру',
+  scout: 'ищет еду: идёт в незнакомые места',
+  pick: 'идёт собирать еду впрок',
 } as const;
 
 /**
@@ -148,7 +153,17 @@ const WALKS_TO = {
  * (data/resources.json, «Ветки»); a resource without words here is named by its name.
  */
 const HANDLED: Readonly<Record<string, { with: string; what: string; forms: Forms }>> = {
-  branches: { with: 'ветками', what: 'ветки', forms: ['ветку', 'ветки', 'веток'] },
+  branches: {
+    with: 'ветками',
+    what: 'ветки',
+    forms: ['ветку', 'ветки', 'веток'],
+  },
+  // Food in the hands and in the store (step 1.11b) — handfuls.
+  nuts: {
+    with: 'орехами',
+    what: 'орехи',
+    forms: ['горсть орехов', 'горсти орехов', 'горстей орехов'],
+  },
 };
 
 function handled(resource: string, name: (resource: string) => string) {
@@ -181,9 +196,14 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
         return `идёт за ${handled(action.source.resource, name).with}`;
       }
       if (action.purpose === 'carry' && villager.load) {
-        return `несёт ${resourceCount(villager.load.resource, villager.load.count, name)} в кучу`;
+        const to = villager.plan.activity === 'store' ? 'в запас' : 'в кучу';
+        return `несёт ${resourceCount(villager.load.resource, villager.load.count, name)} ${to}`;
       }
       if (action.purpose === 'fetch' || action.purpose === 'carry') return 'носит в кучу';
+      if (action.purpose === 'eat' && action.source?.kind === 'store') return 'идёт к запасу еды';
+      if (action.purpose === 'pick' && villager.load) {
+        return `несёт ${resourceCount(villager.load.resource, villager.load.count, name)}, собирает ещё`;
+      }
       if (action.purpose === 'fire' && villager.load) {
         return `несёт к костру ${resourceCount(villager.load.resource, villager.load.count, name)}`;
       }
@@ -191,9 +211,15 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
     case 'pick_up':
       return `подбирает ${handled(action.resource, name).what}`;
     case 'put_down':
-      return `складывает ${handled(action.resource, name).what} в кучу`;
+      return villager.plan.activity === 'store'
+        ? `складывает ${handled(action.resource, name).what} в запас`
+        : `складывает ${handled(action.resource, name).what} в кучу`;
     case 'eat':
       return `ест ${name(action.food).toLowerCase()}`;
+    case 'eat_stored':
+      return `ест ${name(action.food).toLowerCase()} из запаса`;
+    case 'pick':
+      return `собирает ${name(action.food).toLowerCase()} впрок`;
     case 'drink':
       return 'пьёт';
     case 'sleep':
@@ -237,6 +263,8 @@ export const ACTIVITY_NAME: Record<Activity, string> = {
   stoke: 'подложить дров',
   sit: 'у огня',
   warm: 'греться',
+  scout: 'разведка',
+  store: 'запас',
   order: 'приказ',
 };
 
@@ -260,11 +288,15 @@ const STEP_NAME: Record<PlanStep, string> = {
   stoke: 'подложить',
   sit: 'сесть у огня',
   bed: 'лечь у огня',
+  pick: 'собрать',
 };
 
 /** A score of the mind: «0,52». */
 export function score(value: number): string {
-  return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return value.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 /**
@@ -406,7 +438,12 @@ export function describeEvent(event: WorldEvent): string {
     case 'weather_changed':
       return `погода: ${WEATHER_NAME[event.from]} → ${WEATHER_NAME[event.to]}`;
     case 'food_found':
+      if (event.stored) {
+        return `житель ${event.villager} ест из запаса (${FOOD_NAME[event.food] ?? event.food})`;
+      }
       return `житель ${event.villager} ест (${FOOD_NAME[event.food] ?? event.food}) в ${String(event.distance).replace('.', ',')} тайла от стоянки`;
+    case 'food_stored':
+      return `житель ${event.villager} сложил в запас: ${FOOD_NAME[event.food] ?? event.food}, ${event.count} ${plural(event.count, ['горсть', 'горсти', 'горстей'])}`;
   }
 }
 

@@ -64,8 +64,20 @@ import {
   lightFire,
   WOOD,
 } from './fire.ts';
-import { dropLoad, findItem, isPileTile, lay, pileSpot, type Stack, takeItem } from './items.ts';
+import {
+  dropLoad,
+  findItem,
+  isFood,
+  isPileTile,
+  lay,
+  pileSpot,
+  type Stack,
+  spoilsAt,
+  stackOf,
+  takeItem,
+} from './items.ts';
 import { inside } from './map.ts';
+import { emptyMemory, type Known, look, noteFood, share } from './memory.ts';
 import {
   ACTIVITY,
   type Activity,
@@ -82,6 +94,7 @@ import {
   remember,
   searchFireSide,
   searchLoose,
+  searchPick,
   searchSeat,
   type Why,
 } from './minds.ts';
@@ -115,7 +128,8 @@ export const LOOKS = { skinTones: 6, hairColors: 5 } as const;
 /**
  * Why a villager walks: to stroll near home, because the observer sent it (debug), to eat or to
  * drink (step 1.4), to fetch something lying loose or to carry the load to the pile (step 1.7); to
- * take wood from the pile, to carry it to the fire, to sit by the fire, to lie down by it (step 1.9).
+ * take wood from the pile, to carry it to the fire, to sit by the fire, to lie down by it (step 1.9);
+ * to scout — to the edge of the known land, to pick food to store (step 1.11b).
  */
 export type WalkPurpose =
   | 'wander'
@@ -127,7 +141,9 @@ export type WalkPurpose =
   | 'wood'
   | 'fire'
   | 'sit'
-  | 'bed';
+  | 'bed'
+  | 'scout'
+  | 'pick';
 
 /**
  * What a walk leads to. A need is met (step 1.4) beside a bush with food — object `object` on
@@ -160,9 +176,15 @@ export type VillagerAction =
       waited: number;
       source: Source | null;
     }
-  /** Picks berries from the bush (object id) beside it and eats them; the next bite at `next`. */
-  /** Eating at a bush (`food` — what it gives: berries, nuts, roots — step 1.10). */
+  /**
+   * Picks food from the bush (object id) beside it and eats it (`food` — what it gives: berries,
+   * nuts, roots — step 1.10); the next bite at `next`.
+   */
   | { kind: 'eat'; bush: number; food: string; next: number }
+  /** Eats from stack `item` of the store it stands on (step 1.11b); the next handful at `next`. */
+  | { kind: 'eat_stored'; item: number; food: string; next: number }
+  /** Picks food from the bush beside it into the hands, to store (step 1.11b); a handful at `next`. */
+  | { kind: 'pick'; bush: number; food: string; next: number }
   /** Drinks from the water tile beside it; the next sip at `next`. */
   | { kind: 'drink'; water: Tile; next: number }
   /**
@@ -232,6 +254,15 @@ export interface Villager {
   load: Stack | null;
   /** The tick of the last search in vain for something to carry to the pile; 0 — none. */
   noWork: number;
+  /** The tick of the last search in vain for food to store (step 1.11b); 0 — none. */
+  noStore: number;
+  /**
+   * The land it explored (step 1.11b, ./memory.ts): a cell of `ai.cellTiles` per entry, row by row —
+   * 1 once it was in sight whole, else 0.
+   */
+  seen: number[];
+  /** The food objects it saw (step 1.11b, ./memory.ts), in the order of ids. */
+  foods: Known[];
   /** What it set itself to do (step 1.8): `action` is the step of it under way. */
   plan: Plan;
   /** The tick it last thought its plan over (step 1.8): it thinks at its next moment after it. */
@@ -309,7 +340,12 @@ export function removeVillager(world: World, id: number): void {
  * feeding the fire (step 1.9).
  */
 export function carries(plan: Plan): boolean {
-  return plan.activity === 'haul' || plan.activity === 'kindle' || plan.activity === 'stoke';
+  return (
+    plan.activity === 'haul' ||
+    plan.activity === 'kindle' ||
+    plan.activity === 'stoke' ||
+    plan.activity === 'store'
+  );
 }
 
 /** Does another villager than `self` stand on tile (x, y) or step onto it? */
@@ -389,12 +425,15 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
     tooFar: perNeed(0),
     load: null,
     noWork: 0,
+    noStore: 0,
+    ...emptyMemory(world.map),
     plan: restPlan(world),
     thought: world.tick,
     log: [],
   };
   world.villagers.nextId += 1;
   world.villagers.list.push(villager);
+  look(world, villager);
   return villager;
 }
 
@@ -437,6 +476,7 @@ export function placeVillager(world: World, villager: Villager, x: number, y: nu
   villager.prevY = y;
   villager.action = { kind: 'idle', until: world.tick };
   villager.plan = restPlan(world);
+  look(world, villager);
 }
 
 /** The default plan: rest — stand a while, stroll near home, and again. */
@@ -665,6 +705,9 @@ function startPlan(
     case 'warm':
       walkFor(world, villager, 'sit', choice);
       return;
+    case 'store':
+      walkFor(world, villager, 'pick', choice);
+      return;
     default:
       walkFor(world, villager, choice.kind, choice);
   }
@@ -728,6 +771,7 @@ function nextStep(world: World, villager: Villager, source: Source | null = null
     case 'put_down':
     case 'take':
     case 'sit':
+    case 'pick':
       if (source) begin(world, villager, source);
       else fail(world, villager, 0);
       return;
@@ -792,6 +836,8 @@ function think(world: World, villager: Villager): boolean {
  */
 function begin(world: World, villager: Villager, source: Source): void {
   if (!canUse(world, source, villager.x, villager.y)) {
+    // A bush found bare (another picked it): remembered so (step 1.11b).
+    if (source.kind === 'bush') seeBush(world, villager, source.object);
     fail(world, villager, 0);
     return;
   }
@@ -813,6 +859,17 @@ function begin(world: World, villager: Villager, source: Source): void {
     };
     return;
   }
+  if (source.kind === 'store' && villager.plan.activity === 'eat') {
+    // The store at the camp (step 1.11b): eat from the stack one stands on.
+    foundFood(world, villager, source, 0, source.resource);
+    villager.action = {
+      kind: 'eat_stored',
+      item: source.item,
+      food: source.resource,
+      next: world.tick + DATA.balance.eating.biteTicks,
+    };
+    return;
+  }
   if (source.kind === 'store') {
     villager.action = {
       kind: 'take',
@@ -826,6 +883,10 @@ function begin(world: World, villager: Villager, source: Source): void {
     const { camp } = world;
     villager.facing = facingOf(camp.x - villager.x, camp.y - villager.y);
     villager.action = { kind: 'sit' };
+    // By the fire they tell each other what they saw (step 1.11b).
+    for (const other of world.villagers.list) {
+      if (other !== villager && other.action.kind === 'sit') share(villager, other);
+    }
     return;
   }
   if (source.kind === 'fire') {
@@ -834,7 +895,19 @@ function begin(world: World, villager: Villager, source: Source): void {
   }
   villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
   const { biteTicks, sipTicks } = DATA.balance.eating;
-  if (source.kind === 'bush') foundFood(world, villager, source);
+  if (source.kind === 'bush' && villager.plan.activity === 'store') {
+    // Picking food into the hands to store it (step 1.11b).
+    villager.action = {
+      kind: 'pick',
+      bush: source.object,
+      food: foodOf(world, source.object),
+      next: world.tick + DATA.balance.stores.pickTicks,
+    };
+    return;
+  }
+  if (source.kind === 'bush') {
+    foundFood(world, villager, source, source.object, foodOf(world, source.object));
+  }
   villager.action =
     source.kind === 'bush'
       ? {
@@ -852,25 +925,37 @@ function begin(world: World, villager: Villager, source: Source): void {
 
 /**
  * A villager came to food and begins to eat (step 1.11): an event with how far from the camp the
- * source is (straight, tiles, to a tenth) — the runs' «how far one goes for food» by seasons. The
- * cause is its decision to eat (its plan — the activity `eat`).
+ * source is (straight, tiles, to a tenth) — the runs' «how far one goes for food» by seasons; from
+ * the store (step 1.11b) — `object` 0. The cause is its decision to eat (its plan — the activity
+ * `eat`).
  */
-function foundFood(world: World, villager: Villager, source: Extract<Source, { kind: 'bush' }>) {
-  const dx = source.x - world.camp.x;
-  const dy = source.y - world.camp.y;
+function foundFood(world: World, villager: Villager, at: Tile, object: number, food: string) {
+  const dx = at.x - world.camp.x;
+  const dy = at.y - world.camp.y;
   emit(
     world,
     {
       type: 'food_found',
       villager: villager.id,
-      object: source.object,
-      food: foodOf(world, source.object),
-      x: source.x,
-      y: source.y,
+      object,
+      food,
+      x: at.x,
+      y: at.y,
       distance: Math.round(Math.sqrt(dx * dx + dy * dy) * 10) / 10,
+      stored: object === 0,
     },
-    { kind: 'decision', villager: villager.id, activity: villager.plan.activity },
+    {
+      kind: 'decision',
+      villager: villager.id,
+      activity: villager.plan.activity,
+    },
   );
+}
+
+/** The villager sees food object `id` as it is now (step 1.11b, ./memory.ts). */
+function seeBush(world: World, villager: Villager, id: number): void {
+  const object = findObject(world.objects, id);
+  if (object) noteFood(world, villager, object);
 }
 
 /** What the object `id` gives to eat (its harvest's resource; berries if it has none). */
@@ -913,6 +998,10 @@ function gather(world: World, villager: Villager): void {
     fail(world, villager, 0);
     return;
   }
+  if (isFood(load.resource)) {
+    gatherFood(world, villager, load);
+    return;
+  }
   // In the evening (step 1.10) one takes what one holds home, to the fire, gathering no more.
   if (load.count < DATA.resources.get(load.resource).stack && !isEveningOrNight(world.tick)) {
     // In the cold (step 1.10) no farther than one's warmth lasts on the way home.
@@ -927,6 +1016,75 @@ function gather(world: World, villager: Villager): void {
     }
   }
   nextStep(world, villager);
+}
+
+/**
+ * Gathering food to store (step 1.11b): while the hands are not full and the villager knows of
+ * more of it within `items.gatherTiles` (in the cold — `coldReach`; not in the evening), go and pick
+ * there too; otherwise on to the store.
+ */
+function gatherFood(world: World, villager: Villager, load: Stack): void {
+  if (load.count < stackOf(load.resource) && !isEveningOrNight(world.tick)) {
+    const more = searchPick(
+      world,
+      villager,
+      Math.min(DATA.balance.items.gatherTiles, coldReach(world, villager)),
+    );
+    if (
+      more?.source.kind === 'bush' &&
+      foodOf(world, more.source.object) === load.resource &&
+      more.path.length > 0
+    ) {
+      villager.plan.steps.unshift('pick', 'gather');
+      walkFor(world, villager, 'pick', more);
+      return;
+    }
+  }
+  nextStep(world, villager);
+}
+
+/**
+ * Picking food into the hands (step 1.11b): a handful (`eating.biteRations`) every
+ * `stores.pickTicks` while the hands hold more and the bush has a whole handful; a crumb left on it
+ * (less than a handful) the villager eats there. Then the plan goes on (`gather`); nothing in the
+ * hands — it fails.
+ */
+function pick(world: World, villager: Villager, action: Extract<VillagerAction, { kind: 'pick' }>) {
+  if (world.tick < action.next) return;
+  const unit = DATA.balance.eating.biteRations;
+  const bush = findObject(world.objects, action.bush);
+  const ripe = bush !== undefined && hasFood(bush, calendarAt(world.tick).season);
+  const load = villager.load;
+  const room = load === null || load.resource === action.food;
+  const full = load !== null && load.count >= stackOf(action.food);
+  if (bush && ripe && room && !full) {
+    const taken = takeFood(bush, unit);
+    if (taken >= unit - 1e-9) {
+      world.items.picked += 1;
+      if (load) {
+        load.count += 1;
+      } else {
+        villager.load = {
+          id: world.items.nextId++,
+          resource: action.food,
+          count: 1,
+          spoils: spoilsAt(action.food, world.tick),
+        };
+      }
+    } else {
+      // A crumb, less than a handful: eaten on the spot.
+      gain(villager, 'food', taken * satietyPerRation());
+    }
+    const more =
+      bush.stock > 0 && villager.load !== null && villager.load.count < stackOf(action.food);
+    if (more) {
+      action.next = world.tick + DATA.balance.stores.pickTicks;
+      return;
+    }
+  }
+  if (bush) noteFood(world, villager, bush);
+  if (!villager.load) fail(world, villager, 0);
+  else nextStep(world, villager);
 }
 
 /**
@@ -969,7 +1127,34 @@ function putDown(
   if (world.tick < action.until) return;
   const load = villager.load;
   if (load && isPileTile(world, villager.x, villager.y)) {
-    load.count -= lay(world, load.resource, load.count, villager.x, villager.y, load.id);
+    const laid = lay(
+      world,
+      load.resource,
+      load.count,
+      villager.x,
+      villager.y,
+      load.id,
+      load.spoils,
+    );
+    load.count -= laid;
+    if (laid > 0 && isFood(load.resource)) {
+      emit(
+        world,
+        {
+          type: 'food_stored',
+          villager: villager.id,
+          food: load.resource,
+          count: laid,
+          x: villager.x,
+          y: villager.y,
+        },
+        {
+          kind: 'decision',
+          villager: villager.id,
+          activity: villager.plan.activity,
+        },
+      );
+    }
     if (load.count === 0) villager.load = null;
   }
   if (villager.load) villager.plan.steps.unshift('carry', 'put_down');
@@ -1053,6 +1238,40 @@ function eat(world: World, villager: Villager, action: Extract<VillagerAction, {
     return;
   }
   if (taken === 0 || !bush || bush.stock <= 0) {
+    // Picked bare (step 1.11b): remembered so.
+    if (bush) noteFood(world, villager, bush);
+    fail(world, villager, 0);
+    return;
+  }
+  action.next = world.tick + biteTicks;
+}
+
+/**
+ * Eating from the store (step 1.11b): a handful (a unit of the stack, `eating.biteRations`) every
+ * `eating.biteTicks` until full (the plan is done) or the stack is gone (it fails: think again).
+ */
+function eatStored(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'eat_stored' }>,
+) {
+  if (world.tick < action.next) return;
+  const { biteRations, biteTicks } = DATA.balance.eating;
+  const item = findItem(world, action.item);
+  const there = item?.place === 'pile' && item.x === villager.x && item.y === villager.y;
+  if (!item || !there) {
+    fail(world, villager, 0);
+    return;
+  }
+  item.count -= 1;
+  world.items.eaten += 1;
+  if (item.count === 0) world.items.list.splice(world.items.list.indexOf(item), 1);
+  gain(villager, 'food', biteRations * satietyPerRation());
+  if (isSated(villager.needs.food, 'food')) {
+    nextStep(world, villager);
+    return;
+  }
+  if (item.count === 0) {
     fail(world, villager, 0);
     return;
   }
@@ -1130,6 +1349,12 @@ function decide(world: World, villager: Villager): boolean {
     case 'eat':
       eat(world, villager, action);
       return false;
+    case 'eat_stored':
+      eatStored(world, villager, action);
+      return false;
+    case 'pick':
+      pick(world, villager, action);
+      break;
     case 'drink':
       drink(world, villager, action);
       return false;
@@ -1237,8 +1462,31 @@ function act(world: World, villager: Villager): void {
     if (isStepping(villager)) {
       time = advance(world, villager, time);
       if (isStepping(villager)) return; // the step is still under way
+      lookAround(world, villager);
     }
     if (!decide(world, villager)) return;
+  }
+}
+
+/**
+ * On a new tile the villager looks around (step 1.11b, ./memory.ts `look`). Scouting, it stops as
+ * soon as it sees food (the plan is carried out: it thinks again at once); walking to a bush it now
+ * sees bare (another picked it), it gives up the way and thinks again.
+ */
+function lookAround(world: World, villager: Villager): void {
+  const found = look(world, villager);
+  const { action, plan } = villager;
+  if (plan.activity === 'scout' && found.length > 0) {
+    settle(world, villager, 'done', 0);
+    return;
+  }
+  if (action.kind !== 'walk' || action.source?.kind !== 'bush') return;
+  const bush = findObject(world.objects, action.source.object);
+  if (bush && !hasFood(bush, calendarAt(world.tick).season)) {
+    const { sightTiles } = DATA.balance.ai;
+    const dx = bush.x - villager.x;
+    const dy = bush.y - villager.y;
+    if (dx * dx + dy * dy <= sightTiles * sightTiles) fail(world, villager, 0);
   }
 }
 

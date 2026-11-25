@@ -17,6 +17,7 @@ import {
   type Items,
   litterSystem,
   scatterLitter,
+  spoilSystem,
 } from './items.ts';
 import { lifeSystem } from './life.ts';
 import type { WorldMap } from './map.ts';
@@ -70,7 +71,8 @@ export interface System {
  * Systems in the order they run every tick. The order is part of the rules: do not reorder.
  * The weather (./weather.ts — step 1.10) changes first, after the calendar: life feels the
  * temperature of this tick. The crops (./harvest.ts — step 1.11) ripen and fall at the start of a
- * day, before anyone looks for food. Life (needs, health, death — ./life.ts) goes before the villagers act;
+ * day, before anyone looks for food; stored food that has kept its time spoils then too (./items.ts
+ * — step 1.11b). Life (needs, health, death — ./life.ts) goes before the villagers act;
  * the fire (./fire.ts — step 1.9) burns after they have fed it; litter (branches falling from trees,
  * ./items.ts — step 1.7) comes last.
  */
@@ -78,6 +80,7 @@ export const SYSTEMS: readonly System[] = [
   calendarEventsSystem,
   weatherSystem,
   harvestSystem,
+  spoilSystem,
   firefliesSystem,
   lifeSystem,
   villagersSystem,

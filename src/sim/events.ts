@@ -79,6 +79,7 @@ export type EventBody =
   /**
    * A villager came to food and begins to eat it (step 1.11): `object` — the bush (hazel, roots),
    * `food` — its resource, `distance` — from the middle of the camp, straight, tiles to a tenth.
+   * `stored` (step 1.11b) — it eats from the store at the camp (`object` — 0, x, y — the stack).
    * The cause is its decision to eat.
    */
   | {
@@ -89,7 +90,13 @@ export type EventBody =
       x: number;
       y: number;
       distance: number;
+      stored: boolean;
     }
+  /**
+   * A villager put food into the store at the camp (step 1.11b): `count` units (handfuls, each
+   * `eating.biteRations` rations) of `food`, on tile (x, y). The cause is its decision to store.
+   */
+  | { type: 'food_stored'; villager: number; food: string; count: number; x: number; y: number }
   /**
    * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
    * out first. Could food, water and warmth be reached from where it died (`foodReachable`,

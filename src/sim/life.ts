@@ -52,7 +52,7 @@ function canWarm(world: World, villager: Villager): boolean {
 function die(world: World, villager: Villager, empty: readonly Deadly[]): void {
   const need = firstRanOut(villager, empty);
   const reachable = (what: 'food' | 'water') =>
-    findSource(world, villager, what, { others: false }) !== null;
+    findSource(world, villager, what, { others: false, known: false }) !== null;
   emit(
     world,
     {
