@@ -38,7 +38,11 @@ describe('палитра игры', () => {
   it('мастер-палитра GDD §10.1: около 64 цветов мира, плюс тень и служебные', () => {
     const count = (names: string[]) =>
       RAMPS.filter((ramp) => names.includes(ramp.name)).reduce((n, r) => n + r.colors.length, 0);
-    const all = RAMPS.reduce((n, ramp) => n + ramp.colors.length, 0);
+    // Seasonal shifts (step 1.10) are swap tables over the master palette, not part of it (GDD §10.1).
+    const all = RAMPS.filter((ramp: RampDef) => !ramp.season).reduce(
+      (n, ramp) => n + ramp.colors.length,
+      0,
+    );
     const world = all - count(['shadow', 'ui']);
     expect(world).toBeGreaterThanOrEqual(56);
     expect(world).toBeLessThanOrEqual(72);

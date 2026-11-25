@@ -155,7 +155,7 @@ describe('итоги прогона: сводка', () => {
 
   it('сводка: миры, скорость, показатели, кривые по годам, упавшие миры', () => {
     const summary = summarize(RUNS, METRICS, META);
-    expect(summary.worlds).toEqual({ total: 4, ok: 3, failed: 1 });
+    expect(summary.worlds).toEqual({ total: 4, ok: 3, extinct: 0, failed: 1 });
     expect(summary.speed).toEqual({
       ticks: 3 * 9600 + 5000,
       years: 7,

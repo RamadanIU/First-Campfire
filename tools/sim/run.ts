@@ -6,6 +6,10 @@
  * Used by the worker threads of `npm run sim` (./worker.ts) and by tests. A world that throws
  * does not stop the run: the result says where it failed (`status: 'error'`).
  *
+ * A world where nobody is left alive (step 1.10) stops there: `status: 'extinct'`, its metrics are
+ * read at the moment of the last death (its last yearly row is partial) — nothing more can happen
+ * in it that matters.
+ *
  * A loaded world may stand in the middle of a year: it runs N × 4 800 ticks all the same, so
  * its first and last yearly rows are partial (from_tick / to_tick show it).
  */
@@ -46,7 +50,8 @@ export interface WorldTiming {
 
 export interface WorldRun {
   seed: number;
-  status: 'ok' | 'error';
+  /** `ok` — ran its years; `extinct` — stopped when nobody was left alive (step 1.10); `error` — threw. */
+  status: 'ok' | 'extinct' | 'error';
   /** Tick the run started from: 0 for a new world, the save's tick for a loaded one. */
   fromTick: number;
   /** Tick the world reached (simulated in this run: ticks − fromTick). */
@@ -95,6 +100,9 @@ export function runWorld(options: RunOptions): WorldRun {
   let yearMax = 0;
   let yearTicks = 0;
   const totalTicks = years * TICKS_PER_YEAR;
+  // A world with people in it ends when the last of them dies (step 1.10).
+  const peopled = world.villagers.list.length > 0;
+  let extinct = false;
 
   const timing = (): WorldTiming => ({
     tickMeanUs: meanUs(timer),
@@ -124,6 +132,10 @@ export function runWorld(options: RunOptions): WorldRun {
         yearTicks = 0;
         onYear?.(yearRows.length);
       }
+      if (peopled && world.villagers.list.length === 0) {
+        extinct = true;
+        break;
+      }
     }
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error));
@@ -152,7 +164,7 @@ export function runWorld(options: RunOptions): WorldRun {
   }
   return {
     seed,
-    status: 'ok',
+    status: extinct ? 'extinct' : 'ok',
     fromTick,
     ticks: world.tick,
     years: yearsDone(),

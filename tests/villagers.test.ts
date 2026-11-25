@@ -184,7 +184,9 @@ describe('инвариант: не в воде, не в дереве, не вд�
       const { width, height } = world.map;
       const found = watch(world, 5000, (tick) => {
         if (tick % 150 !== 0) return;
-        const villager = world.villagers.list[intRange(rng, 0, 1)]!;
+        // Sent far in winter, one may freeze (step 1.10: an order is not thought over) — the living.
+        const villager = world.villagers.list[intRange(rng, 0, 1)];
+        if (!villager) return;
         orderWalk(world, villager, {
           x: intRange(rng, 0, width - 1),
           y: intRange(rng, 0, height - 1),

@@ -79,6 +79,7 @@ describe('как выглядят предметы (шаг 1.7)', () => {
       prevY: 20,
       facing: 'e',
       walked: 0,
+      needs: { food: 100, water: 100, sleep: 100, warmth: 100 },
       action: {
         kind: 'walk',
         purpose: 'carry',

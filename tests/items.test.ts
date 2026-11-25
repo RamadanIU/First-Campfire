@@ -102,6 +102,26 @@ describe('критерий: инвариант сохранения на 10 000 
   );
 });
 
+describe('гниение (шаг 1.10): старые охапки сгнивают, когда на земле их предел', () => {
+  it('на земле maxLoose стопок — самая старая сгнивает, ветки падают дальше; учёт сходится', () => {
+    const world = createWorld(86);
+    // Seed 86: the camp is on the small side of a river, most branches fall across it.
+    const { maxLoose } = DATA.balance.items;
+    let full = false;
+    for (let tick = 0; tick < 60 * DAY; tick++) {
+      stepWorld(world);
+      const loose = world.items.list.filter((item) => item.place === 'ground').length;
+      expect(loose).toBeLessThanOrEqual(maxLoose);
+      full ||= loose === maxLoose;
+    }
+    expect(full).toBe(true);
+    expect(world.items.rotted).toBeGreaterThan(0);
+    expect(brokenRules(world)).toEqual([]);
+    // The oldest go first: every stack left is younger than the first that rotted would be.
+    expect(world.items.list.filter((item) => item.place === 'ground')[0]!.id).toBeGreaterThan(1);
+  }, 30_000);
+});
+
 describe('ноша не теряется', () => {
   /** A world where villager 1 has just picked up some branches and is setting off with them. */
   function carrying(): { world: World; man: Villager } {

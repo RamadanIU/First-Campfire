@@ -22,6 +22,12 @@ export interface RampDef {
    * tint what lies under them — the soft shadow under objects is one (GDD §10.1).
    */
   readonly alpha?: number;
+  /**
+   * A seasonal shift (step 1.10, GDD §10.1: «сезонные сдвиги через таблицы подмены цветов»): the
+   * ramp is never drawn by name, only swapped in for a ramp of the master palette in its season
+   * (src/art/seasons.ts). Not counted among the ~64 colours of the master palette.
+   */
+  readonly season?: boolean;
 }
 
 export const RAMPS = [
@@ -75,6 +81,49 @@ export const RAMPS = [
     name: 'bone',
     title: 'кость, ракушки, берёста, белое',
     colors: ['#8c8273', '#c7bea9', '#f0e9d6'],
+  },
+  // Seasonal shifts (step 1.10): swapped in for grass, sand and leaves by src/art/seasons.ts.
+  {
+    name: 'grass_spring',
+    title: 'трава весной: свежая, светлая',
+    colors: ['#355a36', '#4e8040', '#72a548', '#a3cc62'],
+    season: true,
+  },
+  {
+    name: 'grass_autumn',
+    title: 'трава осенью: сухая, жёлтая',
+    colors: ['#4a4a2c', '#6e6a36', '#97893f', '#c2ab5a'],
+    season: true,
+  },
+  {
+    name: 'snow',
+    title: 'снег на траве зимой',
+    colors: ['#7d8ba3', '#a9b8cc', '#cfdbe8', '#eef4fa'],
+    season: true,
+  },
+  {
+    name: 'snow_sand',
+    title: 'снег на песке зимой',
+    colors: ['#9aa6b8', '#c3cfdd', '#e3ebf3'],
+    season: true,
+  },
+  {
+    name: 'leaf_spring',
+    title: 'листва весной: молодая',
+    colors: ['#1e352b', '#305a38', '#4d8443', '#77ae4f', '#a8d06a'],
+    season: true,
+  },
+  {
+    name: 'leaf_autumn',
+    title: 'листва осенью: рыжая, багряная',
+    colors: ['#3a2420', '#6a3326', '#a4502c', '#d27f34', '#efb84a'],
+    season: true,
+  },
+  {
+    name: 'leaf_winter',
+    title: 'листва зимой: тёмная хвоя под снегом',
+    colors: ['#1f2a33', '#3a4a50', '#6e7f86', '#bccad6', '#f2f7fb'],
+    season: true,
   },
   // Service colours of debug screens (gallery, palette): background and checker cells.
   {

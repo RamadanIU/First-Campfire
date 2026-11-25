@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TICKS_PER_YEAR } from '../../src/sim/calendar.ts';
 import { hashState } from '../../src/sim/hash.ts';
 import { loadWorld, saveWorld } from '../../src/sim/save.ts';
+import { removeVillager } from '../../src/sim/villagers.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../../src/sim/world.ts';
 import { runWorld, type WorldRun } from './run.ts';
 
@@ -124,5 +125,24 @@ describe('мир из сохранения', () => {
 
   it('зерно мира из сохранения должно совпадать с зерном прогона', () => {
     expect(() => runWorld({ seed: 1, years: 1, start: saved(2, 10) })).toThrow('зерном 2');
+  });
+});
+
+describe('конец мира (шаг 1.10)', () => {
+  it('мир, где не осталось живых, останавливается: статус extinct, показатели на момент последней смерти', () => {
+    // Both die on tick 1 000 (removed by hand: a death of any cause ends the world all the same).
+    const step = (world: World) => {
+      stepWorld(world);
+      if (world.tick === 1000) {
+        for (const villager of [...world.villagers.list]) removeVillager(world, villager.id);
+      }
+    };
+    const run = runWorld({ seed: 3, years: 2, step });
+    expect(run).toMatchObject({ status: 'extinct', ticks: 1000, years: 0, error: null });
+    expect(run.hash).not.toBe('');
+    expect(run.totals.pair_alive).toBe(0);
+    expect(run.yearRows).toHaveLength(1);
+    // A world that lives on runs its years.
+    expect(runWorld({ seed: 3, years: 1 }).status).toBe('ok');
   });
 });

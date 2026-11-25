@@ -72,7 +72,8 @@ export interface Summary {
   environment: RunMeta['environment'];
   startedAt: string;
   seconds: number;
-  worlds: { total: number; ok: number; failed: number };
+  /** `extinct` — of the `ok` ones, how many stopped early with nobody left alive (step 1.10). */
+  worlds: { total: number; ok: number; extinct: number; failed: number };
   /** Ticks and game years simulated by all worlds together, and per second of the run. */
   speed: { ticks: number; years: number; ticksPerSecond: number; yearsPerSecond: number };
   /** One fingerprint of all worlds: changes if any history changed (src/sim/hash.ts). */
@@ -124,7 +125,7 @@ export function worldsCsv(runs: readonly WorldRun[], metrics: readonly Metric[])
     run.fromTick,
     run.ticks,
     run.hash,
-    ...metrics.map((m) => (run.status === 'ok' ? (run.totals[m.id] ?? null) : null)),
+    ...metrics.map((m) => (run.status !== 'error' ? (run.totals[m.id] ?? null) : null)),
     run.timing.tickMeanUs,
     run.timing.tickP99Us,
     run.timing.tickMaxUs,
@@ -216,7 +217,9 @@ export function summarize(
   meta: RunMeta,
 ): Summary {
   const sorted = bySeed(runs);
-  const ok = sorted.filter((run) => run.status === 'ok');
+  // Extinct worlds (step 1.10) finished all right — they only ended early.
+  const ok = sorted.filter((run) => run.status !== 'error');
+  const extinct = sorted.filter((run) => run.status === 'extinct');
   const failed = sorted.filter((run) => run.status === 'error');
   // Ticks simulated in this run (a loaded world already had some).
   const ticks = sorted.reduce((total, run) => total + run.ticks - run.fromTick, 0);
@@ -244,7 +247,7 @@ export function summarize(
     environment: meta.environment,
     startedAt: meta.startedAt,
     seconds: meta.seconds,
-    worlds: { total: sorted.length, ok: ok.length, failed: failed.length },
+    worlds: { total: sorted.length, ok: ok.length, extinct: extinct.length, failed: failed.length },
     speed: {
       ticks,
       years,
@@ -359,7 +362,7 @@ function worldDetails(runs: readonly WorldRun[]): string {
     ['Зерно', 'Итог', 'Хэш мира', 'Тик, мкс: среднее', '99 %', 'худший', 'Лет/с'],
     bySeed(runs).map((run) => [
       String(run.seed),
-      run.status === 'ok' ? 'ок' : 'ОШИБКА',
+      run.status === 'ok' ? 'ок' : run.status === 'extinct' ? 'вымер' : 'ОШИБКА',
       run.hash || '—',
       ...[
         run.timing.tickMeanUs,
@@ -409,6 +412,12 @@ export function formatReport(
   out.push('');
   out.push('В скобках — зерно мира с этим значением. Показатели — за весь прогон каждого мира;');
   out.push('по годам — в years.csv и в summary.json (поле years).');
+  if (worlds.extinct > 0) {
+    out.push(
+      `Вымерли миры: ${worlds.extinct} из ${worlds.total} — остановлены, когда не осталось живых ` +
+        '(статус extinct в worlds.csv; их последний год неполный).',
+    );
+  }
   if (summary.failures.length > 0) {
     out.push('');
     out.push(`✗ Упали миры: ${summary.failures.length} из ${worlds.total}`);

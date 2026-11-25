@@ -16,12 +16,15 @@
  *     (`litter` of data/objects.json — what, how many at most, every how many days on average);
  *     some lie there from the start (`items.startLitter`). Branches of one place gather into one
  *     stack: nothing falls within `items.litterSpacing` of another loose stack but onto it. Not
- *     above `items.maxLoose` stacks lie loose on the map: nothing rots yet.
+ *     above `items.maxLoose` stacks lie loose on the map: when there are as many, the oldest of them
+ *     rots away before the next falls (step 1.10) — so branches never stop falling near the camp
+ *     while the far bank of a river is full of them.
  *
  * Conservation (docs/ARCHITECTURE.md, rule 5): `made` counts every unit that ever appeared, `burned`
- * every unit put into the fire (step 1.9, ./fire.ts); the items on tiles and in the hands always add
- * up to the difference (`countAll`, tests/scenario.ts `brokenRules`). Only falling makes things and
- * only the fire takes them away; moving them never changes the sum.
+ * every unit put into the fire (step 1.9, ./fire.ts), `rotted` every unit that rotted away (step 1.10);
+ * the items on tiles and in the hands always add up to the difference (`countAll`, tests/scenario.ts
+ * `brokenRules`). Only falling makes things and only the fire and rot take them away; moving them
+ * never changes the sum.
  *
  * Falls are not written to the journal: they happen several times a day and are of no news (the
  * tree beside the branches is their visible cause). Plain data (docs/ARCHITECTURE.md, rule 7).
@@ -65,6 +68,8 @@ export interface Items {
   made: number;
   /** Every unit put into the fire (step 1.9, ./fire.ts): gone from the items, counted here. */
   burned: number;
+  /** Every unit that rotted away lying loose (step 1.10): gone from the items, counted here. */
+  rotted: number;
 }
 
 /** The camp of the people (step 1.7): its middle (the fire, step 1.9) and the place of the pile. */
@@ -83,7 +88,7 @@ const SIDES: readonly (readonly [number, number])[] = [
 ];
 
 export function createItems(): Items {
-  return { list: [], nextId: 1, made: 0, burned: 0 };
+  return { list: [], nextId: 1, made: 0, burned: 0, rotted: 0 };
 }
 
 /** How many of a resource lie on one tile and are carried in the hands (data/resources.json). */
@@ -411,6 +416,15 @@ export function scatterLitter(world: World): void {
   }
 }
 
+/** The oldest stack lying loose rots away (step 1.10): the one with the smallest id. */
+function rotOldest(world: World): void {
+  const list = world.items.list;
+  const index = list.findIndex((item) => item.place === 'ground');
+  if (index < 0) return;
+  world.items.rotted += list[index]!.count;
+  list.splice(index, 1);
+}
+
 /**
  * Litter (step 1.7): every `items.litterCheckTicks` one random dropper may drop something. Its
  * chance is such that each dropper drops once in `litter.everyDays` on average:
@@ -422,7 +436,8 @@ export const litterSystem: System = {
     const { litterCheckTicks, maxLoose } = DATA.balance.items;
     if (world.tick % litterCheckTicks !== 0) return;
     const list = droppers(world);
-    if (list.length === 0 || looseCount(world) >= maxLoose) return;
+    if (list.length === 0) return;
+    if (looseCount(world) >= maxLoose) rotOldest(world);
     const rng = world.rng.items;
     const object = list[intRange(rng, 0, list.length - 1)]!;
     const litter = defOf(object).litter!;

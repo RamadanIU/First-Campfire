@@ -13,6 +13,7 @@
  * The order here is the order of columns and of the console table.
  */
 import { TIME } from './calendar.ts';
+import type { Cause } from './events.ts';
 import { countAll, inPile } from './items.ts';
 import { count, gauge, type Metric, max, mean, min, sum } from './stats.ts';
 
@@ -39,7 +40,8 @@ export const METRICS: readonly Metric[] = [
     'deaths_mind',
     'Умерли при доступной еде и воде (ошибка ИИ)',
     'villager_died',
-    (e) => e.foodReachable && e.waterReachable,
+    // Of cold (step 1.10) — a mistake only if warmth was in reach too.
+    (e) => e.foodReachable && e.waterReachable && (e.reason !== 'cold' || e.warmReachable),
   ),
   min('first_death_day', 'Первая смерть, день', 'villager_died', (e) => dayOf(e.tick)),
   count('starving', 'Сытость падала до нуля, раз', 'need_ran_out', (e) => e.need === 'food'),
@@ -48,7 +50,10 @@ export const METRICS: readonly Metric[] = [
   count('sleepless', 'Сон падал до нуля, раз', 'need_ran_out', (e) => e.need === 'sleep'),
   count('fainted', 'Обмороков от недосыпа', 'villager_fainted'),
   gauge('berries_left', 'Ягод на кустах (на конец), рационов', (world) =>
-    world.objects.list.reduce((total, object) => total + object.stock, 0),
+    world.objects.list.reduce(
+      (total, object) => total + (object.def === 'berry_bush' ? object.stock : 0),
+      0,
+    ),
   ),
   // Items (step 1.7): branches fall under trees, the villagers carry them to the pile.
   gauge('branches_made', 'Упало веток всего (на конец)', (world) => world.items.made),
@@ -59,7 +64,8 @@ export const METRICS: readonly Metric[] = [
   gauge('items_lost', 'Предметов потеряно или лишних (ошибка, на конец)', (world) =>
     Math.abs(
       Object.values(countAll(world)).reduce((total, n) => total + n, 0) +
-        world.items.burned -
+        world.items.burned +
+        world.items.rotted -
         world.items.made,
     ),
   ),
@@ -69,7 +75,31 @@ export const METRICS: readonly Metric[] = [
   count('fires_out', 'Костёр погас, раз', 'fire_out'),
   gauge('fire_burning', 'Костёр горит (на конец): 1 — да', (world) => (world.fire.lit ? 1 : 0)),
   gauge('wood_burned', 'Сожжено веток (на конец)', (world) => world.items.burned),
+  gauge('wood_rotted', 'Сгнило веток на земле (на конец)', (world) => world.items.rotted),
+  // Warmth, seasons, weather (step 1.10): winter is cold, rain soaks the fire.
+  gauge('pair_alive', 'Пара жива (на конец года): 1 — да', (world) =>
+    world.villagers.list.length >= 2 ? 1 : 0,
+  ),
+  count('deaths_cold', 'Умерли от холода', 'villager_died', (e) => e.reason === 'cold'),
+  count('freezing', 'Тепло падало до нуля, раз', 'need_ran_out', (e) => e.need === 'warmth'),
+  count('fires_rained_out', 'Костёр залило дождём, раз', 'fire_out', (e) =>
+    isRule(e.cause, 'rain'),
+  ),
+  count('rains', 'Дождей', 'weather_changed', (e) => e.to === 'rain'),
+  count('snows', 'Снегопадов', 'weather_changed', (e) => e.to === 'snow'),
+  gauge('forage_left', 'Орехов и кореньев (на конец), рационов', (world) =>
+    world.objects.list.reduce(
+      (total, object) =>
+        total + (object.def === 'hazel' || object.def === 'roots' ? object.stock : 0),
+      0,
+    ),
+  ),
 ];
+
+/** Is the cause of an event this rule of the world? */
+function isRule(cause: Cause, rule: string): boolean {
+  return cause.kind === 'rule' && cause.rule === rule;
+}
 
 /** Day of the world's life a tick falls on, from 1. */
 function dayOf(tick: number): number {

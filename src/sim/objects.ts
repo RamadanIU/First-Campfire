@@ -75,6 +75,16 @@ export function placeObject(
 }
 
 /**
+ * Is there food on the object to gather in `season` (step 1.10): some left, and the season is one of
+ * its harvest's `seasons` — in winter raspberries have none (they come back in spring; ADR-030).
+ */
+export function hasFood(object: MapObject, season: string): boolean {
+  if (object.stock <= 0) return false;
+  const harvest = defOf(object).harvest;
+  return harvest !== null && (harvest.seasons as readonly string[]).includes(season);
+}
+
+/**
  * Take up to `rations` of food from an object (berries from a bush): what is taken — less if
  * less is left. Picked clean, the object turns to its def's `harvest.empty` state.
  */

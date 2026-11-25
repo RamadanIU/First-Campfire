@@ -1,19 +1,21 @@
 /**
  * The observer's panel (step 1.6, GDD §1.3, §10.6, §11.4): the minimal interface for watching.
  *
- *   ┌ ☼ Год 2 · зима · день 2 из 3   👥 2 ─────────────── ❚❚ ×1 ×2 ×5 ×20   Мир ▾ ┐
+ *   ┌ ☼ Год 2 · зима · день 2 из 3 ☁ −6°  👥 2 ─────────── ❚❚ ×1 ×2 ×5 ×20   Мир ▾ ┐
  *   │ События                                                           (menu «Мир») │
  *   │  ☠ Умерла женщина — голод                                                      │
  *   │                                                                                │
- *   │ (the chosen villager: name, what it does, four scales)            (debug lines) │
+ *   │ (the chosen villager: name, what it does, five scales)            (debug lines) │
  *   └────────────────────────────────────────────────────────────────────────────────┘
  *
- * - The top bar: the date, an icon of the time of day, the population; the speed buttons (pause,
+ * - The top bar: the date, an icon of the time of day, the weather and the temperature (step
+ *   1.10), the population; the speed buttons (pause,
  *   ×1, ×2, ×5, ×20 — the keys Space and 1–4 do the same, src/app/controls.ts); «Мир» opens the
  *   menu of the world (how it is saved, «Save to file», «To the menu», the keys).
  * - The event feed (./feed.ts): the latest significant events; a click flies the camera to the
  *   place (or to the villager, while it lives).
- * - The card of the chosen villager: what it does and its four scales (the full card — step 2.1).
+ * - The card of the chosen villager: what it does and its five scales — warmth since step 1.10
+ *   (the full card — step 2.1).
  *
  * Everything stands at the edges: the middle of the screen stays the world's. `ui=0` shows none of
  * it (the scene does not create the panel). The panel only reads the world; what it changes is
@@ -23,10 +25,27 @@ import { DATA } from '../data/index.ts';
 import { calendarAt, type DayPhase } from '../sim/calendar.ts';
 import type { Tile } from '../sim/path.ts';
 import { findVillager } from '../sim/villagers.ts';
+import { airTemperature, type WeatherKind } from '../sim/weather.ts';
 import type { World } from '../sim/world.ts';
 import { dateOf, shortDateOf } from './dates.ts';
 import { createFeed, type FeedEntry } from './feed.ts';
-import { capitalize, deathNote, doingOf, HUD, SCALE_NAME, speedName } from './texts.ts';
+import {
+  capitalize,
+  deathNote,
+  doingOf,
+  HUD,
+  SCALE_NAME,
+  speedName,
+  temperatureText,
+} from './texts.ts';
+
+/** The icon of each weather in the top bar (step 1.10); clear — none (the sun or moon says it). */
+const WEATHER_ICON: Readonly<Record<WeatherKind, string | null>> = {
+  clear: null,
+  cloudy: 'hud_cloudy',
+  rain: 'hud_rain',
+  snow: 'hud_snow',
+};
 
 /** The name of a resource for the words of the panel (data/resources.json). */
 const resourceName = (id: string): string => DATA.resources.get(id).name;
@@ -130,7 +149,11 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   // ── The top bar ──
   const phaseIcon = h('span', 'hud-icon');
   const date = h('span', 'hud-bar-date');
-  const when = h('div', 'hud-when', phaseIcon, date);
+  // The weather and the temperature of the air (step 1.10): an icon under clouds, rain, snow.
+  const weatherIcon = h('span', 'hud-icon hud-weather-icon');
+  const temperature = h('span', 'hud-temperature');
+  const weather = h('div', 'hud-weather', weatherIcon, temperature);
+  const when = h('div', 'hud-when', phaseIcon, date, weather);
   const peopleCount = h('span', 'hud-count');
   const people = h('div', 'hud-people', source.icon('hud_people', 2), peopleCount);
 
@@ -220,7 +243,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   const close = button('hud-card-close', HUD.close, '×');
   close.addEventListener('click', () => source.select(null));
   const cardDoing = h('div', 'hud-card-doing');
-  const scales = (['food', 'water', 'sleep', 'health'] as const).map((key) => {
+  const scales = (['food', 'water', 'sleep', 'warmth', 'health'] as const).map((key) => {
     const fill = h('i', 'hud-scale-fill');
     const value = h('span', 'hud-scale-value');
     const row = h(
@@ -257,6 +280,8 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   // ── Every frame ──
   let shownTick = -1;
   let shownPhase: DayPhase | null = null;
+  let shownWeather: WeatherKind | null = null;
+  const weatherIcons = new Map<WeatherKind, HTMLCanvasElement>();
   let shownSpeed = -1;
   const phaseIcons = new Map<DayPhase, HTMLCanvasElement>();
   /** The dead the card was asked about: id → who it was and its last words. */
@@ -323,6 +348,22 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
           phaseIcon.replaceChildren(icon);
           when.title = HUD.phaseTitle(phase);
         }
+        const kind = world.weather.kind;
+        if (kind !== shownWeather) {
+          shownWeather = kind;
+          const name = WEATHER_ICON[kind];
+          let icon = name ? weatherIcons.get(kind) : undefined;
+          if (name && !icon) {
+            icon = source.icon(name, 2);
+            weatherIcons.set(kind, icon);
+          }
+          if (icon) weatherIcon.replaceChildren(icon);
+          else weatherIcon.replaceChildren();
+          weatherIcon.hidden = !icon;
+        }
+        const degrees = airTemperature(world);
+        setText(temperature, temperatureText(degrees));
+        weather.title = HUD.weatherTitle(kind, degrees);
         const population = world.villagers.list.length;
         setText(peopleCount, HUD.population(population));
         people.title = HUD.populationTitle(population);

@@ -21,11 +21,33 @@
     "states": ["ripe", "empty"],
     "place": "edge",
     "weight": 1,
-    "harvest": { "food": "berries", "rations": 4, "empty": "empty" },
+    "harvest": { "food": "berries", "rations": 4, "empty": "empty", "seasons": ["spring", "summer", "autumn"] },
     "litter": null
   },
   { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1, "harvest": null, "litter": null },
   { "id": "flowers", "name": "Цветы", "sprite": "flowers", "walkable": true, "states": ["bloom"], "place": "meadow", "weight": 4, "harvest": null, "litter": null },
   { "id": "tall_grass", "name": "Высокая трава", "sprite": "grass_tuft", "walkable": true, "states": ["green"], "place": "meadow", "weight": 5, "harvest": null, "litter": null },
+  {
+    "id": "hazel",
+    "name": "Лещина",
+    "sprite": "hazel",
+    "walkable": false,
+    "states": ["nuts", "empty"],
+    "place": "forage",
+    "weight": 2,
+    "harvest": { "food": "nuts", "rations": 2, "empty": "empty", "seasons": ["autumn", "winter"] },
+    "litter": null
+  },
+  {
+    "id": "roots",
+    "name": "Коренья",
+    "sprite": "roots_patch",
+    "walkable": false,
+    "states": ["whole", "dug"],
+    "place": "forage",
+    "weight": 3,
+    "harvest": { "food": "roots", "rations": 1, "empty": "dug", "seasons": ["autumn", "winter"] },
+    "litter": null
+  },
   { "id": "campfire", "name": "Костёр", "sprite": "campfire", "walkable": false, "states": ["out", "burning"], "place": null, "weight": 0, "harvest": null, "litter": null }
 ]

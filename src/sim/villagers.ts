@@ -38,7 +38,9 @@
  *     the pile, takes as much as the fire takes (`items.pickUpTicks`), carries it to a side of the
  *     fire and lights it (`fire.kindleTicks`) or puts it in (`fire.stokeTicks`). In the evening it
  *     walks to a place by the burning fire and sits facing it; at night it goes to sleep by the fire
- *     (if the hearth is within `fire.sleepWalkTiles`), else where it stands.
+ *     (if the hearth is within `fire.sleepWalkTiles`; on a freezing night — step 1.10 — within
+ *     `fire.coldSleepWalkTiles`), else where it stands. A cold villager (step 1.10) warms itself
+ *     sitting at the fire the same way (the plan `warm`).
  *   - Otherwise it rests (the default plan): stands `villagers.restTicks`, then walks to a free tile
  *     within `villagers.wanderRadius` of home, and again.
  *   - The observer's debug order (`orderWalk`, the scene `world` with `debug=1`) sends a villager
@@ -51,8 +53,17 @@
  * keep pace at ×20.
  */
 import { DATA } from '../data/index.ts';
+import { calendarAt } from './calendar.ts';
 import { type Cause, emit } from './events.ts';
-import { feedFire, fireRoom, hearthOf, isBurning, lightFire, WOOD } from './fire.ts';
+import {
+  feedFire,
+  fireRoom,
+  hearthOf,
+  isBurning,
+  isEveningOrNight,
+  lightFire,
+  WOOD,
+} from './fire.ts';
 import { dropLoad, findItem, isPileTile, lay, pileSpot, type Stack, takeItem } from './items.ts';
 import { inside } from './map.ts';
 import {
@@ -61,6 +72,7 @@ import {
   type Choice,
   type Considered,
   canUse,
+  coldReach,
   type Decision,
   type Found,
   holdOf,
@@ -82,9 +94,10 @@ import {
   perNeed,
   satietyPerRation,
 } from './needs.ts';
-import { findObject, objectAt, takeFood } from './objects.ts';
+import { findObject, hasFood, objectAt, takeFood } from './objects.ts';
 import { canStep, DIAGONAL, findPath, type PathResult, type Tile, tileSpeed } from './path.ts';
 import { intRange } from './rng.ts';
+import { isFreezing } from './weather.ts';
 import type { System, World } from './world.ts';
 
 export const SEXES = ['male', 'female'] as const;
@@ -148,7 +161,8 @@ export type VillagerAction =
       source: Source | null;
     }
   /** Picks berries from the bush (object id) beside it and eats them; the next bite at `next`. */
-  | { kind: 'eat'; bush: number; next: number }
+  /** Eating at a bush (`food` — what it gives: berries, nuts, roots — step 1.10). */
+  | { kind: 'eat'; bush: number; food: string; next: number }
   /** Drinks from the water tile beside it; the next sip at `next`. */
   | { kind: 'drink'; water: Tile; next: number }
   /**
@@ -393,7 +407,13 @@ export function settleFirstPair(world: World, cause: Cause): void {
     const villager = addVillager(world, sex, tile, home);
     emit(
       world,
-      { type: 'villager_arrived', villager: villager.id, sex, x: tile.x, y: tile.y },
+      {
+        type: 'villager_arrived',
+        villager: villager.id,
+        sex,
+        x: tile.x,
+        y: tile.y,
+      },
       cause,
     );
   }
@@ -603,7 +623,12 @@ function startPlan(
   adopt(
     world,
     villager,
-    { activity: choice.kind, utility: choice.utility, since: world.tick, steps },
+    {
+      activity: choice.kind,
+      utility: choice.utility,
+      since: world.tick,
+      steps,
+    },
     'chose',
     options,
     bar,
@@ -630,6 +655,7 @@ function startPlan(
       }
       return;
     case 'sit':
+    case 'warm':
       walkFor(world, villager, 'sit', choice);
       return;
     default:
@@ -642,8 +668,10 @@ function startPlan(
  * within `fire.sleepWalkTiles`; there already, or none near — lie down here.
  */
 function bed(world: World, villager: Villager): void {
+  // A freezing night (step 1.10): to the fire from afar, or one may freeze in one's sleep.
+  const { sleepWalkTiles, coldSleepWalkTiles } = DATA.balance.fire;
   const found = hearthOf(world)
-    ? searchSeat(world, villager, DATA.balance.fire.sleepWalkTiles)
+    ? searchSeat(world, villager, isFreezing(world) ? coldSleepWalkTiles : sleepWalkTiles)
     : null;
   if (found && found.path.length > 0) walkFor(world, villager, 'bed', found);
   else nextStep(world, villager);
@@ -801,8 +829,23 @@ function begin(world: World, villager: Villager, source: Source): void {
   const { biteTicks, sipTicks } = DATA.balance.eating;
   villager.action =
     source.kind === 'bush'
-      ? { kind: 'eat', bush: source.object, next: world.tick + biteTicks }
-      : { kind: 'drink', water: { x: source.x, y: source.y }, next: world.tick + sipTicks };
+      ? {
+          kind: 'eat',
+          bush: source.object,
+          food: foodOf(world, source.object),
+          next: world.tick + biteTicks,
+        }
+      : {
+          kind: 'drink',
+          water: { x: source.x, y: source.y },
+          next: world.tick + sipTicks,
+        };
+}
+
+/** What the object `id` gives to eat (its harvest's resource; berries if it has none). */
+function foodOf(world: World, id: number): string {
+  const object = findObject(world.objects, id);
+  return (object && DATA.objects.get(object.def).harvest?.food) ?? 'berries';
 }
 
 /** Tiles another villager than `self` stands on or walks to. */
@@ -830,7 +873,8 @@ function pickUp(
 
 /**
  * Gathering an armful: while the hands are not full and more of it lies near (`items.gatherTiles`
- * of the way), go for that too — fetch and pick up again; otherwise on to the pile.
+ * of the way; in the cold — step 1.10 — no farther than `coldReach`; in the evening — not at all),
+ * go for that too — fetch and pick up again; otherwise on to the pile.
  */
 function gather(world: World, villager: Villager): void {
   const load = villager.load;
@@ -838,10 +882,12 @@ function gather(world: World, villager: Villager): void {
     fail(world, villager, 0);
     return;
   }
-  if (load.count < DATA.resources.get(load.resource).stack) {
+  // In the evening (step 1.10) one takes what one holds home, to the fire, gathering no more.
+  if (load.count < DATA.resources.get(load.resource).stack && !isEveningOrNight(world.tick)) {
+    // In the cold (step 1.10) no farther than one's warmth lasts on the way home.
     const more = searchLoose(world, villager, {
       resource: load.resource,
-      maxCost: DATA.balance.items.gatherTiles,
+      maxCost: Math.min(DATA.balance.items.gatherTiles, coldReach(world, villager)),
     });
     if (more) {
       villager.plan.steps.unshift('pick_up', 'gather');
@@ -866,8 +912,18 @@ function carry(world: World, villager: Villager): void {
     fail(world, villager);
     return;
   }
-  const source: Source = { kind: 'pile', resource: load.resource, x: spot.x, y: spot.y };
-  walkFor(world, villager, 'carry', { source, goal: spot, path: result.path, cost: 0 });
+  const source: Source = {
+    kind: 'pile',
+    resource: load.resource,
+    x: spot.x,
+    y: spot.y,
+  };
+  walkFor(world, villager, 'carry', {
+    source,
+    goal: spot,
+    path: result.path,
+    cost: 0,
+  });
 }
 
 /**
@@ -957,7 +1013,9 @@ function eat(world: World, villager: Villager, action: Extract<VillagerAction, {
   if (world.tick < action.next) return;
   const { biteRations, biteTicks } = DATA.balance.eating;
   const bush = findObject(world.objects, action.bush);
-  const taken = bush ? takeFood(bush, biteRations) : 0;
+  // Out of season now (step 1.10: autumn turned to winter mid-meal) — nothing more to pick.
+  const ripe = bush !== undefined && hasFood(bush, calendarAt(world.tick).season);
+  const taken = bush && ripe ? takeFood(bush, biteRations) : 0;
   gain(villager, 'food', taken * satietyPerRation());
   if (isSated(villager.needs.food, 'food')) {
     nextStep(world, villager);

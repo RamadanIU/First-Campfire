@@ -68,7 +68,7 @@ describe('таблицы данных целиком', () => {
 
   it('у генератора карты есть всё нужное: деревья, кусты, камни, цветы', () => {
     const places = new Set(DATA.objects.records.map((def) => def.place).filter((p) => p !== null));
-    expect([...places].sort()).toEqual(['edge', 'forest', 'meadow', 'scatter']);
+    expect([...places].sort()).toEqual(['edge', 'forage', 'forest', 'meadow', 'scatter']);
     // The hearth (step 1.9) is built by the people, not placed by the generator.
     expect(DATA.objects.get('campfire')).toMatchObject({ place: null, weight: 0, walkable: false });
     expect(DATA.objects.get('campfire').states).toEqual(['out', 'burning']);
@@ -196,7 +196,7 @@ describe('сцена data показывает таблицы как есть', 
       walkable: 'нет',
       states: 'ripe → empty',
       place: 'опушка · вес 1',
-      harvest: 'Ягоды · 4 рациона → empty',
+      harvest: 'Ягоды · 4 рациона → empty · весна, лето, осень',
       litter: '—',
     });
     expect(rows.find((r) => r.id === 'oak')!.harvest).toBe('—');
@@ -221,6 +221,7 @@ describe('сцена data показывает таблицы как есть', 
       'Выбор действия: полезность = нужда² × доступность (GDD §2.3)',
       'Предметы: стоянка, куча, ноша, падение веток (GDD §5.1, шаг 1.7)',
       'Костёр: дрова, огонь, вечер у огня (GDD §7.4, §13.3, шаг 1.9)',
+      'Погода и температура (GDD §3.2, шаг 1.10): температура = сезон + время суток + погода',
       'Карта (GDD §2.2, §3.1, §3.3)',
     ]);
     const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.key, r.value]));

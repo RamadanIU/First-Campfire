@@ -35,6 +35,17 @@ import {
 export const DAY_PHASES = ['dawn', 'day', 'dusk', 'night'] as const;
 export type DayPhase = (typeof DAY_PHASES)[number];
 
+/**
+ * Kinds of weather (step 1.10, GDD §3.2), in order: clear, cloudy, rain, snow. Mechanics, not
+ * balance: the chances and the cold of each live in data/balance.json (`weather`).
+ */
+export const WEATHER_KINDS = ['clear', 'cloudy', 'rain', 'snow'] as const;
+export type WeatherKind = (typeof WEATHER_KINDS)[number];
+
+/** Seasons by id (the list of src/sim/calendar.ts, which data cannot import). */
+const SEASON_IDS = ['spring', 'summer', 'autumn', 'winter'] as const;
+const SEASON_NAMES = { spring: 'весна', summer: 'лето', autumn: 'осень', winter: 'зима' } as const;
+
 /** Kinds of things the tables refer to outside src/data (checked by tests and the scene `data`). */
 export const EXTERNAL_KINDS = {
   /** A sprite of src/art/sprites/ by name. */
@@ -90,6 +101,20 @@ function seasons(doc: string, unit: string, min: number, max: number) {
       summer: value('лето'),
       autumn: value('осень'),
       winter: value('зима'),
+    },
+    { doc },
+  );
+}
+
+/** A number for each kind of weather (step 1.10): clear, cloudy, rain, snow. */
+function weathers(doc: string, unit: string, min: number, max: number) {
+  const value = (kind: string) => num({ min, max, ...(unit ? { unit } : {}), doc: kind });
+  return obj(
+    {
+      clear: value('ясно'),
+      cloudy: value('облачно'),
+      rain: value('дождь'),
+      snow: value('снег'),
     },
     { doc },
   );
@@ -237,6 +262,37 @@ const balanceSchema = obj({
           emptyDays: num({ min: 0.1, max: 100, unit: 'сут', doc: 'от 100 до 0 за (не во сне)' }),
         },
         { doc: 'Сон (100 — выспался); на нуле не смерть, а обморок' },
+      ),
+      warmth: obj(
+        {
+          comfort: num({
+            min: -40,
+            max: 40,
+            unit: '°',
+            doc: 'Теплее этого тепло прибывает, холоднее — убывает (температура, которую чувствует житель)',
+          }),
+          pointsPerDegreeDay: num({
+            min: 0.1,
+            max: 100,
+            unit: 'пунктов',
+            doc: 'На столько пунктов в сутки шкала меняется на каждый градус от удобного',
+          }),
+          deathDays: num({
+            min: 0.1,
+            max: 100,
+            unit: 'сут',
+            doc: 'на нуле (обморожение) здоровье от 100 до 0 (смерть — холод) за',
+          }),
+          shiverPoints: num({
+            min: 0,
+            max: 100,
+            unit: 'пунктов',
+            doc: 'Ниже стольких пунктов житель дрожит от холода (видно на карте)',
+          }),
+        },
+        {
+          doc: 'Тепло (100 — согрет): зависит от погоды и огня, а не от времени (GDD §4.2, шаг 1.10)',
+        },
       ),
       healDays: num({
         min: 0.1,
@@ -490,12 +546,12 @@ const balanceSchema = obj({
         max: 2,
         doc: 'Полезность «сидеть у огня» вечером и ночью, пока он горит (ночью сон сильнее); ниже упрямства работы — несущий ветки сначала донесёт их',
       }),
-      eveningTicks: int({
-        min: 0,
-        max: 240,
-        unit: 'тиков',
-        doc: 'Вечер начинается за столько тиков до заката: с этого времени садятся у огня',
-      }),
+      eveningTicks: seasons(
+        'Вечер начинается за столько тиков до заката: с этого времени садятся у огня (шаг 1.10: зимой — раньше, короткий морозный день)',
+        'тиков',
+        0,
+        200,
+      ),
       nearTiles: int({
         min: 1,
         max: 5,
@@ -508,11 +564,35 @@ const balanceSchema = obj({
         unit: 'тайлов',
         doc: 'Спать идут к огню, если до него не дальше (тайлов травы); дальше — ложатся, где застала ночь',
       }),
+      coldSleepWalkTiles: int({
+        min: 0,
+        max: 400,
+        unit: 'тайлов',
+        doc: 'Морозной ночью (холоднее coldSleepBelow) к огню спать идут и издалека — не дальше стольких тайлов травы (шаг 1.10)',
+      }),
+      coldSleepBelow: num({
+        min: -50,
+        max: 50,
+        unit: '°',
+        doc: 'Ночь морозная, если воздух холоднее этого: спать идут к огню издалека (иначе замёрзнут во сне)',
+      }),
+      heat: num({
+        min: 0,
+        max: 100,
+        unit: '°',
+        doc: 'Рядом с горящим костром теплее на столько градусов; к краю тепла (heatRadius) — ни на сколько (шаг 1.10)',
+      }),
+      rainOutTicks: int({
+        min: 1,
+        max: 10_000,
+        unit: 'тиков',
+        doc: 'Костёр без укрытия гаснет, если дождь льёт на него столько тиков подряд (подкладывай не подкладывай — дрова в нём намокли); в дождь его не развести; после дождя сохнет так же (шаг 1.10)',
+      }),
       heatRadius: num({
         min: 1,
         max: 20,
         unit: 'тайлов',
-        doc: 'Тепло горящего костра: полное рядом, слабеет до нуля на таком расстоянии (понадобится на шаге 1.10)',
+        doc: 'Тепло горящего костра: полное рядом, слабеет до нуля на таком расстоянии',
       }),
       woodReserve: int({
         min: 0,
@@ -527,6 +607,47 @@ const balanceSchema = obj({
       }),
     },
     { doc: 'Костёр: дрова, огонь, вечер у огня (GDD §7.4, §13.3, шаг 1.9)' },
+  ),
+  weather: obj(
+    {
+      seasonTemp: seasons('Температура сезона (средняя за сутки в ясную погоду)', '°', -50, 50),
+      phaseTemp: phases('К ней прибавляется по времени суток', '°', -30, 30),
+      kindTemp: weathers('…и по погоде', '°', -30, 30),
+      spellTicks: obj(
+        {
+          min: int({ min: 1, max: 100_000, unit: 'тиков', doc: 'от' }),
+          max: int({ min: 1, max: 100_000, unit: 'тиков', doc: 'до' }),
+        },
+        {
+          doc: 'Погода держится столько тиков, потом меняется (может остаться той же)',
+          check: (value) =>
+            value.min <= value.max ? null : `«от» (${value.min}) больше, чем «до» (${value.max})`,
+        },
+      ),
+      chances: obj(
+        {
+          spring: weathers('весна', '', 0, 1000),
+          summer: weathers('лето', '', 0, 1000),
+          autumn: weathers('осень', '', 0, 1000),
+          winter: weathers('зима', '', 0, 1000),
+        },
+        {
+          doc: 'Какая погода придёт следом — веса по сезонам (дождь и снег — только после облаков: из ясной погоды сначала набегают тучи)',
+          check: (value) => {
+            for (const season of SEASON_IDS) {
+              const weights = value[season];
+              if (weights.clear + weights.cloudy + weights.rain + weights.snow <= 0) {
+                return `${SEASON_NAMES[season]}: все веса нулевые`;
+              }
+            }
+            return null;
+          },
+        },
+      ),
+    },
+    {
+      doc: 'Погода и температура (GDD §3.2, шаг 1.10): температура = сезон + время суток + погода',
+    },
   ),
   map: obj(
     {
@@ -547,6 +668,7 @@ const balanceSchema = obj({
       forestPercent: int({ min: 5, max: 80, unit: '%', doc: 'Доля суши под лесом' }),
       bushes: range('Ягодных кустов на опушках (гарантия — не меньше нижнего числа)', 1, 200),
       boulders: range('Валунов', 0, 100),
+      forage: range('Подножного корма — лещины и кореньев у опушек (шаг 1.10)', 0, 200),
       meadowDecorPercent: int({
         min: 0,
         max: 50,
@@ -665,7 +787,7 @@ export type Terrain = Infer<typeof terrainSchema>[number];
  * Where the map generator puts an object (src/sim/mapgen.ts): in the forest, at its edge (berry
  * bushes), scattered over the land (boulders), on meadows (flowers). Mechanics depend on it.
  */
-export const OBJECT_PLACES = ['forest', 'edge', 'scatter', 'meadow'] as const;
+export const OBJECT_PLACES = ['forest', 'edge', 'scatter', 'meadow', 'forage'] as const;
 export type ObjectPlace = (typeof OBJECT_PLACES)[number];
 
 const objectsSchema = table(
@@ -685,7 +807,13 @@ const objectsSchema = table(
     }),
     place: nullable(
       oneOf(OBJECT_PLACES, {
-        names: { forest: 'лес', edge: 'опушка', scatter: 'россыпь', meadow: 'луг' },
+        names: {
+          forest: 'лес',
+          edge: 'опушка',
+          scatter: 'россыпь',
+          meadow: 'луг',
+          forage: 'корм у опушки',
+        },
         doc: 'Где объект появляется при сотворении карты',
       }),
       'не появляется при сотворении карты',
@@ -706,6 +834,11 @@ const objectsSchema = table(
             doc: 'Сколько её на объекте при сотворении мира',
           }),
           empty: id({ doc: 'Состояние, когда всё собрано (одно из states)' }),
+          seasons: list(oneOf(SEASON_IDS, { names: SEASON_NAMES, doc: 'Сезон' }), {
+            min: 1,
+            max: 4,
+            doc: 'В какие сезоны еду можно собрать (шаг 1.10: зимой ягод нет — малина «спит» до весны)',
+          }),
         },
         {
           doc: 'Еда, которую собирают и съедают на месте (шаг 1.4): малина — ягоды; пока не возобновляется (шаг 1.11)',
@@ -744,6 +877,9 @@ const objectsSchema = table(
       if (place !== null && weight === 0) return 'у объекта с местом (place) вес больше 0';
       if (harvest !== null && !states.includes(harvest.empty)) {
         return `состояние «${harvest.empty}» (harvest.empty) не из списка states: ${states.join(', ')}`;
+      }
+      if (harvest !== null && new Set(harvest.seasons).size !== harvest.seasons.length) {
+        return 'сезоны harvest.seasons повторяются';
       }
       if (harvest !== null && harvest.empty === states[0]) {
         return `harvest.empty не может быть начальным состоянием «${states[0]}» — объект появляется с едой`;

@@ -36,7 +36,8 @@
  * Work (step 1.7): carrying things lying loose to the pile at the camp — `ai.haulUtility` ×
  * availability of the nearest loose item whose resource has room in the pile. It beats rest, so
  * free time goes to work, and loses to a pressing need. The need of wood (step 1.9) makes it worth
- * more while the pile holds less than `fire.woodReserve` branches.
+ * more while the pile holds less than `fire.woodReserve` branches. In the cold (step 1.10) one does
+ * not go farther for work than one's warmth lasts there and back (`coldReach`).
  *
  * The fire (step 1.9, ./fire.ts): `kindle` — light it when it does not burn and the pile holds
  * branches enough (worth more than work); `stoke` — feed it, the more urgent the less wood is left
@@ -55,8 +56,10 @@
 import { DATA } from '../data/index.ts';
 import { calendarAt, PHASE_START } from './calendar.ts';
 import {
+  eveningStart,
   fireRoom,
   fuelTillMorning,
+  hearthOf,
   isBurning,
   isEvening,
   isEveningOrNight,
@@ -75,11 +78,13 @@ import {
   portionOf,
   portionTicks,
   urgency,
+  warmthPerTick,
 } from './needs.ts';
-import { defOf, objectAt } from './objects.ts';
+import { hasFood, objectAt } from './objects.ts';
 import { DIAGONAL, findNearest, findPath, leastCost, type Tile, tileSpeed } from './path.ts';
 import { floatRange } from './rng.ts';
 import { isGoalOfAnother, isTaken, type Source, type Villager } from './villagers.ts';
+import { airTemperature, isRaining } from './weather.ts';
 import type { World } from './world.ts';
 
 /** The four sides of a tile, in a fixed order: north, east, south, west. */
@@ -104,6 +109,7 @@ export interface Found {
 /** What meets a need on the tile beside (x, y), if anything: a bush with food, the water. */
 function sourceBeside(world: World, need: Meal, x: number, y: number): Source | null {
   const { map, objects } = world;
+  const { season } = calendarAt(world.tick);
   for (const [dx, dy] of SIDES) {
     const sx = x + dx;
     const sy = y + dy;
@@ -113,7 +119,7 @@ function sourceBeside(world: World, need: Meal, x: number, y: number): Source | 
       continue;
     }
     const object = objectAt(map, objects, sx, sy);
-    if (object && object.stock > 0 && defOf(object).harvest !== null) {
+    if (object && hasFood(object, season)) {
       return { kind: 'bush', object: object.id, x: sx, y: sy };
     }
   }
@@ -146,8 +152,9 @@ function besideTest(world: World, need: Meal): (x: number, y: number) => boolean
   }
   marks.stamp += 1;
   const { stamp, at } = marks;
+  const { season } = calendarAt(world.tick);
   for (const object of objects.list) {
-    if (object.stock <= 0 || defOf(object).harvest === null) continue;
+    if (!hasFood(object, season)) continue;
     for (const [dx, dy] of SIDES) {
       const x = object.x + dx;
       const y = object.y + dy;
@@ -195,9 +202,19 @@ export function searchSource(
       ...(maxCost === undefined ? {} : { maxCost }),
     },
   );
-  if (!result.ok) return { ok: false, reason: result.reason === 'too_far' ? 'too_far' : 'nowhere' };
+  if (!result.ok)
+    return {
+      ok: false,
+      reason: result.reason === 'too_far' ? 'too_far' : 'nowhere',
+    };
   const source = sourceBeside(world, need, result.tile.x, result.tile.y)!;
-  return { ok: true, source, goal: result.tile, path: result.path, cost: result.cost };
+  return {
+    ok: true,
+    source,
+    goal: result.tile,
+    path: result.path,
+    cost: result.cost,
+  };
 }
 
 /** The nearest place by path where `villager` can meet `need`, or null if there is none. */
@@ -233,7 +250,11 @@ export function canUse(world: World, source: Source, x: number, y: number): bool
   if (source.kind === 'fire') return world.camp.x === source.x && world.camp.y === source.y;
   if (source.kind === 'water') return isWater(world.map, source.x, source.y);
   const object = objectAt(world.map, world.objects, source.x, source.y);
-  return object !== undefined && object.id === source.object && object.stock > 0;
+  return (
+    object !== undefined &&
+    object.id === source.object &&
+    hasFood(object, calendarAt(world.tick).season)
+  );
 }
 
 /** Marks of tiles with loose items to carry, reused by every search (not part of the world). */
@@ -309,7 +330,13 @@ export function searchLoose(
   if (!result.ok) return null;
   const item = itemAt(world, result.tile.x, result.tile.y) as Item;
   return {
-    source: { kind: 'item', item: item.id, resource: item.resource, x: item.x, y: item.y },
+    source: {
+      kind: 'item',
+      item: item.id,
+      resource: item.resource,
+      x: item.x,
+      y: item.y,
+    },
     goal: result.tile,
     path: result.path,
     cost: result.cost,
@@ -341,7 +368,13 @@ export function searchWood(world: World, villager: Villager, maxCost?: number): 
   });
   if (!result.ok || (maxCost !== undefined && result.cost > maxCost)) return null;
   return {
-    source: { kind: 'store', item: item.id, resource: item.resource, x: item.x, y: item.y },
+    source: {
+      kind: 'store',
+      item: item.id,
+      resource: item.resource,
+      x: item.x,
+      y: item.y,
+    },
     goal: { x: item.x, y: item.y },
     path: result.path,
     cost: result.cost,
@@ -458,10 +491,14 @@ export type Activity =
   | 'kindle'
   | 'stoke'
   | 'sit'
+  | 'warm'
   | 'order';
 
-/** Activities at the fire (step 1.9): they need no search of the map for a source of a need. */
-export type FireActivity = 'kindle' | 'stoke' | 'sit';
+/**
+ * Activities at the fire (step 1.9; `warm` — step 1.10): they need no search of the map for a
+ * source of a need.
+ */
+export type FireActivity = 'kindle' | 'stoke' | 'sit' | 'warm';
 
 /** Activities met at a source one walks to (step 1.4). */
 export type ActivityId = 'eat' | 'drink';
@@ -549,7 +586,13 @@ export const ACTIVITY: Readonly<Record<Activity, ActivityDef>> = {
     hold: 'fresh',
     steps: ['bed', 'sleep'],
   },
-  eat: { id: 'eat', need: 'food', utility: pressingOf('food'), hold: 'firm', steps: ['go', 'eat'] },
+  eat: {
+    id: 'eat',
+    need: 'food',
+    utility: pressingOf('food'),
+    hold: 'firm',
+    steps: ['go', 'eat'],
+  },
   drink: {
     id: 'drink',
     need: 'water',
@@ -585,7 +628,20 @@ export const ACTIVITY: Readonly<Record<Activity, ActivityDef>> = {
     hold: 'fresh',
     steps: ['go', 'sit'],
   },
-  order: { id: 'order', need: null, utility: null, hold: 'fixed', steps: ['go'] },
+  warm: {
+    id: 'warm',
+    need: 'warmth',
+    utility: (world, villager) => warmWorth(world, villager),
+    hold: 'fresh',
+    steps: ['go', 'sit'],
+  },
+  order: {
+    id: 'order',
+    need: null,
+    utility: null,
+    hold: 'fixed',
+    steps: ['go'],
+  },
 };
 
 /**
@@ -601,13 +657,32 @@ export function woodNeed(world: World): number {
 
 /**
  * The evening context of work (step 1.9): `fire.eveningWork` for a trip that would end in the
- * evening or at night (now, plus there and back by the way found) while the fire burns — one does
+ * evening or at night (now, plus there and back by the way found) once there is a hearth — one does
  * not set off for branches late in the day, one sits at the fire; else 1.
  */
 export function eveningWork(world: World, cost: number): number {
-  if (!isBurning(world)) return 1;
+  // Step 1.10: a hearth the rain put out does not keep one working into the night either.
+  if (!hearthOf(world)) return 1;
   const back = world.tick + Math.ceil(2 * cost * DATA.balance.movement.walkTicksPerTile);
   return isEveningOrNight(back) || isEvening(world.tick) ? DATA.balance.fire.eveningWork : 1;
+}
+
+/**
+ * The context of a meal or a drink (step 1.10), unless the need presses (the scale at
+ * `ai.reservePoints` or below — then one goes all the same, and wakes at night for it):
+ *   - in the cold, a trip too long for even full warmth to last there and back is worth nothing —
+ *     it waits for a warmer day (satiety lasts weeks);
+ *   - a trip that would end in the evening or at night is worth less, as work is (`eveningWork`):
+ *     with winter food far away, a late trip would cost the night's sleep by the fire.
+ */
+export function mealContext(world: World, villager: Villager, need: Meal, cost: number): number {
+  if (villager.needs[need] <= DATA.balance.ai.reservePoints) return 1;
+  const loss = -warmthPerTick(airTemperature(world));
+  if (loss > 0) {
+    const longest = (FULL - DATA.balance.ai.reservePoints) / loss;
+    if (2 * cost * DATA.balance.movement.walkTicksPerTile > longest) return 0;
+  }
+  return eveningWork(world, cost);
 }
 
 /**
@@ -617,7 +692,10 @@ export function eveningWork(world: World, cost: number): number {
 export function kindleWorth(world: World, villager: Villager): number {
   const { kindleBranches, kindleUtility } = DATA.balance.fire;
   if (!knowsFire(world) || isBurning(world) || tendedByOther(world, villager)) return 0;
-  return inPile(world, WOOD) >= kindleBranches ? kindleUtility : 0;
+  // Step 1.10: wet wood does not catch in the rain; a cold villager wants the fire more.
+  if (isRaining(world)) return 0;
+  const cold = urgency(villager.needs.warmth);
+  return inPile(world, WOOD) >= kindleBranches ? kindleUtility + cold * cold : 0;
 }
 
 /**
@@ -647,6 +725,17 @@ export function sitWorth(world: World, villager: Villager): number {
 }
 
 /**
+ * Warm oneself at the fire (step 1.10): the need of warmth — urgency², 1 at zero — while the fire
+ * burns; else 0. Unlike sitting in the evening, it is a need: it may break off a begun plan if it
+ * beats its hold. One sits at the fire, facing it, till warm enough for something else to win.
+ */
+export function warmWorth(world: World, villager: Villager): number {
+  if (!isBurning(world)) return 0;
+  const cold = urgency(villager.needs.warmth);
+  return cold * cold;
+}
+
+/**
  * The character factor of the utility (GDD §2.3: a glutton eats sooner, a hard worker works
  * more): 1 for everyone — traits come at stage 2, and this is where they will weigh.
  */
@@ -655,7 +744,10 @@ export function character(_villager: Villager, _activity: Option): number {
 }
 
 /** Activities that need a source to walk to, in the order of the jitter draws. */
-export const ACTIVITIES: readonly { readonly id: ActivityId; readonly need: Meal }[] = [
+export const ACTIVITIES: readonly {
+  readonly id: ActivityId;
+  readonly need: Meal;
+}[] = [
   { id: 'eat', need: 'food' },
   { id: 'drink', need: 'water' },
 ];
@@ -672,7 +764,7 @@ export type Choice =
  * A choice at the fire (step 1.9): `kindle` and `stoke` walk to wood in the pile first (the found
  * source is the stack), `sit` walks to its place by the fire.
  */
-export type Tend = { kind: FireActivity; utility: number } & Found;
+export type Tend = { kind: FireActivity; utility: number; ahead?: ActivityId } & Found;
 
 /** A choice to walk to a loose item and carry it to the pile (step 1.7). */
 export type Haul = { kind: 'haul'; utility: number } & Found;
@@ -681,7 +773,12 @@ export type Haul = { kind: 'haul'; utility: number } & Found;
  * A choice to walk to a source and eat or drink there; `ahead` — chosen ahead of that trip, by
  * precaution (drink before a long way to the berries): then `utility` is that trip's.
  */
-export type Trip = { kind: ActivityId; need: Meal; utility: number; ahead?: ActivityId } & Found;
+export type Trip = {
+  kind: ActivityId;
+  need: Meal;
+  utility: number;
+  ahead?: ActivityId;
+} & Found;
 
 /**
  * How much the villager wants to sleep now (step 1.5): `urgency² × factor + wish` of the phase
@@ -797,7 +894,12 @@ function weigh(
   // The draws come first, one per option in a fixed order (rest, eat, drink, sleep, work), so the
   // stream does not depend on what is searched.
   let best: Choice = { kind: 'rest', utility: score('rest') };
-  note({ kind: 'rest', utility: best.utility, searched: false, nowhere: false });
+  note({
+    kind: 'rest',
+    utility: best.utility,
+    searched: false,
+    nowhere: false,
+  });
   const options = ACTIVITIES.map((activity, order) => ({
     ...activity,
     order,
@@ -824,7 +926,12 @@ function weigh(
       continue;
     }
     if (option.ceiling <= beat()) {
-      note({ kind: option.id, utility: option.ceiling, searched: false, nowhere: false });
+      note({
+        kind: option.id,
+        utility: option.ceiling,
+        searched: false,
+        nowhere: false,
+      });
       continue;
     }
     // Searched in vain not long ago (nothing at all, or nothing near enough to be worth it): needs
@@ -839,7 +946,11 @@ function weigh(
     });
     const inVain = !search.ok && (search.reason === 'nowhere' || vainIfFar());
     villager.nowhere[option.need] = inVain ? world.tick : 0;
-    const utility = search.ok ? option.ceiling * availability(search.cost) : 0;
+    const utility = search.ok
+      ? option.ceiling *
+        availability(search.cost) *
+        mealContext(world, villager, option.need, search.cost)
+      : 0;
     note({
       kind: option.id,
       utility,
@@ -862,7 +973,9 @@ function weigh(
     }
     const reach = reachFor(ceiling, beat());
     const found =
-      id === 'sit' ? searchSeat(world, villager, reach) : searchWood(world, villager, reach);
+      id === 'sit' || id === 'warm'
+        ? searchSeat(world, villager, reach)
+        : searchWood(world, villager, reach);
     const utility = found ? ceiling * availability(found.cost) : 0;
     note({ kind: id, utility, searched: true, nowhere: found === null });
     if (found && utility > best.utility) best = { kind: id, utility, ...found };
@@ -874,8 +987,8 @@ function weigh(
   return haul(world, villager, work, best, beat(), vainIfFar(), note) ?? best;
 }
 
-/** Activities at the fire, in the order of their jitter draws (after all the others). */
-const FIRE_ACTIVITIES: readonly FireActivity[] = ['kindle', 'stoke', 'sit'];
+/** Activities at the fire, in the order of their jitter draws (after all the others; `warm` — 1.10). */
+const FIRE_ACTIVITIES: readonly FireActivity[] = ['kindle', 'stoke', 'sit', 'warm'];
 
 /**
  * Work (step 1.7): carry a loose item to the pile, if it beats `best` and `beat` — `ceiling` (the
@@ -910,12 +1023,13 @@ function haul(
   // Work that would last into the evening is worth less (step 1.9): if that is too little to win,
   // only work done by the evening is worth looking for — a shorter search.
   let maxCost = reachFor(ceiling, beat);
-  if (isBurning(world) && ceiling * DATA.balance.fire.eveningWork <= beat) {
+  if (hearthOf(world) && ceiling * DATA.balance.fire.eveningWork <= beat) {
     maxCost = Math.min(
       maxCost,
       untilEvening(world.tick) / (2 * DATA.balance.movement.walkTicksPerTile),
     );
   }
+  maxCost = Math.min(maxCost, coldReach(world, villager));
   const found = searchLoose(world, villager, { maxCost });
   const utility = found ? ceiling * availability(found.cost) * eveningWork(world, found.cost) : 0;
   const useful = found !== null && utility > best.utility;
@@ -925,10 +1039,25 @@ function haul(
   return { kind: 'haul', utility, ...found };
 }
 
+/**
+ * How far one may go for work in the cold (step 1.10), tiles of grass: to the item, from it to the
+ * camp (no farther than there and back again plus where one stands now), warmth must stay above
+ * `ai.reservePoints` at the temperature of the air now — in winter one works near the fire and warms
+ * up first. Warm weather — no limit.
+ */
+export function coldReach(world: World, villager: Villager): number {
+  const loss = -warmthPerTick(airTemperature(world));
+  if (loss <= 0) return Number.POSITIVE_INFINITY;
+  const spare = villager.needs.warmth - DATA.balance.ai.reservePoints;
+  if (spare <= 0) return 0;
+  const budget = spare / (loss * DATA.balance.movement.walkTicksPerTile);
+  return Math.max(0, (budget - leastCost(villager, world.camp)) / 2);
+}
+
 /** Ticks from `tick` to the evening (step 1.9): 0 in the evening, till the next evening at night. */
 function untilEvening(tick: number): number {
   const { tickOfDay } = calendarAt(tick);
-  const evening = PHASE_START.dusk - DATA.balance.fire.eveningTicks;
+  const evening = eveningStart(tick);
   if (tickOfDay < evening) return evening - tickOfDay;
   if (tickOfDay < PHASE_START.night) return 0;
   return DATA.balance.time.ticksPerDay - tickOfDay + evening;
@@ -937,7 +1066,8 @@ function untilEvening(tick: number): number {
 /**
  * Before a trip: would another need fall below `ai.reservePoints` by the time the villager is
  * back (the way there and back, plus the meal or the drink itself)? Then meet that one first —
- * drink before walking far for berries. Null — the trip may go ahead.
+ * drink before walking far for berries; in the cold (step 1.10) — warm up at the fire before
+ * walking far for nuts. Null — the trip may go ahead.
  */
 function precaution(
   world: World,
@@ -973,6 +1103,22 @@ function precaution(
       ahead: trip.kind,
       ...found,
     };
+  }
+  // In the cold (step 1.10): would warmth fall below the reserve on the way? Warm up at the fire first.
+  const loss = -warmthPerTick(airTemperature(world));
+  const walk = 2 * trip.cost * DATA.balance.movement.walkTicksPerTile;
+  if (loss > 0 && villager.needs.warmth - walk * loss < DATA.balance.ai.reservePoints) {
+    const seat = isBurning(world) ? searchSeat(world, villager) : null;
+    if (seat) {
+      considered?.push({
+        kind: 'warm',
+        utility: warmWorth(world, villager) * availability(seat.cost),
+        searched: true,
+        nowhere: false,
+        current: false,
+      });
+      return { kind: 'warm', utility: trip.utility, ahead: trip.kind, ...seat };
+    }
   }
   return null;
 }

@@ -18,7 +18,8 @@
  *
  * The algorithm, in order: water (river or lake) → its banks → the forest field (noise, thinner
  * near water) → a reserved glade for the camp → trees (and a few lone ones on the meadows) →
- * berry bushes in clusters at the forest edge → boulders → flowers and tall grass. Numbers that shape the world
+ * berry bushes in clusters at the forest edge → boulders → flowers and tall grass → winter food (hazel and
+ * roots at the forest edge, step 1.10). Numbers that shape the world
  * live in data/balance.json (`map`), kinds of objects — in data/objects.json (`place`, `weight`).
  */
 import { DATA } from '../data/index.ts';
@@ -699,6 +700,21 @@ export function generateMap(rng: Rng, params: MapParams = DATA.balance.map): Gen
     const x = i % width;
     const clump = noiseAt(clumps, x, (i - x) / width);
     if (chance(rng, decor * (0.2 + 1.8 * clump * clump))) place(pickKind(rng, meadowKinds), i);
+  }
+
+  // 8. Winter food (step 1.10): hazel and roots at the forest edge, one by one — drawn last, so the
+  // map of every earlier step stays as it was.
+  const forageKinds = kindsFor('forage');
+  const forage = intRange(rng, params.forage.min, params.forage.max);
+  const forageTiles: number[] = [];
+  for (let i = 0; i < size; i++) {
+    if (meadow(i) && free(i) && toForest[i]! <= 3 && toWater[i]! >= 2) forageTiles.push(i);
+  }
+  for (let n = 0; n < forage && forageTiles.length > 0; n++) {
+    const pick = intRange(rng, 0, forageTiles.length - 1);
+    const i = forageTiles[pick]!;
+    forageTiles.splice(pick, 1);
+    place(pickKind(rng, forageKinds), i);
   }
 
   return { map, objects };

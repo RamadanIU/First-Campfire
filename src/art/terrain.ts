@@ -17,7 +17,13 @@
  * Pure functions without the browser: the compositor returns RGBA pixels of one tile; caching
  * and drawing on a canvas belong to src/render.
  */
-import { type ColorName, type Palette, type Rgb, resolveColor } from './palette.ts';
+import {
+  type ColorName,
+  type Palette,
+  type PaletteSwap,
+  type Rgb,
+  resolveColor,
+} from './palette.ts';
 import { type Raster, rasterizeSprite, type SpriteRaster } from './raster.ts';
 import { type SpriteDef, TILE_SIZE } from './sprite.ts';
 
@@ -232,18 +238,22 @@ export function edgeNoise(x: number, y: number, grain: number, salt: number): nu
   return top * (1 - sy) + bottom * sy;
 }
 
-/** Rasterize the tile sprites of every look. Throws if the looks are invalid. */
+/**
+ * Rasterize the tile sprites of every look. Throws if the looks are invalid. `swap` recolours the
+ * ground (step 1.10: the seasons — ./seasons.ts `terrainSwap`).
+ */
 export function prepareTerrain(
   looks: readonly TerrainLook[],
   sprites: readonly SpriteDef[],
   palette: Palette,
+  swap: PaletteSwap = {},
 ): TerrainArt {
   const problems = validateTerrainLooks(looks, sprites, palette);
   if (problems.length > 0) throw new Error(`Земля с ошибками:\n${problems.join('\n')}`);
   const byName = new Map(sprites.map((sprite) => [sprite.name, sprite]));
   const prepared = new Map<string, PreparedLook>();
   for (const look of looks) {
-    const variations = look.tiles.map((name) => rasterizeSprite(byName.get(name)!, palette));
+    const variations = look.tiles.map((name) => rasterizeSprite(byName.get(name)!, palette, swap));
     const first = variations[0]!.animations[0]!;
     let sum = 0;
     const cumulative = look.tiles.map((_, i) => {
@@ -257,8 +267,8 @@ export function prepareTerrain(
       cumulative,
       frames: first.frames.length,
       frameMs: first.durations[0]!,
-      shore: look.shore ? resolveColor(palette, look.shore) : null,
-      foam: look.foam ? resolveColor(palette, look.foam) : null,
+      shore: look.shore ? resolveColor(palette, look.shore, swap) : null,
+      foam: look.foam ? resolveColor(palette, look.foam, swap) : null,
     });
   }
   return { looks: prepared };

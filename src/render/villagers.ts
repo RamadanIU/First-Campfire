@@ -23,6 +23,7 @@
  */
 import type { PaletteSwap } from '../art/palette.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
+import { isShivering } from '../sim/needs.ts';
 import type { Villager } from '../sim/villagers.ts';
 import { positionOf } from '../sim/villagers.ts';
 import type { LoadLook } from './items.ts';
@@ -72,6 +73,8 @@ export interface VillagerPose {
   readonly walking: boolean;
   /** Asleep (step 1.5): lying, with a bubble of sleep over the head. */
   readonly asleep: boolean;
+  /** Shivering with cold (step 1.10, src/sim/needs.ts `isShivering`): awake, it jitters by a pixel. */
+  readonly shivering: boolean;
   /** What it carries (step 1.7): the load's sprite, its anchor and swap; or null. */
   readonly load: {
     readonly sprite: string;
@@ -157,6 +160,7 @@ export function villagerPose(
     depth: feetY + DEPTH_AHEAD,
     walking,
     asleep,
+    shivering: !asleep && isShivering(villager.needs.warmth),
     load:
       load === null || asleep
         ? null

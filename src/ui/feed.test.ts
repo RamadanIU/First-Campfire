@@ -82,6 +82,7 @@ describe('лента событий', () => {
         reason: 'hunger',
         foodReachable: false,
         waterReachable: true,
+        warmReachable: true,
       },
       { kind: 'event', event: ran.id },
     );
@@ -110,9 +111,9 @@ describe('лента событий', () => {
   });
 
   it('мир, где оба умерли (зерно 92): последние строки — смерти от голода', () => {
-    // Both starve by day 111 (tick 44 000): the bushes do not grow back until step 1.11.
+    // Both starve by day 140 (tick 56 000): the bushes do not grow back until step 1.11.
     const world = createWorld(92);
-    runTicks(world, 44_100);
+    runTicks(world, 56_000);
     const feed = createFeed();
     feed.update(world);
     const deaths = feed.entries.filter((entry) => entry.type === 'villager_died');
