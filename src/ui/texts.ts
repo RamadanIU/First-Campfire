@@ -639,8 +639,8 @@ export const STYLESHEET = {
 /** Scene `palette` (step 0.4). */
 export const PALETTE_SCENE = {
   title: 'Мастер-палитра',
-  intro: (colours: number, ramps: number) =>
-    `${colours} цветов мира + цвет тени + служебные · ${ramps} рядов, в каждом цвета идут от тёмного к светлому · под образцом — имя цвета, код и сколько спрайтов его используют`,
+  intro: (colours: number, seasonal: number, ramps: number) =>
+    `${colours} цветов мира + цвет тени + служебные + ${seasonal} сезонных (шаг 1.10: подмена травы, песка и листвы весной, осенью и зимой) · ${ramps} рядов, в каждом цвета идут от тёмного к светлому · под образцом — имя цвета, код и сколько спрайтов его используют`,
   alpha: (percent: number) => ` · прозрачность ${percent} %`,
   screens: 'экраны',
   people: (skins: number, hairs: number) =>

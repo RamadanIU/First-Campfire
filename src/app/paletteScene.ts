@@ -57,6 +57,9 @@ export function createPaletteScene({ canvas, ui, params }: SceneContext): Scene 
   const used = usage();
   const background = toHex(PALETTE.ramps.get('ui')![0]!);
   const total = PALETTE.defs.reduce((n, ramp) => n + ramp.colors.length, 0);
+  const seasonal = PALETTE.defs
+    .filter((ramp) => ramp.season)
+    .reduce((n, ramp) => n + ramp.colors.length, 0);
   const service = PALETTE.defs
     .filter((ramp) => SERVICE.has(ramp.name))
     .reduce((n, ramp) => n + ramp.colors.length, 0);
@@ -64,7 +67,7 @@ export function createPaletteScene({ canvas, ui, params }: SceneContext): Scene 
   const root = document.createElement('div');
   root.className = `gallery palette${params.ui ? '' : ' bare'}`;
   root.style.background = background;
-  root.innerHTML = `<header class="gallery-head"><h1>${PALETTE_SCENE.title}</h1><p>${PALETTE_SCENE.intro(total - service, PALETTE.defs.length)}</p></header>`;
+  root.innerHTML = `<header class="gallery-head"><h1>${PALETTE_SCENE.title}</h1><p>${PALETTE_SCENE.intro(total - service - seasonal, seasonal, PALETTE.defs.length)}</p></header>`;
 
   const table = document.createElement('div');
   table.className = 'ramps';

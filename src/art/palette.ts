@@ -86,7 +86,7 @@ export const RAMPS = [
   {
     name: 'grass_spring',
     title: 'трава весной: свежая, светлая',
-    colors: ['#355a36', '#4e8040', '#72a548', '#a3cc62'],
+    colors: ['#3d6a3a', '#5a9446', '#84bd52', '#b5dc72'],
     season: true,
   },
   {
@@ -110,7 +110,7 @@ export const RAMPS = [
   {
     name: 'leaf_spring',
     title: 'листва весной: молодая',
-    colors: ['#1e352b', '#305a38', '#4d8443', '#77ae4f', '#a8d06a'],
+    colors: ['#24402e', '#3b6e3c', '#5f9c46', '#8dc357', '#c2e27a'],
     season: true,
   },
   {

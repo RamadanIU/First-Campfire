@@ -1,19 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { worldOn } from '../../tests/scenario.ts';
 import { seasonalState } from './mapRenderer.ts';
-import { drawRain, drawSnow, weatherTint } from './weather.ts';
-
-/** A canvas context that only remembers its filled rectangles. */
-function recorder() {
-  const rects: { x: number; y: number; w: number; h: number }[] = [];
-  const ctx = {
-    fillStyle: '',
-    fillRect(x: number, y: number, w: number, h: number) {
-      rects.push({ x, y, w, h });
-    },
-  } as unknown as CanvasRenderingContext2D;
-  return { ctx, rects };
-}
+import { layerOffset, rainPixels, snowPixels, WEATHER_TILE, weatherTint } from './weather.ts';
 
 describe('погода на карте (шаг 1.10)', () => {
   it('под тучами свет тусклее, в дождь — темнее и синее, ясно — как есть', () => {
@@ -26,19 +14,25 @@ describe('погода на карте (шаг 1.10)', () => {
     expect(rain[2]).toBeGreaterThan(rain[0]);
   });
 
-  it('капли и снежинки — в мировых координатах: тот же кадр — те же пиксели, камера сдвинулась — сдвинулись и они', () => {
-    const view = { x: 64, y: 32, width: 128, height: 96 };
-    for (const draw of [drawRain, drawSnow]) {
-      const a = recorder();
-      const b = recorder();
-      draw(a.ctx, view, 1500);
-      draw(b.ctx, view, 1500);
-      expect(a.rects.length).toBeGreaterThan(20);
-      expect(a.rects).toEqual(b.rects);
-      const moved = recorder();
-      draw(moved.ctx, { ...view, x: view.x + 7 }, 1500);
-      expect(moved.rects.map((r) => r.x + 7)).toEqual(a.rects.map((r) => r.x));
+  it('капли и снежинки — плитка-узор: внутри плитки, повторяется без шва; сдвиг — по времени показа, целыми пикселями', () => {
+    for (const pixels of [rainPixels(), snowPixels(false), snowPixels(true)]) {
+      expect(pixels.length).toBeGreaterThan(20);
+      for (const { x, y } of pixels) {
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThan(WEATHER_TILE);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThan(WEATHER_TILE);
+      }
     }
+    // The same pattern every time (no randomness of the moment).
+    expect(rainPixels()).toEqual(rainPixels());
+    const a = layerOffset(1500, 220, 0.35);
+    expect(layerOffset(1500, 220, 0.35)).toEqual(a);
+    expect(Number.isInteger(a.x) && Number.isInteger(a.y)).toBe(true);
+    expect(a.y).toBeGreaterThanOrEqual(0);
+    expect(a.y).toBeLessThan(WEATHER_TILE);
+    // Rain falls: later — further down (modulo the tile).
+    expect(layerOffset(1600, 220, 0.35).y).toBe((a.y + 22) % WEATHER_TILE);
   });
 });
 

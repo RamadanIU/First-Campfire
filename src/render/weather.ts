@@ -5,11 +5,12 @@
  *   - `weatherTint` — the light of the sky is dimmer and greyer under clouds, darker and bluer in
  *     the rain, soft and pale in the snow: it multiplies the light of the time of day
  *     (./lighting.ts), so a rainy night is darker than a clear one.
- *   - `drawRain` — slanting streaks of rain; `drawSnow` — flakes that drift down and sway. Both lie in
- *     world space on a grid of cells (a few drops per cell, placed by a hash of the cell), so they
- *     stay put when the camera moves and the picture of a frame is the same for the same presentation
- *     time (`frame=` gives the same screenshot). They are drawn before the light of the time of day:
- *     at night the rain is dark too.
+ *   - `drawRain` — slanting streaks of rain; `drawSnow` — flakes that drift down and sway (two layers:
+ *     small and slow, big and faster). The drops are drawn once into a tile (`WEATHER_TILE`, drops at
+ *     hashed places), and the tile repeats over the view in world space, its grid moving with the
+ *     presentation time: cheap at every zoom, still when the camera moves, the same picture for the
+ *     same time (`frame=` gives the same screenshot). They are drawn before the light of the time of
+ *     day: at night the rain is dark too.
  *
  * Presentation only: reads the weather of the world, changes nothing.
  */
@@ -31,21 +32,21 @@ export function weatherTint(light: Light, kind: WeatherKind): Light {
   return [light[0] * r, light[1] * g, light[2] * b];
 }
 
-/** A side of a cell of the particle grid, world px. */
-const CELL = 32;
-/** Drops of rain and flakes of snow per cell. */
-const DROPS = 5;
-const FLAKES = 4;
+/** A side of the tile of particles, world px: drops are drawn once into it, the tile repeats. */
+export const WEATHER_TILE = 128;
+/** Drops of rain and flakes of snow in a tile. */
+const DROPS = 80;
+const FLAKES = 64;
 /** How far a drop of rain falls in a second, world px, and how far it slants for each pixel down. */
 const RAIN_SPEED = 220;
 const RAIN_SLANT = 0.35;
 const RAIN_LENGTH = 4;
-/** How far a flake falls in a second, world px. */
+/** How far a flake falls in a second, world px (the big ones; the small ones are slower). */
 const SNOW_SPEED = 18;
 
 /** Cheap deterministic hash → [0, 1). Presentation only; the simulation has its own RNG. */
-function hash(a: number, b: number, c: number): number {
-  let h = (Math.imul(a, 374761393) + Math.imul(b, 668265263) + Math.imul(c, 2246822519)) | 0;
+function hash(a: number, b: number): number {
+  let h = (Math.imul(a, 374761393) + Math.imul(b, 668265263)) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
@@ -59,6 +60,83 @@ function css(name: string): string {
 const RAIN_COLOURS = ['water.4', 'stone.3'].map(css);
 const SNOW_COLOURS = ['bone.2', 'snow.3'].map(css);
 
+/** A pixel of a tile of particles and its colour (an index into the kind's colours). */
+export interface TilePixel {
+  readonly x: number;
+  readonly y: number;
+  readonly colour: number;
+}
+
+const wrap = (value: number) => ((value % WEATHER_TILE) + WEATHER_TILE) % WEATHER_TILE;
+
+/** The pixels of the tile of rain: slanting streaks at hashed places, wrapping over the edges. */
+export function rainPixels(): TilePixel[] {
+  const pixels: TilePixel[] = [];
+  for (let i = 0; i < DROPS; i++) {
+    const x = Math.floor(hash(i, 1) * WEATHER_TILE);
+    const y = Math.floor(hash(i, 2) * WEATHER_TILE);
+    for (let k = 0; k < RAIN_LENGTH; k++) {
+      pixels.push({ x: wrap(x - Math.floor(k * RAIN_SLANT)), y: wrap(y - k), colour: i % 2 });
+    }
+  }
+  return pixels;
+}
+
+/** The pixels of a tile of snow: `big` — crosses of five pixels, else single flakes. */
+export function snowPixels(big: boolean): TilePixel[] {
+  const pixels: TilePixel[] = [];
+  const count = big ? FLAKES / 4 : FLAKES;
+  for (let i = 0; i < count; i++) {
+    const x = Math.floor(hash(i, big ? 3 : 4) * WEATHER_TILE);
+    const y = Math.floor(hash(i, big ? 5 : 6) * WEATHER_TILE);
+    const colour = i % 2;
+    pixels.push({ x, y, colour });
+    if (!big) continue;
+    for (const [dx, dy] of [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ] as const) {
+      pixels.push({ x: wrap(x + dx), y: wrap(y + dy), colour });
+    }
+  }
+  return pixels;
+}
+
+/**
+ * Where the tiles of a layer stand at presentation time `timeMs`: the offset of the grid of tiles,
+ * world px, 0…tile (whole pixels — crisp at every zoom).
+ */
+export function layerOffset(
+  timeMs: number,
+  speed: number,
+  slant: number,
+  sway = 0,
+): { x: number; y: number } {
+  const fall = (timeMs / 1000) * speed;
+  return { x: wrap(Math.floor(-fall * slant + sway)), y: wrap(Math.floor(fall)) };
+}
+
+/** Tiles drawn once (canvases are made on first use). */
+const tiles = new Map<string, HTMLCanvasElement>();
+
+function tileOf(key: string, pixels: () => TilePixel[], colours: readonly string[]) {
+  let canvas = tiles.get(key);
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.width = WEATHER_TILE;
+    canvas.height = WEATHER_TILE;
+    const ctx = canvas.getContext('2d')!;
+    for (const pixel of pixels()) {
+      ctx.fillStyle = colours[pixel.colour]!;
+      ctx.fillRect(pixel.x, pixel.y, 1, 1);
+    }
+    tiles.set(key, canvas);
+  }
+  return canvas;
+}
+
 interface View {
   readonly x: number;
   readonly y: number;
@@ -66,55 +144,41 @@ interface View {
   readonly height: number;
 }
 
-/** Every cell of the grid that touches the view (with a cell of margin), in order. */
-function* cells(view: View): Generator<[number, number]> {
-  const left = Math.floor(view.x / CELL) - 1;
-  const top = Math.floor(view.y / CELL) - 1;
-  const right = Math.floor((view.x + view.width) / CELL) + 1;
-  const bottom = Math.floor((view.y + view.height) / CELL) + 1;
-  for (let cy = top; cy <= bottom; cy++) {
-    for (let cx = left; cx <= right; cx++) yield [cx, cy];
+/** Repeat `tile` over the view, its grid shifted by `offset` (world space). */
+function cover(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  tile: HTMLCanvasElement,
+  offset: { x: number; y: number },
+): void {
+  const left = Math.floor((view.x - offset.x) / WEATHER_TILE);
+  const top = Math.floor((view.y - offset.y) / WEATHER_TILE);
+  const right = Math.floor((view.x + view.width - offset.x) / WEATHER_TILE);
+  const bottom = Math.floor((view.y + view.height - offset.y) / WEATHER_TILE);
+  for (let ty = top; ty <= bottom; ty++) {
+    for (let tx = left; tx <= right; tx++) {
+      ctx.drawImage(
+        tile,
+        tx * WEATHER_TILE + offset.x - view.x,
+        ty * WEATHER_TILE + offset.y - view.y,
+      );
+    }
   }
 }
 
 /** Slanting streaks of rain over the view (world space), at presentation time `timeMs`. */
 export function drawRain(ctx: CanvasRenderingContext2D, view: View, timeMs: number): void {
-  const fall = (timeMs / 1000) * RAIN_SPEED;
-  for (const [cx, cy] of cells(view)) {
-    for (let i = 0; i < DROPS; i++) {
-      const offset = hash(cx, cy, i) * CELL;
-      const along = (hash(cx, cy, i + 101) * CELL + fall) % CELL;
-      const y = cy * CELL + Math.floor(along);
-      const x = cx * CELL + Math.floor(offset - along * RAIN_SLANT);
-      ctx.fillStyle = RAIN_COLOURS[i % 2]!;
-      for (let k = 0; k < RAIN_LENGTH; k++) {
-        ctx.fillRect(x - view.x - Math.floor(k * RAIN_SLANT), y - view.y - k, 1, 1);
-      }
-    }
-  }
+  const tile = tileOf('rain', rainPixels, RAIN_COLOURS);
+  cover(ctx, view, tile, layerOffset(timeMs, RAIN_SPEED, RAIN_SLANT));
 }
 
-/** Flakes of snow drifting down over the view (world space), at presentation time `timeMs`. */
+/** Flakes of snow drifting down and swaying over the view (world space), at `timeMs`. */
 export function drawSnow(ctx: CanvasRenderingContext2D, view: View, timeMs: number): void {
   const seconds = timeMs / 1000;
-  for (const [cx, cy] of cells(view)) {
-    for (let i = 0; i < FLAKES; i++) {
-      const offset = hash(cx, cy, i) * CELL;
-      const speed = SNOW_SPEED * (0.7 + 0.6 * hash(cx, cy, i + 57));
-      const along = (hash(cx, cy, i + 101) * CELL + seconds * speed) % CELL;
-      const sway = Math.round(Math.sin(seconds * 1.5 + i * 2.1 + cx) * 1.5);
-      const x = cx * CELL + Math.floor(offset) + sway - view.x;
-      const y = cy * CELL + Math.floor(along) - view.y;
-      ctx.fillStyle = SNOW_COLOURS[i % 2]!;
-      // Every third flake is bigger: a cross of five pixels.
-      if (i % 3 === 0) {
-        ctx.fillRect(x - 1, y, 3, 1);
-        ctx.fillRect(x, y - 1, 1, 3);
-      } else {
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-  }
+  const small = tileOf('snow', () => snowPixels(false), SNOW_COLOURS);
+  const big = tileOf('snow-big', () => snowPixels(true), SNOW_COLOURS);
+  cover(ctx, view, small, layerOffset(timeMs, SNOW_SPEED * 0.7, 0, Math.sin(seconds * 1.3) * 1.5));
+  cover(ctx, view, big, layerOffset(timeMs, SNOW_SPEED, 0, Math.sin(seconds * 1.7 + 2) * 2));
 }
 
 /** The particles of the weather `kind` over the view (rain or snow; none for clear and cloudy). */

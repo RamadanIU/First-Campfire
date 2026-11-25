@@ -827,8 +827,9 @@ try {
       const panel = () => text(page, '.world-panel-needs');
       const first = await panel();
       check(
-        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · сон \d+ · здоровье 100/.test(first) &&
-          first.includes('женщина (житель 2)'),
+        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · сон \d+ · тепло \d+ · здоровье 100/.test(
+          first,
+        ) && first.includes('женщина (житель 2)'),
         `панель: ${first}`,
       );
       const seen = new Set<string>();
@@ -914,7 +915,8 @@ try {
     check(
       (await page.isVisible('.hud-card')) &&
         (await text(page, '.hud-card-title')) === 'Женщина · житель 2' &&
-        (await page.evaluate<number>("document.querySelectorAll('.hud-scale').length")) === 4,
+        // Five scales since step 1.10: satiety, thirst, sleep, warmth, health.
+        (await page.evaluate<number>("document.querySelectorAll('.hud-scale').length")) === 5,
       `щелчок по женщине — карточка: «${await text(page, '.hud-card-title')}», ${await text(page, '.hud-card-doing')}`,
     );
     const empty = onPage(34 * 16 + 8, 29 * 16 + 8);
