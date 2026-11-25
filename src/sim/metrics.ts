@@ -14,7 +14,7 @@
  */
 import { calendarAt, type Season, TIME } from './calendar.ts';
 import type { Cause } from './events.ts';
-import { countAll, inPile } from './items.ts';
+import { countAll, inPile, inStore } from './items.ts';
 import { count, gauge, type Metric, max, mean, min, sum } from './stats.ts';
 
 /** «весной», «летом», «осенью» — for the names of the metrics by season (berries have none in winter). */
@@ -23,6 +23,9 @@ const SEASON_IN: Record<Exclude<Season, 'winter'>, string> = {
   summer: 'летом',
   autumn: 'осенью',
 };
+
+/** «осенью», «зимой» — for the names of the metrics of the store by season. */
+const SEASON_IN_ALL: Record<'autumn' | 'winter', string> = { autumn: 'осенью', winter: 'зимой' };
 
 export const METRICS: readonly Metric[] = [
   count('events', 'Событий', 'any'),
@@ -72,8 +75,11 @@ export const METRICS: readonly Metric[] = [
     Math.abs(
       Object.values(countAll(world)).reduce((total, n) => total + n, 0) +
         world.items.burned +
-        world.items.rotted -
-        world.items.made,
+        world.items.rotted +
+        world.items.eaten +
+        world.items.spoiled -
+        world.items.made -
+        world.items.picked,
     ),
   ),
   // The campfire (step 1.9): lit from the pile, fed, goes out without wood.
@@ -102,20 +108,58 @@ export const METRICS: readonly Metric[] = [
     ),
   ),
   // The yearly crop (step 1.11): bushes bear once a year, the near ones are picked bare first.
-  count('food_visits', 'Подходов к еде (куст, лещина, коренья)', 'food_found'),
-  mean('food_trip', 'Поход за едой: от стоянки до еды, тайлов', 'food_found', (e) => e.distance),
+  count('food_visits', 'Подходов к еде (куст, лещина, коренья)', 'food_found', (e) => !e.stored),
+  mean('food_trip', 'Поход за едой: от стоянки до еды, тайлов', 'food_found', (e) =>
+    e.stored ? null : e.distance,
+  ),
   // Berries ripen in spring: the near bushes are picked bare first, by autumn one goes farther.
   ...(['spring', 'summer', 'autumn'] as const).map((season) =>
     mean(
       `berry_trip_${season}`,
       `Поход за ягодами ${SEASON_IN[season]}: от стоянки, тайлов`,
       'food_found',
-      (e) => (e.food === 'berries' && calendarAt(e.tick).season === season ? e.distance : null),
+      (e) =>
+        e.food === 'berries' && !e.stored && calendarAt(e.tick).season === season
+          ? e.distance
+          : null,
     ),
   ),
   mean('forage_trip', 'Поход за орехами и кореньями: от стоянки, тайлов', 'food_found', (e) =>
-    e.food === 'berries' ? null : e.distance,
+    e.food === 'berries' || e.stored ? null : e.distance,
   ),
+  // Memory, scouting, the store (step 1.11b): one knows only the land one saw.
+  gauge('explored', 'Разведано земли (на конец), доля клеток у самого знающего', (world) =>
+    world.villagers.list.reduce(
+      (most, villager) =>
+        Math.max(
+          most,
+          Math.round(
+            (villager.seen.reduce((n, cell) => n + cell, 0) / Math.max(1, villager.seen.length)) *
+              100,
+          ) / 100,
+        ),
+      0,
+    ),
+  ),
+  sum('stored', 'Отнесено еды в запас, горстей', 'food_stored', (e) => e.count),
+  ...(['autumn', 'winter'] as const).map((season) =>
+    sum(
+      `stored_${season}`,
+      `Отнесено в запас ${SEASON_IN_ALL[season]}, горстей`,
+      'food_stored',
+      (e) => (calendarAt(e.tick).season === season ? e.count : null),
+    ),
+  ),
+  count('store_meals', 'Ели из запаса, раз', 'food_found', (e) => e.stored),
+  count(
+    'store_meals_winter',
+    'Ели из запаса зимой, раз',
+    'food_found',
+    (e) => e.stored && calendarAt(e.tick).season === 'winter',
+  ),
+  gauge('store_eaten', 'Съедено из запаса (на конец), горстей', (world) => world.items.eaten),
+  gauge('store_spoiled', 'Испортилось еды (на конец), горстей', (world) => world.items.spoiled),
+  gauge('store_left', 'Еды в запасе (на конец), горстей', (world) => inStore(world)),
 ];
 
 /** Is the cause of an event this rule of the world? */

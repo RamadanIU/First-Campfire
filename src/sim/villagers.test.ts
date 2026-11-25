@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meadow, worldOn } from '../../tests/scenario.ts';
+import { fillStore, meadow, worldOn } from '../../tests/scenario.ts';
 import { DATA } from '../data/index.ts';
 import { findCampSite } from './mapgen.ts';
 import { objectAt } from './objects.ts';
@@ -237,6 +237,8 @@ describe('блуждание без потребностей', () => {
       { x: 20, y: 20 },
       { x: 22, y: 20 },
     ]);
+    // No needs, and nothing to store (step 1.11b: else in autumn they would scout for nuts).
+    fillStore(world);
     const radius = DATA.balance.villagers.wanderRadius;
     const goals = new Set<string>();
     let farthest = 0;

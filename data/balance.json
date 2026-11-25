@@ -54,7 +54,10 @@
     "workRetryTicks": 100,
     "keepMargin": 0.5,
     "sleepHold": 0.1,
-    "logSize": 12
+    "logSize": 12,
+    "sightTiles": 7,
+    "cellTiles": 4,
+    "scoutFactor": 0.8
   },
   "items": {
     "pileRadius": 1,
@@ -65,7 +68,15 @@
     "maxLoose": 120,
     "litterSpacing": 2,
     "startLitter": 40,
-    "litterCheckTicks": 10
+    "litterCheckTicks": 10,
+    "storeRadius": 1,
+    "storeOffset": 3
+  },
+  "stores": {
+    "keepDays": 6,
+    "reserveRations": 2,
+    "utility": 0.45,
+    "pickTicks": 15
   },
   "fire": {
     "fuelPerDay": { "spring": 1, "summer": 1, "autumn": 1, "winter": 3 },

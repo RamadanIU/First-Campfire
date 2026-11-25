@@ -37,7 +37,7 @@ describe('предметы: положить, взять, уронить (шаг
     lay(world, 'stones', 2, 4, 2);
     const first = itemAt(world, 2, 2)!;
     expect(takeItem(world, man, first, first.count)).toBe(4);
-    expect(man.load).toEqual({ id: first.id, resource: 'branches', count: 4 });
+    expect(man.load).toEqual({ id: first.id, resource: 'branches', count: 4, spoils: 0 });
     expect(itemAt(world, 2, 2)).toBeUndefined();
     // The hands hold one stack: 6 more of the 9, 3 stay.
     expect(takeItem(world, man, itemAt(world, 3, 2)!, 9)).toBe(6);
@@ -50,7 +50,7 @@ describe('предметы: положить, взять, уронить (шаг
   it('уронить ношу: на свой тайл, а что не влезло — на ближние; ничего не теряется', () => {
     const { world, man } = field();
     lay(world, 'branches', 8, man.x, man.y);
-    man.load = { id: 99, resource: 'branches', count: 10 };
+    man.load = { id: 99, resource: 'branches', count: 10, spoils: 0 };
     const before = countAll(world).branches;
     dropLoad(world, man);
     expect(man.load).toBeNull();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { worldOn } from '../../tests/scenario.ts';
 import { DATA } from '../data/index.ts';
+import { look } from './memory.ts';
 import {
   availability,
   type Considered,
@@ -72,6 +73,8 @@ describe('источник', () => {
       reason: 'too_far',
     });
     takeFood(objectAt(world.map, world.objects, 2, 1)!, 4);
+    // He sees it picked bare (step 1.11b: he goes only to food he believes is there).
+    look(world, villager);
     expect(searchSource(world, villager, 'food')).toEqual({ ok: false, reason: 'nowhere' });
   });
 

@@ -47,6 +47,11 @@ export interface Stack {
   resource: string;
   /** How many: 1 … the resource's `stack`. */
   count: number;
+  /**
+   * The tick it spoils at (step 1.11b: food picked into the hands — its `spoilDays` from then; two
+   * stacks merged spoil with the older); 0 — never (branches).
+   */
+  spoils: number;
 }
 
 /** Where an item lies: loose on the ground, or stored in the pile at the camp. */
@@ -70,13 +75,23 @@ export interface Items {
   burned: number;
   /** Every unit that rotted away lying loose (step 1.10): gone from the items, counted here. */
   rotted: number;
+  /** Every unit of food picked from a bush into the hands (step 1.11b): it appeared as an item. */
+  picked: number;
+  /** Every unit of food eaten from the store (step 1.11b): gone from the items, counted here. */
+  eaten: number;
+  /** Every unit of food that spoiled (step 1.11b): gone from the items, counted here. */
+  spoiled: number;
 }
 
-/** The camp of the people (step 1.7): its middle (the fire, step 1.9) and the place of the pile. */
+/**
+ * The camp of the people (step 1.7): its middle (the fire, step 1.9), the place of the pile of
+ * branches and the place of the store of food beside it (step 1.11b).
+ */
 export interface Camp {
   x: number;
   y: number;
   pile: Tile;
+  store: Tile;
 }
 
 /** The four sides of a tile, in a fixed order: north, east, south, west. */
@@ -88,7 +103,43 @@ const SIDES: readonly (readonly [number, number])[] = [
 ];
 
 export function createItems(): Items {
-  return { list: [], nextId: 1, made: 0, burned: 0, rotted: 0 };
+  return {
+    list: [],
+    nextId: 1,
+    made: 0,
+    burned: 0,
+    rotted: 0,
+    picked: 0,
+    eaten: 0,
+    spoiled: 0,
+  };
+}
+
+/** Is the resource food (data/resources.json, category `food`; step 1.11b)? */
+export function isFood(resource: string): boolean {
+  return DATA.resources.get(resource).category === 'food';
+}
+
+/**
+ * Is the food worth storing (step 1.11b, ADR-032): it keeps at least `stores.keepDays` (its
+ * `spoilDays`; none — it keeps for ever). Berries and roots spoil before the winter is over.
+ */
+export function keeps(resource: string): boolean {
+  const { spoilDays } = DATA.resources.get(resource);
+  return isFood(resource) && (spoilDays === null || spoilDays >= DATA.balance.stores.keepDays);
+}
+
+/** The tick a stack of `resource` made at `tick` spoils at: its `spoilDays` later; 0 — never. */
+export function spoilsAt(resource: string, tick: number): number {
+  const { spoilDays } = DATA.resources.get(resource);
+  return spoilDays === null ? 0 : tick + spoilDays * TIME.ticksPerDay;
+}
+
+/** Of two stacks merged, the sooner spoiling (0 — never). */
+function sooner(a: number, b: number): number {
+  if (a === 0) return b;
+  if (b === 0) return a;
+  return Math.min(a, b);
 }
 
 /** How many of a resource lie on one tile and are carried in the hands (data/resources.json). */
@@ -128,8 +179,11 @@ export function canHold(map: WorldMap, objects: MapObjects, x: number, y: number
 
 /**
  * The camp of a new world: the camp site of the map (or the free tile nearest to its middle — a
- * test's small map) and the place of the pile, `items.pileOffset` tiles south of it (the nearest
- * tile that can hold things, not the middle itself).
+ * test's small map), the place of the pile, `items.pileOffset` tiles south of it (the nearest
+ * tile that can hold things, not the middle itself), and the place of the store of food (step
+ * 1.11b), `items.storeOffset` tiles east of the pile — the nearest such tile whose square does not
+ * touch the pile's nor the ring of tiles around the fire (none — the pile's place: on a small map
+ * the two share it).
  */
 export function createCamp(map: WorldMap, objects: MapObjects): Camp {
   const site = findCampSite(map, objects);
@@ -146,7 +200,20 @@ export function createCamp(map: WorldMap, objects: MapObjects): Camp {
       middle.y + DATA.balance.items.pileOffset,
       (x, y) => free(x, y) && (x !== middle.x || y !== middle.y),
     ) ?? middle;
-  return { x: middle.x, y: middle.y, pile };
+  const { pileRadius, storeRadius, storeOffset } = DATA.balance.items;
+  const apart = pileRadius + storeRadius;
+  const store =
+    nearestTile(
+      map,
+      pile.x + storeOffset,
+      pile.y,
+      (x, y) =>
+        free(x, y) &&
+        Math.max(Math.abs(x - pile.x), Math.abs(y - pile.y)) > apart &&
+        // Off the places by the fire where one sits to warm up (its ring of tiles is left free).
+        Math.max(Math.abs(x - middle.x), Math.abs(y - middle.y)) > storeRadius + 1,
+    ) ?? pile;
+  return { x: middle.x, y: middle.y, pile, store };
 }
 
 /** The item lying on tile (x, y), if any. */
@@ -159,36 +226,58 @@ export function findItem(world: World, id: number): Item | undefined {
   return world.items.list.find((item) => item.id === id);
 }
 
+/** Is (x, y) within the square of `radius` around `place`, can hold things, not the middle? */
+function inSquare(world: World, place: Tile, radius: number, x: number, y: number): boolean {
+  const { camp } = world;
+  if (Math.abs(x - place.x) > radius || Math.abs(y - place.y) > radius) return false;
+  if (x === camp.x && y === camp.y) return false;
+  return canHold(world.map, world.objects, x, y);
+}
+
+/** Is (x, y) a tile of the pile of branches (not of the store of food)? */
+function isWoodTile(world: World, x: number, y: number): boolean {
+  return inSquare(world, world.camp.pile, DATA.balance.items.pileRadius, x, y);
+}
+
+/** Is (x, y) a tile of the store of food (step 1.11b; a tile of both is the pile's)? */
+function isStoreTile(world: World, x: number, y: number): boolean {
+  return (
+    inSquare(world, world.camp.store, DATA.balance.items.storeRadius, x, y) &&
+    !isWoodTile(world, x, y)
+  );
+}
+
 /**
- * Tiles of the pile at the camp, in the order it fills: the place of the pile first, then the
- * tiles around it (within `items.pileRadius`) — nearer first, each ring in a fixed order. Only
- * tiles that can hold things, never the middle of the camp.
+ * Tiles where `resource` is kept at the camp, in the order they fill: food (step 1.11b) — the
+ * store, anything else — the pile; its place first, then the tiles around it (within
+ * `items.pileRadius` / `items.storeRadius`) — nearer first, each ring in a fixed order. Only tiles
+ * that can hold things, never the middle of the camp.
  */
-export function pileTiles(world: World): Tile[] {
-  const { camp, map, objects } = world;
-  const radius = DATA.balance.items.pileRadius;
+export function pileTiles(world: World, resource = 'branches'): Tile[] {
+  const food = isFood(resource);
+  const { camp } = world;
+  const place = food ? camp.store : camp.pile;
+  const radius = food ? DATA.balance.items.storeRadius : DATA.balance.items.pileRadius;
   const tiles: Tile[] = [];
   for (let r = 0; r <= radius; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-        const x = camp.pile.x + dx;
-        const y = camp.pile.y + dy;
-        if (x === camp.x && y === camp.y) continue;
-        if (canHold(map, objects, x, y)) tiles.push({ x, y });
+        const x = place.x + dx;
+        const y = place.y + dy;
+        if (food ? isStoreTile(world, x, y) : isWoodTile(world, x, y)) tiles.push({ x, y });
       }
     }
   }
   return tiles;
 }
 
-/** Is tile (x, y) a tile of the pile? */
+/**
+ * Is tile (x, y) a tile of the pile — of branches, or of the store of food (step 1.11b)? Things on
+ * it are kept at the camp (`place: 'pile'`).
+ */
 export function isPileTile(world: World, x: number, y: number): boolean {
-  const radius = DATA.balance.items.pileRadius;
-  const { camp } = world;
-  if (Math.abs(x - camp.pile.x) > radius || Math.abs(y - camp.pile.y) > radius) return false;
-  if (x === camp.x && y === camp.y) return false;
-  return canHold(world.map, world.objects, x, y);
+  return isWoodTile(world, x, y) || isStoreTile(world, x, y);
 }
 
 /**
@@ -198,6 +287,9 @@ export function isPileTile(world: World, x: number, y: number): boolean {
 export function roomAt(world: World, x: number, y: number, resource: string): number {
   if (x === world.camp.x && y === world.camp.y) return 0;
   if (!canHold(world.map, world.objects, x, y)) return 0;
+  // Food is kept in the store, branches in the pile (step 1.11b); loose — anywhere.
+  if (isWoodTile(world, x, y) && isFood(resource)) return 0;
+  if (isStoreTile(world, x, y) && !isFood(resource)) return 0;
   const item = itemAt(world, x, y);
   if (!item) return stackOf(resource);
   return item.resource === resource ? stackOf(resource) - item.count : 0;
@@ -214,7 +306,7 @@ export function pileSpot(
   resource: string,
   busy: (x: number, y: number) => boolean = () => false,
 ): Tile | null {
-  const tiles = pileTiles(world).filter((tile) => !busy(tile.x, tile.y));
+  const tiles = pileTiles(world, resource).filter((tile) => !busy(tile.x, tile.y));
   const full = stackOf(resource);
   const room = (tile: Tile) => roomAt(world, tile.x, tile.y, resource);
   return (
@@ -226,7 +318,7 @@ export function pileSpot(
 
 /** Is there room in the pile for at least one of `resource`? */
 export function pileHasRoom(world: World, resource: string): boolean {
-  return pileTiles(world).some((tile) => roomAt(world, tile.x, tile.y, resource) > 0);
+  return pileTiles(world, resource).some((tile) => roomAt(world, tile.x, tile.y, resource) > 0);
 }
 
 /**
@@ -241,12 +333,14 @@ export function lay(
   x: number,
   y: number,
   id?: number,
+  spoils = 0,
 ): number {
   const placed = Math.min(count, roomAt(world, x, y, resource));
   if (placed <= 0) return 0;
   const there = itemAt(world, x, y);
   if (there) {
     there.count += placed;
+    there.spoils = sooner(there.spoils, spoils);
     return placed;
   }
   const items = world.items;
@@ -254,6 +348,7 @@ export function lay(
     id: id ?? items.nextId++,
     resource,
     count: placed,
+    spoils,
     x,
     y,
     place: isPileTile(world, x, y) ? 'pile' : 'ground',
@@ -282,9 +377,15 @@ export function takeItem(world: World, villager: Villager, item: Item, count: nu
   }
   if (load) {
     load.count += taken;
+    load.spoils = sooner(load.spoils, item.spoils);
   } else {
     const id = item.count === 0 ? item.id : world.items.nextId++;
-    villager.load = { id, resource: item.resource, count: taken };
+    villager.load = {
+      id,
+      resource: item.resource,
+      count: taken,
+      spoils: item.spoils,
+    };
   }
   return taken;
 }
@@ -314,6 +415,7 @@ export function dropLoad(world: World, villager: Villager): void {
       tile.x,
       tile.y,
       fresh ? load.id : undefined,
+      load.spoils,
     );
     kept ||= fresh;
   }
@@ -330,6 +432,40 @@ export function countAll(world: World): Record<string, number> {
   for (const villager of world.villagers.list) if (villager.load) add(villager.load);
   return counts;
 }
+
+/** How many units of food lie in the store at the camp (step 1.11b). */
+export function inStore(world: World): number {
+  let total = 0;
+  for (const item of world.items.list) {
+    if (item.place === 'pile' && isFood(item.resource)) total += item.count;
+  }
+  return total;
+}
+
+/**
+ * Spoiling (step 1.11b): at the start of a day food that has kept its `spoilDays` is gone — lying
+ * anywhere, or in the hands; counted in `items.spoiled`.
+ */
+export const spoilSystem: System = {
+  id: 'spoil',
+  step(world) {
+    if (world.tick % TIME.ticksPerDay !== 0) return;
+    const items = world.items;
+    const spoiled = (stack: Stack) => stack.spoils > 0 && world.tick >= stack.spoils;
+    for (let i = items.list.length - 1; i >= 0; i--) {
+      const item = items.list[i]!;
+      if (!spoiled(item)) continue;
+      items.spoiled += item.count;
+      items.list.splice(i, 1);
+    }
+    for (const villager of world.villagers.list) {
+      if (villager.load && spoiled(villager.load)) {
+        items.spoiled += villager.load.count;
+        villager.load = null;
+      }
+    }
+  },
+};
 
 /** How many of `resource` lie in the pile. */
 export function inPile(world: World, resource: string): number {

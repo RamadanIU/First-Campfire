@@ -27,7 +27,7 @@ function withWood(count: number, rows = meadow(12, 10)): World {
   const world = worldOn(rows);
   const villager = world.villagers.list[0]!;
   placeVillager(world, villager, world.camp.x - 1, world.camp.y);
-  villager.load = { id: world.items.nextId++, resource: WOOD, count };
+  villager.load = { id: world.items.nextId++, resource: WOOD, count, spoils: 0 };
   world.items.made += count;
   return world;
 }

@@ -50,6 +50,12 @@ export interface PathOptions {
   maxCost?: number;
   /** Tiles that must not be stepped on besides the map's own obstacles (other villagers). */
   avoid?: (x: number, y: number) => boolean;
+  /**
+   * `findNearest` only (step 1.11b): every tile `isGoal` may hold for is among these — a few known
+   * places. The search then heads for them (A* to the nearest of them) instead of flooding the map
+   * in rings; the answer is a nearest goal all the same.
+   */
+  towards?: readonly Tile[];
 }
 
 /** Length of a diagonal step, tiles. */
@@ -292,10 +298,13 @@ function search(
     const node = open.pop();
     if (s.closed[node] === stamp) continue; // a stale entry: the tile was reached cheaper
     s.closed[node] = stamp;
-    // Tiles come out in order of cost (with no heuristic): everything left is farther still.
-    if (s.g[node]! > maxCost) return { ok: false, reason: 'too_far', explored };
     const x = node % width;
     const y = (node - x) / width;
+    // Tiles come out in order of the least possible cost of a way through them (the heuristic
+    // never overestimates): everything left is farther still.
+    if (s.g[node]! + (maxCost < Number.POSITIVE_INFINITY ? heuristic(x, y) : 0) > maxCost) {
+      return { ok: false, reason: 'too_far', explored };
+    }
     if (isGoal(node, x, y)) {
       const path: Tile[] = [];
       for (let at = node; at !== start; at = s.parent[at]!) {
@@ -396,12 +405,28 @@ export function findNearest(
   options: PathOptions = {},
 ): NearestResult {
   const limit = options.limit ?? DATA.balance.movement.pathSearchTiles;
+  const towards = options.towards;
+  const fastest = fastestGround();
+  const heuristic =
+    towards === undefined
+      ? () => 0
+      : (x: number, y: number) => {
+          let least = Number.POSITIVE_INFINITY;
+          for (const tile of towards) {
+            const dx = Math.abs(x - tile.x);
+            const dy = Math.abs(y - tile.y);
+            const way = Math.abs(dx - dy) + DIAGONAL * Math.min(dx, dy);
+            if (way < least) least = way;
+          }
+          return least / fastest;
+        };
+  if (towards?.length === 0) return { ok: false, reason: 'unreachable', explored: 0 };
   const result = search(
     map,
     objects,
     from,
     (_node, x, y) => isGoal(x, y),
-    () => 0,
+    heuristic,
     limit,
     options.avoid,
     options.maxCost,

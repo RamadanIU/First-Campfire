@@ -9,6 +9,7 @@ const item = (fields: Partial<Item>): Item => ({
   id: 7,
   resource: 'branches',
   count: 10,
+  spoils: 0,
   x: 3,
   y: 4,
   place: 'pile',

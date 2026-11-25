@@ -16,7 +16,7 @@ import { ACTIVITY, type Activity, type Decision, woodNeed } from '../src/sim/min
 import { loadWorld, saveWorld } from '../src/sim/save.ts';
 import type { Villager, VillagerAction } from '../src/sim/villagers.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../src/sim/world.ts';
-import { brokenRules, meadow, worldOn } from './scenario.ts';
+import { brokenRules, knowAll, meadow, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 const { thinkTicks, keepMargin, haulUtility, logSize } = DATA.balance.ai;
@@ -56,6 +56,8 @@ function carrierWorld(): { world: World; villager: Villager } {
     runUntil(world, () => carrying(villager), DAY),
     'житель понёс ветки в кучу',
   ).toBe(true);
+  // He knows where the bushes are (step 1.11b): the test is about breaking off work, not scouting.
+  knowAll(world);
   return { world, villager };
 }
 
@@ -194,13 +196,15 @@ describe('критерий: нет «дёрганья»', () => {
 const STEPS_OF: Record<Activity, readonly string[]> = {
   rest: ['idle', 'walk:wander'],
   sleep: ['walk:bed', 'sleep'],
-  eat: ['walk:eat', 'eat'],
+  eat: ['walk:eat', 'eat', 'eat_stored'],
   drink: ['walk:drink', 'drink'],
   haul: ['walk:fetch', 'pick_up', 'walk:carry', 'put_down'],
   kindle: ['walk:wood', 'take', 'walk:fire', 'kindle', 'stoke'],
   stoke: ['walk:wood', 'take', 'walk:fire', 'stoke', 'kindle'],
   sit: ['walk:sit', 'sit'],
   warm: ['walk:sit', 'sit'],
+  scout: ['walk:scout'],
+  store: ['walk:pick', 'pick', 'walk:carry', 'put_down'],
   order: ['walk:order'],
 };
 

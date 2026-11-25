@@ -13,7 +13,7 @@ import { type Considered, choose, reconsider } from '../src/sim/minds.ts';
 import { findObject } from '../src/sim/objects.ts';
 import type { Villager } from '../src/sim/villagers.ts';
 import { createWorld, runTicks, type World } from '../src/sim/world.ts';
-import { runWarm, worldOn } from './scenario.ts';
+import { knowAll, runWarm, worldOn } from './scenario.ts';
 
 const BERRIES = DATA.objects.get('berry_bush').harvest!;
 
@@ -90,6 +90,9 @@ describe('критерий: кусты восстанавливаются к с�
     expect(picked.size).toBeGreaterThan(0);
     expect(bare.length).toBe(world.objects.list.filter((o) => o.def === 'berry_bush').length);
     const seen = foodFound(world).length;
+    // Step 1.11b: the two remember the bushes they picked and come back to them first thing in
+    // spring — here they leave the world, so that every bush is left to ripen by itself.
+    world.villagers.list.length = 0;
     runTicks(world, tickAt(28, 0) - world.tick); // the first day of the third summer
     const eatenAgain = new Set(
       foodFound(world)
@@ -117,6 +120,7 @@ describe('поиск еды по опустевшей округе не повт
     ]);
     world.tick = tickAt(4, 60); // summer: the crop is on the bush
     for (const object of world.objects.list) Object.assign(object, { stock: BERRIES.rations });
+    knowAll(world); // he knows the far bush (step 1.11b)
     const villager = world.villagers.list[0]!;
     villager.needs.food = 20; // hungry, but the bush is 57 tiles away and work under way holds at 0.5
     const searched = () => {

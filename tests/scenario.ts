@@ -14,9 +14,19 @@
 
 import { DATA } from '../src/data/index.ts';
 import { calendarAt } from '../src/sim/calendar.ts';
-import { canHold, countAll, isPileTile, stackOf } from '../src/sim/items.ts';
+import {
+  canHold,
+  countAll,
+  inStore,
+  isPileTile,
+  lay,
+  pileSpot,
+  spoilsAt,
+  stackOf,
+} from '../src/sim/items.ts';
 import { createMap, setGround } from '../src/sim/map.ts';
 import type { GeneratedMap } from '../src/sim/mapgen.ts';
+import { foodObjects, noteFood } from '../src/sim/memory.ts';
 import { FULL } from '../src/sim/needs.ts';
 import { createObjects, placeObject } from '../src/sim/objects.ts';
 import { carries, placeVillager } from '../src/sim/villagers.ts';
@@ -116,6 +126,42 @@ export function plenty(world: World, rations = 100): void {
   }
 }
 
+/**
+ * A full store (step 1.11b): nuts in the store at the camp, as much as `stores.reserveRations` —
+ * nobody goes to store food (nor scouts for it). For scenarios of the other activities, where
+ * storing for the winter would get in their way. The nuts count as picked (conservation).
+ */
+export function fillStore(world: World): void {
+  const { reserveRations } = DATA.balance.stores;
+  const unit = DATA.balance.eating.biteRations;
+  while (inStore(world) * unit < reserveRations) {
+    const spot = pileSpot(world, 'nuts');
+    if (!spot) throw new Error('В запасе нет места');
+    const laid = lay(
+      world,
+      'nuts',
+      stackOf('nuts'),
+      spot.x,
+      spot.y,
+      undefined,
+      spoilsAt('nuts', world.tick),
+    );
+    world.items.picked += laid;
+  }
+}
+
+/**
+ * Every villager knows the whole map (step 1.11b): all land explored, every bush, hazel and patch of
+ * roots seen as it is now — as if they had walked it all. For scenarios that are not about memory
+ * and scouting, where a source lies beyond sight.
+ */
+export function knowAll(world: World): void {
+  for (const villager of world.villagers.list) {
+    villager.seen.fill(1);
+    for (const object of foodObjects(world.objects)) noteFood(world, villager, object);
+  }
+}
+
 /** An open meadow `width`×`height` of grass. */
 export function meadow(width: number, height: number): string[] {
   return Array.from({ length: height }, () => '.'.repeat(width));
@@ -123,7 +169,8 @@ export function meadow(width: number, height: number): string[] {
 
 /**
  * Every rule items keep (step 1.7; a violation — a message, none — an empty list): all that lies
- * and is carried plus all that was burnt (step 1.9) and rotted (step 1.10) adds up to all that fell, one stack per tile
+ * and is carried plus all that was burnt (step 1.9) and rotted (step 1.10), eaten from the store and
+ * spoiled (step 1.11b) adds up to all that fell and was picked from bushes, one stack per tile
  * within its size, stacks only where things may lie and the pile's on its tiles, nothing on the
  * middle of the camp (the fire), a load only while the plan carries things (work, the fire).
  */
@@ -131,9 +178,10 @@ export function brokenRules(world: World): string[] {
   const broken: string[] = [];
   const all = countAll(world);
   const total = Object.values(all).reduce((sum, n) => sum + n, 0);
-  if (total + world.items.burned + world.items.rotted !== world.items.made) {
+  const { burned, rotted, eaten, spoiled, made, picked } = world.items;
+  if (total + burned + rotted + eaten + spoiled !== made + picked) {
     broken.push(
-      `предметов ${total}, сожжено ${world.items.burned} и сгнило ${world.items.rotted}, а упало ${world.items.made} (тик ${world.tick})`,
+      `предметов ${total}, сожжено ${burned}, сгнило ${rotted}, съедено ${eaten}, испортилось ${spoiled}, а упало ${made} и собрано ${picked} (тик ${world.tick})`,
     );
   }
   const tiles = new Set<string>();
@@ -170,8 +218,12 @@ export function brokenRules(world: World): string[] {
       action.kind === 'take' ||
       action.kind === 'kindle' ||
       action.kind === 'stoke' ||
+      action.kind === 'pick' ||
       (action.kind === 'walk' &&
-        (action.purpose === 'fetch' || action.purpose === 'carry' || action.purpose === 'fire'));
+        (action.purpose === 'fetch' ||
+          action.purpose === 'carry' ||
+          action.purpose === 'fire' ||
+          action.purpose === 'pick'));
     if (!hauling) broken.push(`житель ${villager.id} держит ношу, делая «${action.kind}»`);
     if (!carries(villager.plan)) {
       broken.push(`житель ${villager.id} держит ношу, а план — «${villager.plan.activity}»`);

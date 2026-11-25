@@ -12,7 +12,7 @@ import { choose } from '../src/sim/minds.ts';
 import { FULL } from '../src/sim/needs.ts';
 import { orderWalk } from '../src/sim/villagers.ts';
 import { createWorld, runTicks, stepWorld, type World } from '../src/sim/world.ts';
-import { worldOn } from './scenario.ts';
+import { knowAll, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 
@@ -139,6 +139,7 @@ describe('ночью в пути ложатся спать', () => {
     // Late afternoon: hungry and tired, it sets off for a bush a night's walk away.
     runTicks(world, tickAt(1, 200) - world.tick);
     const villager = world.villagers.list[0]!;
+    knowAll(world); // he knows the far bush (step 1.11b)
     villager.needs.food = 40;
     villager.needs.sleep = 45;
     const found = choose(world, villager);
