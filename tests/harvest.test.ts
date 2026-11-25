@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { DATA } from '../src/data/index.ts';
 import { calendarAt, TICKS_PER_YEAR, tickAt } from '../src/sim/calendar.ts';
 import type { WorldEvent } from '../src/sim/events.ts';
+import { type Considered, choose, reconsider } from '../src/sim/minds.ts';
 import { findObject } from '../src/sim/objects.ts';
 import type { Villager } from '../src/sim/villagers.ts';
 import { createWorld, runTicks, type World } from '../src/sim/world.ts';
@@ -104,5 +105,35 @@ describe('критерий: кусты восстанавливаются к с�
     }
     // Not an empty check: bushes picked bare before are among them.
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe('поиск еды по опустевшей округе не повторяется каждый миг', () => {
+  it('куст далеко — бросать начатое ради него не стоит: снова ищет не раньше чем через ai.farRetryTicks', () => {
+    const rows = ['.'.repeat(60), `${'.'.repeat(59)}B`, '.'.repeat(60)];
+    const world = worldOn(rows, [
+      { x: 1, y: 1 },
+      { x: 1, y: 2 },
+    ]);
+    world.tick = tickAt(4, 60); // summer: the crop is on the bush
+    for (const object of world.objects.list) Object.assign(object, { stock: BERRIES.rations });
+    const villager = world.villagers.list[0]!;
+    villager.needs.food = 20; // hungry, but the bush is 57 tiles away and work under way holds at 0.5
+    const searched = () => {
+      const considered: Considered[] = [];
+      expect(reconsider(world, villager, 'haul', 0.5, considered)).toBeNull();
+      return considered.find((c) => c.kind === 'eat')!.searched;
+    };
+    expect(searched()).toBe(true);
+    expect(villager.tooFar.food).toBe(world.tick);
+    world.tick += DATA.balance.ai.farRetryTicks - 1;
+    expect(searched()).toBe(false);
+    world.tick += 1;
+    expect(searched()).toBe(true);
+    // Resting, very hungry: the bush is worth the way — no memory of «too far».
+    villager.needs.food = 5;
+    world.tick += DATA.balance.ai.farRetryTicks;
+    expect(choose(world, villager).kind).toBe('eat');
+    expect(villager.tooFar.food).toBe(0);
   });
 });

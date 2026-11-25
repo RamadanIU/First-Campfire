@@ -37,6 +37,7 @@ function villager(fields: Partial<Villager> = {}): Villager {
     health: 100,
     ranOut: { food: 0, water: 0, sleep: 0, warmth: 0 },
     nowhere: { food: 0, water: 0, sleep: 0, warmth: 0 },
+    tooFar: { food: 0, water: 0, sleep: 0, warmth: 0 },
     load: null,
     noWork: 0,
     plan: { activity: 'rest', utility: 0.15, since: 0, steps: ['stroll'] },

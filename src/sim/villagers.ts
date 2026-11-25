@@ -222,6 +222,12 @@ export interface Villager {
    * again for `ai.retryTicks`.
    */
   nowhere: PerNeed<number>;
+  /**
+   * The tick of the last search that found no source near enough to beat the plan under way (step
+   * 1.11: with the near bushes picked bare such a search goes far); 0 — none. Not searched again
+   * for `ai.farRetryTicks` — the need grows slowly, the plan does not change every moment.
+   */
+  tooFar: PerNeed<number>;
   /** What it carries in its hands (step 1.7, ./items.ts): one stack at most, or nothing. */
   load: Stack | null;
   /** The tick of the last search in vain for something to carry to the pile; 0 — none. */
@@ -380,6 +386,7 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
     health: FULL,
     ranOut: perNeed(0),
     nowhere: perNeed(0),
+    tooFar: perNeed(0),
     load: null,
     noWork: 0,
     plan: restPlan(world),

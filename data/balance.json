@@ -49,6 +49,7 @@
     "jitterPercent": 10,
     "reservePoints": 25,
     "retryTicks": 400,
+    "farRetryTicks": 100,
     "haulUtility": 0.25,
     "workRetryTicks": 100,
     "keepMargin": 0.5,
