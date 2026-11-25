@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emit } from '../sim/events.ts';
-import { createWorld, runTicks } from '../sim/world.ts';
+import { createWorld, runTicks, stepWorld } from '../sim/world.ts';
 import { createFeed, FEED_SIZE } from './feed.ts';
 
 describe('лента событий', () => {
@@ -111,9 +111,13 @@ describe('лента событий', () => {
   });
 
   it('мир, где оба умерли (зерно 92): последние строки — смерти от голода', () => {
-    // Both starve by day 140 (tick 56 000): the bushes do not grow back until step 1.11.
+    // A barren world (step 1.11: bushes bear every year — here every crop is taken as it ripens):
+    // both starve by day 70 (tick 28 000).
     const world = createWorld(92);
-    runTicks(world, 56_000);
+    for (let tick = 0; tick < 28_000; tick++) {
+      for (const object of world.objects.list) object.stock = 0;
+      stepWorld(world);
+    }
     const feed = createFeed();
     feed.update(world);
     const deaths = feed.entries.filter((entry) => entry.type === 'villager_died');

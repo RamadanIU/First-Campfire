@@ -18,7 +18,7 @@ import { objectAt } from '../src/sim/objects.ts';
 import { loadWorld, saveWorld } from '../src/sim/save.ts';
 import { isStepping, orderWalk, type Villager } from '../src/sim/villagers.ts';
 import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
-import { runWarm, stepWarm, worldOn } from './scenario.ts';
+import { plenty, stepWarm, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 
@@ -28,13 +28,15 @@ function events<T extends WorldEvent['type']>(world: World, type: T) {
 
 /**
  * Run until everyone is dead or `ticks` pass; returns the ticks run. `warm` — in a mild climate
- * (`stepWarm`: maps without trees have no fire, and winter would kill first — step 1.10).
+ * (`stepWarm`: maps without trees have no fire, and winter would kill first — step 1.10); `each` —
+ * after every tick.
  */
-function runUntilAllDead(world: World, ticks: number, warm = false): number {
+function runUntilAllDead(world: World, ticks: number, warm = false, each?: () => void): number {
   let run = 0;
   while (world.villagers.list.length > 0 && run < ticks) {
     if (warm) stepWarm(world);
     else stepWorld(world);
+    each?.();
     run++;
   }
   return run;
@@ -130,7 +132,8 @@ describe('критерий: смерть от голода и от жажды �
       { x: 1, y: 2 },
       { x: 10, y: 3 },
     ]);
-    runUntilAllDead(world, 50 * DAY, true);
+    // Berries without end (step 1.11: a bush bears a handful a year) — hunger must not hasten death.
+    runUntilAllDead(world, 50 * DAY, true, () => plenty(world));
     expect(world.villagers.list).toEqual([]);
     const deaths = events(world, 'villager_died');
     expect(deaths).toHaveLength(2);
@@ -152,16 +155,33 @@ describe('критерий: смерть от голода и от жажды �
 
 describe('критерий: житель не умирает при доступной еде и воде', () => {
   it('зёрна 1…20, ягод мало: всякая смерть — только когда еды или воды в досягаемости нет', () => {
-    // Bushes do not grow back until step 1.11. With their own berries the two live some 25 years
-    // (ADR-024); here every bush has a single handful, so they eat their reach bare within weeks
-    // and die of hunger — lawfully. None may die with food and water in reach.
+    // Barren years: every bush, hazel and patch of roots bears a single handful once and never
+    // again (step 1.11 — here the yearly crop is taken away as it ripens), so the two eat their
+    // reach bare within weeks and die of hunger — lawfully. None may die with food and water in reach.
     const deaths: string[] = [];
     for (let seed = 1; seed <= 20; seed++) {
       const world = createWorld(seed);
-      for (const object of world.objects.list) {
-        if (object.stock > 0) object.stock = DATA.balance.eating.biteRations;
-      }
-      runUntilAllDead(world, 150 * DAY);
+      const bore = new Set<number>();
+      const before = new Map<number, number>();
+      const barren = () => {
+        for (const object of world.objects.list) {
+          const harvest = DATA.objects.get(object.def).harvest;
+          if (harvest === null) continue;
+          const was = before.get(object.id) ?? 0;
+          if (object.stock > was) {
+            // It ripened: the first time — a handful, ever after — nothing.
+            object.stock = bore.has(object.id)
+              ? was
+              : Math.min(object.stock, DATA.balance.eating.biteRations);
+            bore.add(object.id);
+            object.state =
+              object.stock > 0 ? DATA.objects.get(object.def).states[0]! : harvest.empty;
+          }
+          before.set(object.id, object.stock);
+        }
+      };
+      barren();
+      runUntilAllDead(world, 150 * DAY, false, barren);
       for (const death of events(world, 'villager_died')) {
         deaths.push(`${seed}: ${death.reason}`);
         expect(
@@ -190,9 +210,12 @@ describe('критерий: житель не умирает при доступ
       { x: 4, y: 4 },
       { x: 14, y: 4 },
     ]);
-    // Plenty of berries on every bush: the scales go round many times — a meal every ten days.
-    for (const object of world.objects.list) object.stock = 100;
-    runWarm(world, 150 * DAY);
+    // Plenty of berries on every bush (every tick — step 1.11: winter takes them, spring brings a
+    // handful): the scales go round many times — a meal every ten days.
+    for (let tick = 0; tick < 150 * DAY; tick++) {
+      stepWarm(world);
+      plenty(world);
+    }
     expect(world.villagers.list).toHaveLength(2);
     expect(events(world, 'need_ran_out')).toEqual([]);
     for (const v of world.villagers.list) expect(v.health).toBe(FULL);
@@ -212,6 +235,7 @@ describe('у куста и у воды', () => {
     woman.action = { kind: 'idle', until: Number.MAX_SAFE_INTEGER };
     man.needs.food = 30;
     const bush = objectAt(world.map, world.objects, 7, 1)!;
+    bush.stock = 4; // a bush loaded with berries (step 1.11: a year's crop is a handful)
     let ate = false;
     let gained = 0;
     for (let tick = 0; tick < 400 && !(ate && man.action.kind !== 'eat'); tick++) {
@@ -254,6 +278,7 @@ describe('у куста и у воды', () => {
     const near = objectAt(world.map, world.objects, 1, 0)!;
     const far = objectAt(world.map, world.objects, 12, 0)!;
     near.stock = 0.5;
+    far.stock = 4; // step 1.11: a year's crop is a handful — load the far bush to see a meal through
     man.needs.food = 10;
     for (let tick = 0; tick < 600 && man.needs.food < 90; tick++) stepWorld(world);
     expect(near).toMatchObject({ stock: 0, state: 'empty' });

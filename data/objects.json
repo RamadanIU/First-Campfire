@@ -21,7 +21,7 @@
     "states": ["ripe", "empty"],
     "place": "edge",
     "weight": 1,
-    "harvest": { "food": "berries", "rations": 4, "empty": "empty", "seasons": ["spring", "summer", "autumn"] },
+    "harvest": { "food": "berries", "rations": 0.25, "empty": "empty", "seasons": ["spring", "summer", "autumn"], "ripens": "spring" },
     "litter": null
   },
   { "id": "boulder", "name": "Валун", "sprite": "stone", "walkable": false, "states": ["still"], "place": "scatter", "weight": 1, "harvest": null, "litter": null },
@@ -35,7 +35,7 @@
     "states": ["nuts", "empty"],
     "place": "forage",
     "weight": 2,
-    "harvest": { "food": "nuts", "rations": 2, "empty": "empty", "seasons": ["autumn", "winter"] },
+    "harvest": { "food": "nuts", "rations": 1, "empty": "empty", "seasons": ["autumn", "winter"], "ripens": "autumn" },
     "litter": null
   },
   {
@@ -46,7 +46,7 @@
     "states": ["whole", "dug"],
     "place": "forage",
     "weight": 3,
-    "harvest": { "food": "roots", "rations": 1, "empty": "dug", "seasons": ["autumn", "winter"] },
+    "harvest": { "food": "roots", "rations": 0.5, "empty": "dug", "seasons": ["autumn", "winter"], "ripens": "autumn" },
     "litter": null
   },
   { "id": "campfire", "name": "Костёр", "sprite": "campfire", "walkable": false, "states": ["out", "burning"], "place": null, "weight": 0, "harvest": null, "litter": null }

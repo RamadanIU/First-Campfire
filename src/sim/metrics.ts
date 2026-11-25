@@ -12,10 +12,17 @@
  * The id becomes a CSV column: keep ids stable, never reuse one for a different meaning.
  * The order here is the order of columns and of the console table.
  */
-import { TIME } from './calendar.ts';
+import { calendarAt, type Season, TIME } from './calendar.ts';
 import type { Cause } from './events.ts';
 import { countAll, inPile } from './items.ts';
 import { count, gauge, type Metric, max, mean, min, sum } from './stats.ts';
+
+/** «весной», «летом», «осенью» — for the names of the metrics by season (berries have none in winter). */
+const SEASON_IN: Record<Exclude<Season, 'winter'>, string> = {
+  spring: 'весной',
+  summer: 'летом',
+  autumn: 'осенью',
+};
 
 export const METRICS: readonly Metric[] = [
   count('events', 'Событий', 'any'),
@@ -93,6 +100,21 @@ export const METRICS: readonly Metric[] = [
         total + (object.def === 'hazel' || object.def === 'roots' ? object.stock : 0),
       0,
     ),
+  ),
+  // The yearly crop (step 1.11): bushes bear once a year, the near ones are picked bare first.
+  count('food_visits', 'Подходов к еде (куст, лещина, коренья)', 'food_found'),
+  mean('food_trip', 'Поход за едой: от стоянки до еды, тайлов', 'food_found', (e) => e.distance),
+  // Berries ripen in spring: the near bushes are picked bare first, by autumn one goes farther.
+  ...(['spring', 'summer', 'autumn'] as const).map((season) =>
+    mean(
+      `berry_trip_${season}`,
+      `Поход за ягодами ${SEASON_IN[season]}: от стоянки, тайлов`,
+      'food_found',
+      (e) => (e.food === 'berries' && calendarAt(e.tick).season === season ? e.distance : null),
+    ),
+  ),
+  mean('forage_trip', 'Поход за орехами и кореньями: от стоянки, тайлов', 'food_found', (e) =>
+    e.food === 'berries' ? null : e.distance,
   ),
 ];
 

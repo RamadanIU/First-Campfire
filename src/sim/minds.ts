@@ -941,6 +941,12 @@ function weigh(
       note({ kind: option.id, utility: 0, searched: false, nowhere: true });
       continue;
     }
+    // Nothing near enough to be worth the way a moment ago (step 1.11): not again so soon.
+    const far = villager.tooFar[option.need];
+    if (far > 0 && world.tick - far < DATA.balance.ai.farRetryTicks) {
+      note({ kind: option.id, utility: 0, searched: false, nowhere: false });
+      continue;
+    }
     const search = searchSource(world, villager, option.need, {
       maxCost: reachFor(option.ceiling, beat()),
     });
@@ -951,6 +957,8 @@ function weigh(
         availability(search.cost) *
         mealContext(world, villager, option.need, search.cost)
       : 0;
+    // Found, but not worth the way yet, or nothing near enough to beat the plan under way.
+    villager.tooFar[option.need] = !inVain && utility <= beat() ? world.tick : 0;
     note({
       kind: option.id,
       utility,

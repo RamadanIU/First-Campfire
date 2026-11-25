@@ -196,7 +196,7 @@ describe('сцена data показывает таблицы как есть', 
       walkable: 'нет',
       states: 'ripe → empty',
       place: 'опушка · вес 1',
-      harvest: 'Ягоды · 4 рациона → empty · весна, лето, осень',
+      harvest: 'Ягоды · 0,25 рациона за год → empty · весна, лето, осень · зреет весной',
       litter: '—',
     });
     expect(rows.find((r) => r.id === 'oak')!.harvest).toBe('—');

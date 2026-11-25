@@ -222,6 +222,12 @@ export interface Villager {
    * again for `ai.retryTicks`.
    */
   nowhere: PerNeed<number>;
+  /**
+   * The tick of the last search that found no source near enough to beat the plan under way (step
+   * 1.11: with the near bushes picked bare such a search goes far); 0 — none. Not searched again
+   * for `ai.farRetryTicks` — the need grows slowly, the plan does not change every moment.
+   */
+  tooFar: PerNeed<number>;
   /** What it carries in its hands (step 1.7, ./items.ts): one stack at most, or nothing. */
   load: Stack | null;
   /** The tick of the last search in vain for something to carry to the pile; 0 — none. */
@@ -380,6 +386,7 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
     health: FULL,
     ranOut: perNeed(0),
     nowhere: perNeed(0),
+    tooFar: perNeed(0),
     load: null,
     noWork: 0,
     plan: restPlan(world),
@@ -827,6 +834,7 @@ function begin(world: World, villager: Villager, source: Source): void {
   }
   villager.facing = facingOf(source.x - villager.x, source.y - villager.y);
   const { biteTicks, sipTicks } = DATA.balance.eating;
+  if (source.kind === 'bush') foundFood(world, villager, source);
   villager.action =
     source.kind === 'bush'
       ? {
@@ -840,6 +848,29 @@ function begin(world: World, villager: Villager, source: Source): void {
           water: { x: source.x, y: source.y },
           next: world.tick + sipTicks,
         };
+}
+
+/**
+ * A villager came to food and begins to eat (step 1.11): an event with how far from the camp the
+ * source is (straight, tiles, to a tenth) — the runs' «how far one goes for food» by seasons. The
+ * cause is its decision to eat (its plan — the activity `eat`).
+ */
+function foundFood(world: World, villager: Villager, source: Extract<Source, { kind: 'bush' }>) {
+  const dx = source.x - world.camp.x;
+  const dy = source.y - world.camp.y;
+  emit(
+    world,
+    {
+      type: 'food_found',
+      villager: villager.id,
+      object: source.object,
+      food: foodOf(world, source.object),
+      x: source.x,
+      y: source.y,
+      distance: Math.round(Math.sqrt(dx * dx + dy * dy) * 10) / 10,
+    },
+    { kind: 'decision', villager: villager.id, activity: villager.plan.activity },
+  );
 }
 
 /** What the object `id` gives to eat (its harvest's resource; berries if it has none). */
