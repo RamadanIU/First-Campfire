@@ -17,8 +17,8 @@ import { FULL, fallPerTick, portionOf, satietyPerRation } from '../src/sim/needs
 import { objectAt } from '../src/sim/objects.ts';
 import { loadWorld, saveWorld } from '../src/sim/save.ts';
 import { isStepping, orderWalk, type Villager } from '../src/sim/villagers.ts';
-import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
-import { plenty, stepWarm, worldOn } from './scenario.ts';
+import { createWorld, SYSTEMS, stepWorld, type World } from '../src/sim/world.ts';
+import { knowAll, plenty, stepWarm, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 
@@ -58,7 +58,8 @@ describe('критерий: на зёрнах 1…20 двое живут 7 су�
         for (const v of world.villagers.list) {
           food = Math.min(food, v.needs.food);
           water = Math.min(water, v.needs.water);
-          if (v.action.kind === 'eat') ate.add(v.id);
+          // From a bush, or from the store at the camp (step 1.11b).
+          if (v.action.kind === 'eat' || v.action.kind === 'eat_stored') ate.add(v.id);
           if (v.action.kind === 'drink') drank.add(v.id);
         }
       }
@@ -181,7 +182,15 @@ describe('критерий: житель не умирает при доступ
         }
       };
       barren();
-      runUntilAllDead(world, 150 * DAY, false, barren);
+      // The barren rule acts as the crops ripen (right after the system `harvest`), not after the
+      // whole tick: a death at the start of a day must not see a share that is never to be.
+      for (let run = 0; world.villagers.list.length > 0 && run < 150 * DAY; run++) {
+        world.tick += 1;
+        for (const system of SYSTEMS) {
+          system.step(world);
+          if (system.id === 'harvest') barren();
+        }
+      }
       for (const death of events(world, 'villager_died')) {
         deaths.push(`${seed}: ${death.reason}`);
         expect(
@@ -192,7 +201,10 @@ describe('критерий: житель не умирает при доступ
     }
     // The check is not empty: there were deaths, all of hunger with the berries gone.
     expect(deaths.length).toBeGreaterThan(4);
-    expect(deaths.every((line) => line.endsWith('hunger'))).toBe(true);
+    expect(
+      deaths.every((line) => line.endsWith('hunger')),
+      deaths.join(' | '),
+    ).toBe(true);
   }, 60_000);
 
   it('еды вдоволь и вода рядом: 150 суток без единого нуля', () => {
@@ -330,6 +342,8 @@ describe('выбор: нужда² × доступность', () => {
     ]);
     const villager = world.villagers.list[0]!;
     villager.needs = { sleep: FULL, warmth: FULL, ...needs };
+    // He has been to the bush (step 1.11b: one goes only to food one knows of).
+    knowAll(world);
     return { world, villager };
   }
 

@@ -16,7 +16,7 @@ import { choose, coldReach } from '../src/sim/minds.ts';
 import { FULL } from '../src/sim/needs.ts';
 import { objectAt } from '../src/sim/objects.ts';
 import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
-import { brokenRules, meadow, worldOn } from './scenario.ts';
+import { brokenRules, knowAll, meadow, worldOn } from './scenario.ts';
 
 const DAY = DATA.balance.time.ticksPerDay;
 
@@ -230,6 +230,7 @@ describe('еда по сезонам: зимой ягод нет — орехи 
     ]);
     world.tick = tickAt(10, 60);
     setCrops(world); // winter: the autumn's nuts and roots (step 1.11)
+    knowAll(world); // they saw the hazel and the roots in autumn (step 1.11b)
     for (const villager of world.villagers.list) villager.needs.food = 20;
     let nuts = 0;
     let roots = 0;
