@@ -14,8 +14,14 @@ describe('листопад осенью', () => {
     for (const sprite of Object.keys(SHEDDING)) {
       const counts = times.map((t) => fallingLeaves(3, sprite, 0, 0, t).length);
       expect(Math.max(...counts), sprite).toBeLessThanOrEqual(LEAF.slots);
-      expect(counts.some((n) => n > 0), sprite).toBe(true);
-      expect(counts.some((n) => n === 0), sprite).toBe(true);
+      expect(
+        counts.some((n) => n > 0),
+        sprite,
+      ).toBe(true);
+      expect(
+        counts.some((n) => n === 0),
+        sprite,
+      ).toBe(true);
     }
   });
 

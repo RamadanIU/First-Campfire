@@ -28,7 +28,7 @@ const parts: PersonParts = {
     ..ojhKoKkokhjo..
     ..ojhsKKkkshjo..
     ..ojjoKsskojjo..
-    ..oJjjoooojjho..
+    ..oJjjossojjho..
     ..ojjo....ojho..
     ..ojho....ohho..
     ...oo......oo...

@@ -265,7 +265,7 @@ function sideArm(shoulderX: number, shoulderY: number, swing: number, ink: LimbI
   return drawLimb(W, H, { joints: [j(shoulderX, shoulderY), elbow, hand], ink, hand: true });
 }
 
-/** An arm raised to hold a load over the head (profile): up behind the head, the hand over the hair. */
+/** An arm raised to hold a load over the head (profile): up past the back of the head, the hand on top. */
 function sideArmUp(shoulderX: number, shoulderY: number, ink: LimbInk): string {
   return drawLimb(W, H, {
     joints: [
@@ -305,9 +305,10 @@ function sideFrame(parts: PersonParts, pose: SidePose): SideLayer[] {
   if (parts.backE) layers.push({ grid: parts.backE.grid, y: parts.backE.y + pose.head });
   if (pose.arms === 'down')
     layers.push({ grid: sideArm(8, shoulderY, pose.swing, NEAR), over: edge });
-  if (pose.arms === 'up') layers.push({ grid: sideArmUp(8, handsY, NEAR), over: edge });
   if (parts.shoulderE) layers.push({ grid: parts.shoulderE, y: 11 + pose.body });
   layers.push({ grid: head, y: pose.head, head: true });
+  // The near arm raised over the back of the head (not the face): the hold reads at a glance.
+  if (pose.arms === 'up') layers.push({ grid: sideArmUp(8, handsY, NEAR) });
   return layers;
 }
 
