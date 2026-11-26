@@ -1,17 +1,18 @@
 import { defineSprite } from '../sprite.ts';
 
 /*
- * A bed, 18×10: a mound of dry grass with a brown fur spread over it — where people of epoch 0
- * sleep (stage 1.5). The straw shows at the head end and around the hide.
+ * A bed, 28×12 (wide enough for a sleeper of 24, ADR-033): a mound of dry grass with a brown fur
+ * spread over it — where people of epoch 0 sleep (stage 1.5). The straw shows at the head end and
+ * around the hide.
  */
 
 export default defineSprite({
   name: 'bed',
   title: 'Лежанка',
   kind: 'object',
-  width: 18,
-  height: 10,
-  anchor: { x: 9, y: 9 },
+  width: 28,
+  height: 12,
+  anchor: { x: 14, y: 11 },
   legend: {
     o: 'bark.0',
     L: 'sand.2',
@@ -25,19 +26,21 @@ export default defineSprite({
     idle: {
       frames: [
         `
-          .....oooooooo.....
-          ...ooMFFFFFFFoo...
-          .ooMMFFFFFFEFFFoo.
-          oMLLMFFEFEEEEEEffo
-          oMMMMFFEEEEEEFEffo
-          oLLMMFFEEEFEEEEffo
-          oMMMLFFEEFEEEEFffo
-          .oMMMFFfffffffffo.
-          ..oommmmmmmmmmoo..
-          ....oooooooooo....
+          ........oooooooooooo........
+          .....oooLLLLLLLLLLLMooo.....
+          ...ooLLLLLFFFFFFFFFFFEMoo...
+          ..oLLLLLFFFFFFFEFEEFEFEEMo..
+          .oLLLLLFFFFFFFEEEEFEEEEEEMo.
+          oLLLLMFFFFFFEEEFEEEfEfEfffmo
+          oLLMMMMFEFEEEEEEEEEffffffmmo
+          .oMMMMMMMFEEfEEfEffffffmmmo.
+          ..oMMMMMMmMMffffffffmmmmmo..
+          ...ooMMmmMmMmMmmmmmmmmmoo...
+          .....ooommmmmmmmmmmmooo.....
+          ........oooooooooooo........
           `,
       ],
     },
   },
-  shadow: { width: 16, height: 3, x: 1 },
+  shadow: { width: 26, height: 4, x: 1 },
 });

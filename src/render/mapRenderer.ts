@@ -10,7 +10,8 @@
  *     drawImage per chunk; the pictures are redone when objects appear or disappear.
  *   - Objects: sorted by depth once (anchor y, then x); rebuilt only when objects appear or
  *     disappear. Each object stands on its tile, shifted by a few pixels by its id so the forest
- *     does not look planted in rows, and sways with its own phase.
+ *     does not look planted in rows; it sways in the wind's wave (`WIND`) — later to the right and
+ *     down, with a jitter of its own.
  *   - Villagers (step 1.3, ./villagers.ts): they move, so every frame they are placed between the
  *     previous and the current tick (`alpha`) and drawn among the objects by depth — behind a
  *     tree of the row below, in front of one of the row above. Their shadows go into the shadow
@@ -25,8 +26,8 @@
  *
  * Seasons (step 1.10, src/art/seasons.ts): the ground of each season is its own set of chunk layers,
  * made when the season is first shown (the two last seasons are kept); objects are drawn with the
- * season's recolouring — autumn leaves, snow on the crowns in winter; a bush out of season shows
- * its empty state; flowers do not bloom in winter. Villagers who shiver with cold
+ * season's recolouring — autumn leaves (and leaves falling from the crowns, ./leaves.ts), snow on
+ * the crowns in winter; a bush out of season shows its empty state; flowers do not bloom in winter. Villagers who shiver with cold
  * (src/sim/needs.ts `isShivering`) jitter by a pixel.
  *
  * Signs (step 1.5) — bubbles of sleep over the sleepers — are drawn separately (`drawSigns`), after
@@ -44,6 +45,7 @@ import { chunkGrid, chunkRect, groundAt } from '../sim/map.ts';
 import { defOf, type MapObject } from '../sim/objects.ts';
 import type { World } from '../sim/world.ts';
 import { type ItemPose, itemPoses, loadLook } from './items.ts';
+import { drawLeaves, fallingLeaves, SHEDDING } from './leaves.ts';
 import { drawOrder, type Placement } from './scenery.ts';
 import type { SpriteSheet } from './spriteSheet.ts';
 import { createTerrainLayer, type TerrainLayer } from './terrainLayer.ts';
@@ -85,8 +87,12 @@ export const SLEEP_BUBBLE = { sprite: 'bubble_sleep', x: -6, y: -11 } as const;
 const ANCHOR = { x: TILE_SIZE / 2, y: TILE_SIZE - 3 } as const;
 /** How far an object may stand from the middle of its tile, px (by its id). */
 const SHIFT = { x: 3, y: 2 } as const;
-/** Sway phases spread over this many ms (longer than any sway cycle). */
-const PHASES_MS = 2400;
+/**
+ * The wind runs over the map from the upper left (ADR-033, GDD §10.5 «трава колышется волнами»): an
+ * object sways this much later per tile to the right and down, ms, plus a jitter of its own — so a
+ * gust rolls over a meadow or a forest as a wave instead of every plant keeping its own time.
+ */
+export const WIND = { perTileX: 90, perTileY: 40, jitter: 300 } as const;
 
 /** Cheap deterministic hash → [0, 1). Presentation only; the simulation has its own RNG. */
 function hash(a: number, b: number): number {
@@ -114,7 +120,10 @@ export function placementOf(object: MapObject): Placement {
     sprite,
     x: object.x * TILE_SIZE + ANCHOR.x + shift(1, SHIFT.x),
     y: object.y * TILE_SIZE + ANCHOR.y + shift(2, SHIFT.y),
-    phase: Math.floor(hash(object.id, 3) * PHASES_MS),
+    phase:
+      Math.floor(hash(object.id, 3) * WIND.jitter) -
+      object.x * WIND.perTileX -
+      object.y * WIND.perTileY,
   };
 }
 
@@ -432,6 +441,24 @@ export function createMapRenderer(
         });
       }
       for (; next < figures.length; next++) drawFigure(figures[next]!);
+      // Autumn (ADR-033): leaves come off the crowns in view and flutter down.
+      if (season === 'autumn') {
+        for (const item of shown) {
+          const { object, placement } = item;
+          if (!(placement.sprite in SHEDDING)) continue;
+          // A leaf drifts up to ~16 px right of its crown and lands by the trunk.
+          if (item.left >= right || item.top >= bottom || item.bottom <= view.y) continue;
+          if (item.right + 16 <= view.x) continue;
+          const leaves = fallingLeaves(
+            object.id,
+            placement.sprite,
+            placement.x,
+            placement.y,
+            timeMs + (placement.phase ?? 0),
+          );
+          drawLeaves(ctx, leaves, view.x, view.y);
+        }
+      }
     },
   };
 }

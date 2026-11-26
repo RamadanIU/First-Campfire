@@ -39,6 +39,17 @@ export interface CrownDef {
   readonly sway: { readonly amplitude: number; readonly base: number; readonly top: number };
   /** Branches drawn over the crown (twigs poking out of it); optional full-size grid. */
   readonly over?: string;
+  /**
+   * Fruit hanging in the crown — berries, nuts: small grids with their top-left corner at x, y;
+   * each moves in the wind with the clump nearest to it.
+   */
+  readonly fruit?: readonly Fruit[];
+}
+
+export interface Fruit {
+  readonly x: number;
+  readonly y: number;
+  readonly grid: string;
 }
 
 /** A hash of integers → [0, 1). Deterministic; presentation only (the simulation has its RNG). */
@@ -148,6 +159,22 @@ export function crownFrame(def: CrownDef, frame = 0, frames = 1, glint = true): 
       }
     }
   }
+  for (const fruit of def.fruit ?? []) {
+    const nearest = clumps.reduce((best, clump) =>
+      Math.hypot(clump.x - fruit.x, clump.y - fruit.y) <
+      Math.hypot(best.x - fruit.x, best.y - fruit.y)
+        ? clump
+        : best,
+    );
+    const dx = windShift(def, nearest, frame, frames);
+    parseGrid(fruit.grid).forEach((row, r) => {
+      [...row].forEach((symbol, c) => {
+        const line = cells[fruit.y + r];
+        const x = fruit.x + c + dx;
+        if (symbol !== TRANSPARENT && line && x >= 0 && x < width) line[x] = symbol;
+      });
+    });
+  }
   if (def.over) {
     parseGrid(def.over).forEach((row, y) => {
       [...row].forEach((symbol, x) => {
@@ -161,4 +188,24 @@ export function crownFrame(def: CrownDef, frame = 0, frames = 1, glint = true): 
 /** The frames of a crown swaying in the wind: `frames` moments of one swing. */
 export function swayFrames(def: CrownDef, frames: number): string[] {
   return Array.from({ length: frames }, (_, frame) => crownFrame(def, frame, frames));
+}
+
+/**
+ * Frames of a small plant bending in the wind (grass, flowers): every row shifts aside by whole
+ * pixels — the tips by up to `amplitude`, the base not at all — over one swing of `frames`.
+ */
+export function bendFrames(text: string, frames: number, amplitude: number): string[] {
+  const rows = parseGrid(text);
+  const width = rows[0]?.length ?? 0;
+  const last = Math.max(1, rows.length - 1);
+  return Array.from({ length: frames }, (_, frame) => {
+    const swing = Math.sin((2 * Math.PI * frame) / frames);
+    return rows
+      .map((row, r) => {
+        const shift = Math.round(amplitude * ((last - r) / last) ** 1.5 * swing);
+        const moved = shift >= 0 ? '.'.repeat(shift) + row : row.slice(-shift);
+        return moved.padEnd(width, '.').slice(0, width);
+      })
+      .join('\n');
+  });
 }
