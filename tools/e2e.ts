@@ -967,6 +967,20 @@ try {
         (await text(page, '.world-panel-camera')).startsWith('масштаб ×2'),
       `меню «Мир» открывается: ${await text(page, '.world-panel-clock')}`,
     );
+
+    // Thought bubbles (step 1.12): on by default; the button in the menu and the key B switch them.
+    const bubbles = () => text(page, '.world-panel-bubbles');
+    const before = await bubbles();
+    await page.click('.world-panel-bubbles');
+    await page.waitForTimeout(150);
+    const clicked = await bubbles();
+    await page.keyboard.press('KeyB');
+    await page.waitForTimeout(150);
+    const keyed = await bubbles();
+    check(
+      before.includes('вкл') && clicked.includes('выкл') && keyed.includes('вкл'),
+      `пузырьки мыслей: «${before}» → кнопка «${clicked}» → клавиша B «${keyed}»`,
+    );
   });
 } finally {
   await browser.close();

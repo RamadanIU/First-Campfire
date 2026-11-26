@@ -27,11 +27,11 @@
  * Seasons (step 1.10, src/art/seasons.ts): the ground of each season is its own set of chunk layers,
  * made when the season is first shown (the two last seasons are kept); objects are drawn with the
  * season's recolouring — autumn leaves (and leaves falling from the crowns, ./leaves.ts), snow on
- * the crowns in winter; a bush out of season shows its empty state; flowers do not bloom in winter. Villagers who shiver with cold
- * (src/sim/needs.ts `isShivering`) jitter by a pixel.
+ * the crowns in winter; a bush out of season shows its empty state; flowers do not bloom in winter.
  *
- * Signs (step 1.5) — bubbles of sleep over the sleepers — are drawn separately (`drawSigns`), after
- * the light of the time of day: they stay readable at night.
+ * Signs — thought bubbles over the villagers (step 1.5: sleep; step 1.12: needs and intentions,
+ * ./thoughts.ts) — are drawn separately (`drawSigns`), after the light of the time of day: they
+ * stay readable at night.
  *
  * Only reads the world. Draws one canvas pixel per world pixel; scaling is the caller's.
  */
@@ -49,6 +49,7 @@ import { drawLeaves, fallingLeaves, SHEDDING } from './leaves.ts';
 import { drawOrder, type Placement } from './scenery.ts';
 import type { SpriteSheet } from './spriteSheet.ts';
 import { createTerrainLayer, type TerrainLayer } from './terrainLayer.ts';
+import { BUBBLE_SPRITE, bubbleOf } from './thoughts.ts';
 import { strideOf, type VillagerPose, villagerPose } from './villagers.ts';
 
 /** A rectangle of the world in pixels. */
@@ -72,16 +73,31 @@ export interface MapRenderer {
    */
   draw(ctx: CanvasRenderingContext2D, timeMs: number, view: PixelRect, alpha?: number): void;
   /**
-   * Signs over the world, drawn after the light of the time of day (they are not lit): a bubble of
-   * sleep over every sleeper (step 1.5). Same arguments as `draw`.
+   * Signs over the world, drawn after the light of the time of day (they are not lit): thought
+   * bubbles (./thoughts.ts) — at zoom step `signs.zoom`, none if `signs.bubbles` is false. Same
+   * other arguments as `draw`.
    */
-  drawSigns(ctx: CanvasRenderingContext2D, timeMs: number, view: PixelRect, alpha?: number): void;
+  drawSigns(
+    ctx: CanvasRenderingContext2D,
+    timeMs: number,
+    view: PixelRect,
+    alpha?: number,
+    signs?: SignOptions,
+  ): void;
   /** Where and how every villager is drawn at `alpha` (hit tests, the debug overlay). */
   villagers(alpha: number): VillagerPose[];
 }
 
 /** Where the bubble of sleep floats: its tail tip from a sleeper's anchor, px (over the head). */
 export const SLEEP_BUBBLE = { sprite: 'bubble_sleep', x: -6, y: -11 } as const;
+/** Where a thought bubble floats over one awake: its tail tip from the feet, px over the head's top. */
+export const THOUGHT_BUBBLE = { x: 3, above: 2 } as const;
+
+/** How thought bubbles are shown (step 1.12): the zoom step, and whether at all. */
+export interface SignOptions {
+  readonly zoom: number;
+  readonly bubbles: boolean;
+}
 
 /** Where on its tile an object stands: the anchor's offset from the tile's top-left corner. */
 const ANCHOR = { x: TILE_SIZE / 2, y: TILE_SIZE - 3 } as const;
@@ -335,11 +351,17 @@ export function createMapRenderer(
       }
     },
     villagers: posesAt,
-    drawSigns(ctx, timeMs, view, tickAlpha = 1) {
+    drawSigns(ctx, timeMs, view, tickAlpha = 1, signs = { zoom: 2, bubbles: true }) {
+      if (!signs.bubbles) return;
+      const byId = new Map(world.villagers.list.map((villager) => [villager.id, villager]));
       for (const person of posesAt(tickAlpha)) {
-        if (!person.asleep) continue;
-        const x = person.x + SLEEP_BUBBLE.x - view.x;
-        const y = person.y + SLEEP_BUBBLE.y - view.y;
+        const villager = byId.get(person.id);
+        if (!villager) continue;
+        const thought = bubbleOf(villager, world.tick, person.asleep, signs.zoom);
+        if (!thought) continue;
+        const x = person.x + (person.asleep ? SLEEP_BUBBLE.x : THOUGHT_BUBBLE.x) - view.x;
+        const y =
+          person.y + (person.asleep ? SLEEP_BUBBLE.y : -person.top - THOUGHT_BUBBLE.above) - view.y;
         if (
           x < -TILE_SIZE ||
           y < -TILE_SIZE ||
@@ -347,7 +369,7 @@ export function createMapRenderer(
           y > view.height + TILE_SIZE
         )
           continue;
-        sheet.draw(ctx, SLEEP_BUBBLE.sprite, x, y, { timeMs: timeMs + person.phase });
+        sheet.draw(ctx, BUBBLE_SPRITE[thought], x, y, { timeMs: timeMs + person.phase });
       }
     },
     draw(ctx, timeMs, view, tickAlpha = 1) {
@@ -386,21 +408,13 @@ export function createMapRenderer(
         const top = person.y - entry.anchor.y;
         if (left >= right || top >= bottom || left + entry.width <= view.x) return;
         if (top + entry.height <= view.y) return;
-        // Shivering with cold (step 1.10): a pixel to the side every other moment.
-        const shiver =
-          person.shivering && Math.floor((timeMs + person.phase) / 100) % 2 === 1 ? 1 : 0;
-        sheet.draw(ctx, person.sprite, person.x - view.x + shiver, person.y - view.y, {
+        sheet.draw(ctx, person.sprite, person.x - view.x, person.y - view.y, {
           animation: person.animation,
           swap: person.swap,
           ...(person.frame === null ? { timeMs: timeMs + person.phase } : { frame: person.frame }),
         });
         if (person.load) {
-          sheet.draw(
-            ctx,
-            person.load.sprite,
-            person.load.x - view.x + shiver,
-            person.load.y - view.y,
-          );
+          sheet.draw(ctx, person.load.sprite, person.load.x - view.x, person.load.y - view.y);
         }
       };
       const drawThing = (thing: ItemPose) => {

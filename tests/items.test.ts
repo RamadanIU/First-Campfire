@@ -13,6 +13,7 @@ import { tickAt } from '../src/sim/calendar.ts';
 import { hashState } from '../src/sim/hash.ts';
 import {
   countAll,
+  dropLoad,
   type Item,
   inPile,
   isPileTile,
@@ -120,6 +121,28 @@ describe('гниение (шаг 1.10): старые охапки сгниваю
     // The oldest go first: every stack left is younger than the first that rotted would be.
     expect(world.items.list.filter((item) => item.place === 'ground')[0]!.id).toBeGreaterThan(1);
   }, 30_000);
+
+  it('и ноша, брошенная на землю при пределе (шаг 1.12): самая старая стопка сгнивает, стопок не больше maxLoose', () => {
+    const { maxLoose } = DATA.balance.items;
+    const world = worldOn(meadow(20, 20));
+    const loose = () => world.items.list.filter((item) => item.place === 'ground');
+    // Fill the ground up to the limit, a branch on a tile, away from the camp's pile.
+    for (let i = 0; loose().length < maxLoose; i++) {
+      const x = i % 20;
+      const y = Math.floor(i / 20);
+      if (isPileTile(world, x, y) || itemAt(world, x, y)) continue;
+      world.items.made += lay(world, 'branches', 1, x, y);
+    }
+    const oldest = loose()[0]!.id;
+    const man = world.villagers.list[0]!;
+    man.load = { id: world.items.nextId++, resource: 'branches', count: 3, spoils: 0 };
+    world.items.made += 3;
+    dropLoad(world, man);
+    expect(loose()).toHaveLength(maxLoose);
+    expect(loose()[0]!.id).toBeGreaterThan(oldest);
+    expect(world.items.rotted).toBe(1);
+    expect(brokenRules(world)).toEqual([]);
+  });
 });
 
 describe('ноша не теряется', () => {

@@ -69,7 +69,15 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
   ];
   const CAMP = ['campfire', 'lean_to', 'branch_pile', 'bed'];
   const PEOPLE = ['man', 'woman'];
-  const BUBBLES = ['bubble_food', 'bubble_water', 'bubble_sleep', 'bubble_cold'];
+  const BUBBLES = [
+    'bubble_food',
+    'bubble_water',
+    'bubble_sleep',
+    'bubble_cold',
+    'bubble_carry',
+    'bubble_lost',
+    'bubble_fire',
+  ];
 
   it('есть всё из карточки: земля, природа, стоянка, мужчина и женщина, пузырьки', () => {
     for (const name of [...TILES, ...NATURE, ...CAMP, ...PEOPLE, ...BUBBLES]) get(name);
@@ -133,7 +141,26 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
         'sit_w',
         ...directions.map((d) => `hold_${d}`),
         ...directions.map((d) => `carry_${d}`),
+        // Step 1.12: the hungry trudge, then the actions (profile first, then front and back).
+        ...directions.map((d) => `trudge_${d}`),
+        ...[
+          'crouch',
+          'gather',
+          'eat',
+          'munch',
+          'drink',
+          'kindle',
+          'stoke',
+          'shiver',
+          'yawn',
+        ].flatMap((action) => ['e', 'w', 's', 'n'].map((d) => `${action}_${d}`)),
+        'sit_s',
+        'sit_n',
       ]);
+      for (const d of directions) {
+        expect(person.animations[`trudge_${d}`]!.frames).toHaveLength(8);
+        expect(person.animations[`yawn_${d}`]!.frames.length).toBeGreaterThanOrEqual(3);
+      }
       for (const d of directions) {
         expect(person.animations[`idle_${d}`]!.frames.length).toBeGreaterThanOrEqual(4);
         expect(person.animations[`walk_${d}`]!.frames).toHaveLength(8);
@@ -167,6 +194,10 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
       ['sit_e', 'sit_w'],
       ['hold_e', 'hold_w'],
       ['carry_e', 'carry_w'],
+      ['trudge_e', 'trudge_w'],
+      ...['crouch', 'gather', 'eat', 'munch', 'drink', 'kindle', 'stoke', 'shiver', 'yawn'].map(
+        (action) => [`${action}_e`, `${action}_w`],
+      ),
     ])(
       'влево — не зеркало вправо (%s): силуэт зеркальный, а свет остаётся слева-сверху',
       (right, left) => {
@@ -206,6 +237,8 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
         const target = PALETTE.ramps.get(to)!;
         const recoloured = rasterizeSprite(person, PALETTE, swap);
         let changed = 0;
+        // Wrong pixels (one expect for all of them: hundreds of frames since step 1.12).
+        const wrong: string[] = [];
         base.animations.forEach((animation, a) => {
           animation.frames.forEach((frame, f) => {
             const other = recoloured.animations[a]!.frames[f]!.pixels;
@@ -215,10 +248,12 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
               const opaque = frame.pixels[i + 3] === 255;
               const expected = shade >= 0 && opaque ? target[shade]! : rgb;
               if (shade >= 0 && opaque) changed++;
-              expect([other[i], other[i + 1], other[i + 2]]).toEqual([...expected]);
+              const got = [other[i], other[i + 1], other[i + 2]].join();
+              if (got !== expected.join()) wrong.push(`${animation.name}:${f}:${i / 4} ${got}`);
             }
           });
         });
+        expect(wrong.slice(0, 5), `${name}: ${from} → ${to}`).toEqual([]);
         expect(changed, `${name}: ${from} → ${to}`).toBeGreaterThan(40);
       }
     });

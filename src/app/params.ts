@@ -79,6 +79,11 @@ export interface LaunchParams {
    */
   food: { value: number; tick: number } | null;
   /**
+   * Debug (step 1.12): `warmth=10@3600` — the same for the first villager's warmth: it shivers
+   * and thinks of the cold, reproducible by URL.
+   */
+  warmth: { value: number; tick: number } | null;
+  /**
    * Debug (step 1.9): `douse=1130` — at tick 1130 of a world given by the address (on the way to
    * `ticks=`) the wood in the campfire is gone: it goes out on the next tick, reproducible by URL
    * (a dead fire at night, lighting it again in the morning).
@@ -88,6 +93,11 @@ export interface LaunchParams {
   select: number | null;
   /** The menu «Мир» of the observer's panel is open at the start (step 1.6). */
   menu: boolean;
+  /**
+   * Thought bubbles over the villagers (step 1.12): `bubbles=0` — off, `bubbles=1` — on; null —
+   * as the observer left them (key B, the menu «Мир»).
+   */
+  bubbles: boolean | null;
   /**
    * The world is given by the address (`seed=` or `ticks=`, without `slot=`): the world scene
    * shows exactly that world and neither reads nor writes the autosave.
@@ -111,9 +121,11 @@ export const DEFAULT_PARAMS: LaunchParams = {
   debug: [],
   go: null,
   food: null,
+  warmth: null,
   douse: null,
   select: null,
   menu: false,
+  bubbles: null,
   worldFromUrl: false,
 };
 
@@ -202,9 +214,11 @@ export function parseParams(search: string): LaunchParams {
     debug: parseDebug(query.get('debug')),
     go: parseTile(query.get('go')),
     food: parseFood(query.get('food')),
+    warmth: parseFood(query.get('warmth')),
     douse: parseInteger(query.get('douse'), 0),
     select: parseInteger(query.get('select'), 1),
     menu: query.get('menu') === '1',
+    bubbles: query.get('bubbles') === '0' ? false : query.get('bubbles') === '1' ? true : null,
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,
   };
 }

@@ -23,9 +23,11 @@ describe('parseParams', () => {
       debug: [],
       go: null,
       food: null,
+      warmth: null,
       douse: null,
       select: null,
       menu: false,
+      bubbles: null,
       worldFromUrl: true,
     });
   });
@@ -38,6 +40,13 @@ describe('parseParams', () => {
     expect(parseParams('?menu=1').menu).toBe(true);
     expect(parseParams('?menu=0').menu).toBe(false);
     expect(parseParams('').menu).toBe(false);
+  });
+
+  it('reads bubbles=0 / bubbles=1 (step 1.12); otherwise null — as the observer left them', () => {
+    expect(parseParams('?bubbles=0').bubbles).toBe(false);
+    expect(parseParams('?bubbles=1').bubbles).toBe(true);
+    expect(parseParams('?bubbles=x').bubbles).toBeNull();
+    expect(parseParams('').bubbles).toBeNull();
   });
 
   it('a world given by seed= or ticks= comes from the address, unless slot= prepares a save', () => {
@@ -123,6 +132,8 @@ describe('parseParams', () => {
     expect(parseParams('?food=15').food).toBeNull();
     expect(parseParams('?food=15@-3').food).toBeNull();
     expect(parseParams('').food).toBeNull();
+    expect(parseParams('?warmth=10@3600').warmth).toEqual({ value: 10, tick: 3600 });
+    expect(parseParams('?warmth=x@1').warmth).toBeNull();
   });
 
   it('reads the gallery sprite name', () => {

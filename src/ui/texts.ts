@@ -646,6 +646,8 @@ export const HUD = {
   hintSaved: 'Сохраняется сам: раз в игровой год и при закрытии вкладки.',
   toFile: 'Сохранить в файл',
   toMenu: 'В меню',
+  bubbles: (on: boolean) => `Пузырьки мыслей: ${on ? 'вкл' : 'выкл'} (B)`,
+  bubblesTitle: 'Значки над головами: чего хочет житель. Клавиша B — включить или выключить',
   warn: (text: string) => `⚠ ${text}`,
   debug: (text: string) => `Отладка: ${text}`,
 } as const;

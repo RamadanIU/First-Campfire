@@ -4,12 +4,15 @@ import { SPRITES } from '../art/registry.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { DATA } from '../data/index.ts';
 import { TIME } from '../sim/calendar.ts';
-import { LOOKS, type Villager } from '../sim/villagers.ts';
+import { LOOKS, type Villager, type VillagerAction } from '../sim/villagers.ts';
 import { linePixels, pathPixels } from './debugOverlay.ts';
+import { bubbleOf, INTENT_TICKS, intentOf, PRESSING, pressingOf } from './thoughts.ts';
 import {
+  ACTION_ANIMATION,
   FEET,
   HAIR_RAMPS,
   SKIN_RAMPS,
+  SLEEPY_POINTS,
   strideOf,
   swapOf,
   villagerPose,
@@ -86,15 +89,18 @@ describe('житель на карте', () => {
     expect(villagerPose(villager({ sex: 'female' }), 0, STRIDE).sprite).toBe('woman');
   });
 
-  it('сидит у огня (шаг 1.9): сидячая поза боком, лицом к огню; дышит', () => {
+  it('сидит у огня (шаг 1.9): лицом к огню в любую сторону (с 1.12 — и лицом к зрителю, и спиной); дышит', () => {
     const east = villagerPose(villager({ facing: 'e', action: { kind: 'sit' } }), 1, STRIDE);
     expect(east).toMatchObject({ sprite: 'man', animation: 'sit_e', frame: null, walking: false });
     const west = villagerPose(villager({ facing: 'w', action: { kind: 'sit' } }), 1, STRIDE);
     expect(west.animation).toBe('sit_w');
-    // Sideways only: facing the viewer or away, it stands (there is no such sitting pose).
+    // Step 1.12: facing the viewer or away it sits too (cross-legged).
     expect(
       villagerPose(villager({ facing: 's', action: { kind: 'sit' } }), 1, STRIDE).animation,
-    ).toBe('idle_s');
+    ).toBe('sit_s');
+    expect(
+      villagerPose(villager({ facing: 'n', action: { kind: 'sit' } }), 1, STRIDE).animation,
+    ).toBe('sit_n');
   });
 
   it('идёт: место — между прошлым и нынешним тиком по alpha, целыми пикселями', () => {
@@ -165,5 +171,142 @@ describe('отладочная линия пути', () => {
     expect(pixels).toContainEqual({ x: 24, y: 13 });
     expect(pixels.at(-1)).toEqual({ x: 24, y: 29 });
     expect(new Set(pixels.map((p) => `${p.x},${p.y}`)).size).toBe(pixels.length);
+  });
+});
+
+/** One of each action a villager can be busy with (fields that do not matter — zeros). */
+const ACTIONS: readonly VillagerAction[] = [
+  { kind: 'idle', until: 0 },
+  { kind: 'walk', purpose: 'wander', goal: { x: 0, y: 0 }, path: [], waited: 0, source: null },
+  { kind: 'eat', bush: 1, food: 'berries', next: 0 },
+  { kind: 'eat_stored', item: 1, food: 'nuts', next: 0 },
+  { kind: 'pick', bush: 1, food: 'nuts', next: 0 },
+  { kind: 'drink', water: { x: 0, y: 0 }, next: 0 },
+  { kind: 'sleep', fainted: false },
+  { kind: 'pick_up', item: 1, resource: 'branches', until: 0 },
+  { kind: 'put_down', resource: 'branches', until: 0 },
+  { kind: 'take', item: 1, resource: 'branches', until: 0 },
+  { kind: 'kindle', until: 0 },
+  { kind: 'stoke', until: 0 },
+  { kind: 'sit' },
+];
+
+describe('позы действий (шаг 1.12)', () => {
+  const sprites = new Map(SPRITES.map((sprite) => [sprite.name, sprite]));
+  const animation = (fields: Partial<Villager>, load = false) =>
+    villagerPose(villager(fields), 1, STRIDE, load ? { sprite: 'carry_bundle', y: -20 } : null)
+      .animation;
+
+  it('у каждого действия этапа своя поза, у обоих жителей, во все 4 стороны', () => {
+    for (const action of ACTIONS) {
+      for (const facing of ['s', 'n', 'e', 'w'] as const) {
+        for (const sex of ['male', 'female'] as const) {
+          const pose = villagerPose(villager({ action, facing, sex }), 1, STRIDE);
+          const def = sprites.get(pose.sprite)!;
+          expect(Object.keys(def.animations), `${action.kind} ${facing} ${sex}`).toContain(
+            pose.animation,
+          );
+        }
+      }
+    }
+    // Every action done on its place has a pose of its own, not the standing one.
+    for (const action of ACTIONS) {
+      if (action.kind === 'idle' || action.kind === 'walk' || action.kind === 'sleep') continue;
+      expect(animation({ action, facing: 'e' }), action.kind).not.toBe('idle_e');
+      expect(ACTION_ANIMATION, action.kind).toHaveProperty(action.kind);
+    }
+  });
+
+  it('ест, пьёт, собирает, приседает, разводит и подкладывает — разные позы', () => {
+    const poses = ['eat', 'drink', 'pick', 'pick_up', 'kindle', 'stoke', 'eat_stored', 'sit'].map(
+      (kind) => animation({ action: ACTIONS.find((a) => a.kind === kind)!, facing: 'e' }),
+    );
+    expect(new Set(poses).size).toBe(poses.length);
+  });
+
+  it('состояние видно по позе: голодный бредёт, замёрзший дрожит, сонный зевает', () => {
+    const walking = { x: 10, toX: 11, progress: 0.5, prevX: 10.25, facing: 'e' as const };
+    const full = { food: 100, water: 100, sleep: 100, warmth: 100 };
+    const hungry = { ...full, food: DATA.balance.movement.hungryPoints - 1 };
+    expect(animation({ ...walking, needs: full })).toBe('walk_e');
+    expect(animation({ ...walking, needs: hungry })).toBe('trudge_e');
+    // With a load the arms are up whatever the hunger.
+    expect(animation({ ...walking, needs: hungry }, true)).toBe('carry_e');
+    const cold = { ...full, warmth: DATA.balance.needs.warmth.shiverPoints - 1 };
+    expect(animation({ needs: cold })).toBe('shiver_s');
+    expect(animation({ needs: { ...full, sleep: SLEEPY_POINTS - 1 } })).toBe('yawn_s');
+    expect(animation({ needs: full })).toBe('idle_s');
+  });
+
+  it('присев, ношу не держит над головой; стоя и идя — держит', () => {
+    const look = { sprite: 'carry_bundle', y: -20 };
+    const put = villager({ action: { kind: 'put_down', resource: 'branches', until: 0 } });
+    expect(villagerPose(put, 1, STRIDE, look)).toMatchObject({ animation: 'crouch_s', load: null });
+    expect(villagerPose(villager(), 1, STRIDE, look).load).not.toBeNull();
+  });
+
+  it('макушка: стоя — 24 пикселя над ступнями, присев и сидя — ниже', () => {
+    expect(villagerPose(villager(), 1, STRIDE).top).toBe(24);
+    const squat = villager({ action: { kind: 'drink', water: { x: 0, y: 0 }, next: 0 } });
+    expect(villagerPose(squat, 1, STRIDE).top).toBeLessThan(24);
+    expect(villagerPose(villager({ action: { kind: 'sit' } }), 1, STRIDE).top).toBeLessThan(24);
+  });
+});
+
+describe('пузырьки мыслей (шаг 1.12)', () => {
+  const full = { food: 100, water: 100, sleep: 100, warmth: 100 };
+  const plan = (activity: Villager['plan']['activity'], since = 100) => ({
+    activity,
+    utility: 0.5,
+    since,
+    steps: [],
+  });
+
+  it('спящий — сон; острая нужда — её пузырёк, самая острая из нескольких', () => {
+    expect(bubbleOf(villager(), 0, true, 2)).toBe('sleep');
+    expect(pressingOf(villager({ needs: full }))).toBeNull();
+    const hungry = DATA.balance.movement.hungryPoints - 1;
+    expect(pressingOf(villager({ needs: { ...full, food: hungry } }))).toBe('food');
+    expect(pressingOf(villager({ needs: { ...full, water: PRESSING.water - 1 } }))).toBe('water');
+    expect(pressingOf(villager({ needs: { ...full, warmth: 10 } }))).toBe('cold');
+    expect(pressingOf(villager({ needs: { ...full, sleep: PRESSING.sleep - 1 } }))).toBe('sleep');
+    // Thirst at a tenth of its threshold presses more than hunger just under its own.
+    const both = { ...full, food: hungry, water: PRESSING.water / 10 };
+    expect(pressingOf(villager({ needs: both }))).toBe('water');
+  });
+
+  it('новое намерение — пузырёк на INTENT_TICKS тиков: еда, вода, несу, разведка, костёр', () => {
+    const cases = [
+      ['eat', 'food'],
+      ['drink', 'water'],
+      ['haul', 'carry'],
+      ['store', 'carry'],
+      ['scout', 'lost'],
+      ['kindle', 'fire'],
+      ['stoke', 'fire'],
+      ['warm', 'cold'],
+      ['sleep', 'sleep'],
+    ] as const;
+    for (const [activity, thought] of cases) {
+      const one = villager({ needs: full, plan: plan(activity) });
+      expect(intentOf(one, 100), activity).toBe(thought);
+      expect(intentOf(one, 100 + INTENT_TICKS - 1), activity).toBe(thought);
+      expect(intentOf(one, 100 + INTENT_TICKS), activity).toBeNull();
+    }
+    for (const activity of ['rest', 'sit', 'order'] as const) {
+      expect(intentOf(villager({ plan: plan(activity) }), 100), activity).toBeNull();
+    }
+  });
+
+  it('на дальнем зуме не загромождают: на ×0,5 — ничего, на ×1 — только нужды и сон', () => {
+    const eating = villager({ needs: full, plan: plan('eat') });
+    expect(bubbleOf(eating, 100, false, 2)).toBe('food');
+    expect(bubbleOf(eating, 100, false, 4)).toBe('food');
+    expect(bubbleOf(eating, 100, false, 1)).toBeNull();
+    expect(bubbleOf(villager(), 0, true, 1)).toBe('sleep');
+    const cold = villager({ needs: { ...full, warmth: 10 } });
+    expect(bubbleOf(cold, 0, false, 1)).toBe('cold');
+    expect(bubbleOf(cold, 0, false, 0.5)).toBeNull();
+    expect(bubbleOf(villager(), 0, true, 0.5)).toBeNull();
   });
 });
