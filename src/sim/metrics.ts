@@ -15,7 +15,9 @@
 import { calendarAt, type Season, TIME } from './calendar.ts';
 import type { Cause } from './events.ts';
 import { countAll, inPile, inStore } from './items.ts';
-import { count, gauge, type Metric, max, mean, min, sum } from './stats.ts';
+import type { Activity } from './minds.ts';
+import { count, gauge, type Metric, max, mean, min, share, sum } from './stats.ts';
+import type { Villager } from './villagers.ts';
 
 /** «весной», «летом», «осенью» — for the names of the metrics by season (berries have none in winter). */
 const SEASON_IN: Record<Exclude<Season, 'winter'>, string> = {
@@ -160,7 +162,30 @@ export const METRICS: readonly Metric[] = [
   gauge('store_eaten', 'Съедено из запаса (на конец), горстей', (world) => world.items.eaten),
   gauge('store_spoiled', 'Испортилось еды (на конец), горстей', (world) => world.items.spoiled),
   gauge('store_left', 'Еды в запасе (на конец), горстей', (world) => inStore(world)),
+  // Step 1.13: where the villagers' time goes, against the day of GDD §13.1 (`life.dayPercent`:
+  // work 55 %, sleep 30 %, food and leisure 15 %).
+  share('time_work', 'Доля времени: работа', (v) => timeOf(v) === 'work'),
+  share('time_sleep', 'Доля времени: сон', (v) => timeOf(v) === 'sleep'),
+  share('time_leisure', 'Доля времени: еда и досуг', (v) => timeOf(v) === 'leisure'),
+  share('time_meals', 'Доля времени: из неё еда и питьё (с дорогой)', (v) =>
+    MEALS.has(v.plan.activity),
+  ),
 ];
+
+/** Work — what the villager does for the camp: wood, the fire, food for the store, scouting. */
+const WORK: ReadonlySet<Activity> = new Set(['haul', 'kindle', 'stoke', 'store', 'scout']);
+/** Meals — eating and drinking, the way to the food or water included. */
+const MEALS: ReadonlySet<Activity> = new Set(['eat', 'drink']);
+
+/**
+ * What a tick of the villager's time goes to, by the day of GDD §13.1: asleep (or fainted) —
+ * sleep; at work; everything else (meals, rest, strolls, sitting and warming by the fire, the
+ * way to bed) — food and leisure.
+ */
+export function timeOf(villager: Villager): 'work' | 'sleep' | 'leisure' {
+  if (villager.action.kind === 'sleep') return 'sleep';
+  return WORK.has(villager.plan.activity) ? 'work' : 'leisure';
+}
 
 /** Is the cause of an event this rule of the world? */
 function isRule(cause: Cause, rule: string): boolean {

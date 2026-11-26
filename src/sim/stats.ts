@@ -8,7 +8,9 @@
  *   (population, size of the journal…);
  * - `count` / `sum` / `mean` / `max` / `min` — an aggregate over events of the journal:
  *   how many, their total, their average, the largest, the smallest. A filter (or a value
- *   function returning `null`) picks which events take part.
+ *   function returning `null`) picks which events take part;
+ * - `share` — a share of time: after every tick it looks at each living villager and counts
+ *   those the test picks (what part of the villagers' time went to work, to sleep…).
  *
  * The recorder observes the world from outside, like the renderer: `createStats(world, metrics)`,
  * then `recordTick(stats, world)` after every `stepWorld`. It never changes the world, so adding
@@ -21,9 +23,10 @@
  */
 import { calendarAt, TICKS_PER_YEAR } from './calendar.ts';
 import type { EventType, WorldEvent } from './events.ts';
+import type { Villager } from './villagers.ts';
 import type { World } from './world.ts';
 
-export type MetricKind = 'gauge' | 'count' | 'sum' | 'mean' | 'max' | 'min';
+export type MetricKind = 'gauge' | 'count' | 'sum' | 'mean' | 'max' | 'min' | 'share';
 
 /** An event of a given type, or any event for `'any'`. */
 export type EventOf<T extends EventType | 'any'> = T extends EventType
@@ -43,15 +46,21 @@ export interface GaugeMetric extends MetricInfo {
   read(world: World): number;
 }
 
+export interface ShareMetric extends MetricInfo {
+  kind: 'share';
+  /** Whether a living villager's tick counts: the share is picked ticks / all villager-ticks. */
+  test(villager: Villager): boolean;
+}
+
 export interface EventMetric extends MetricInfo {
-  kind: Exclude<MetricKind, 'gauge'>;
+  kind: Exclude<MetricKind, 'gauge' | 'share'>;
   /** Event type it watches; `'any'` — every event. */
   event: EventType | 'any';
   /** The event's contribution; `null` — the event does not take part. */
   value(event: WorldEvent): number | null;
 }
 
-export type Metric = GaugeMetric | EventMetric;
+export type Metric = GaugeMetric | EventMetric | ShareMetric;
 
 /** Value of a metric; `null` — nothing to report (no events for a mean, maximum, minimum). */
 export type MetricValue = number | null;
@@ -61,6 +70,14 @@ export type MetricValue = number | null;
 /** Number read from the world state at the end of each year and of the run. */
 export function gauge(id: string, name: string, read: (world: World) => number): GaugeMetric {
   return { id, name, kind: 'gauge', read };
+}
+
+/**
+ * Share of the villagers' time (0…1) the test picks: sampled after every tick over the living
+ * villagers (`null` if nobody lived through the period).
+ */
+export function share(id: string, name: string, test: (villager: Villager) => boolean): ShareMetric {
+  return { id, name, kind: 'share', test };
 }
 
 /** How many events of a type (that pass the filter) happened. */
@@ -111,9 +128,10 @@ export function checkMetrics(metrics: readonly Metric[]): string[] {
 
 /** Running aggregates of every metric over some period, by metric index. */
 interface Accumulator {
-  /** count/sum: running total; max/min: best so far; mean: running total; gauge: unused. */
+  /** count/sum: running total; max/min: best so far; mean: running total; share: picked
+   *  villager-ticks; gauge: unused. */
   value: number[];
-  /** How many events took part. */
+  /** How many events took part; share: all villager-ticks. */
   events: number[];
 }
 
@@ -149,6 +167,8 @@ export interface Stats {
   readonly metrics: readonly Metric[];
   /** Indices of the event metrics watching each event type ('any' included). */
   readonly watchers: ReadonlyMap<EventType | 'any', readonly number[]>;
+  /** Indices of the share metrics (sampled every tick). */
+  readonly sharers: readonly number[];
   /** Id of the last event already taken into account. */
   lastEventId: number;
   /** Tick at which recording started. */
@@ -183,8 +203,10 @@ export function createStats(world: World, metrics: readonly Metric[]): Stats {
     throw new Error(`Ошибки в списке показателей:\n  ${problems.join('\n  ')}`);
   }
   const watchers = new Map<EventType | 'any', number[]>();
+  const sharers: number[] = [];
   metrics.forEach((metric, index) => {
-    if (metric.kind === 'gauge') return;
+    if (metric.kind === 'share') sharers.push(index);
+    if (metric.kind === 'gauge' || metric.kind === 'share') return;
     const list = watchers.get(metric.event) ?? [];
     list.push(index);
     watchers.set(metric.event, list);
@@ -192,6 +214,7 @@ export function createStats(world: World, metrics: readonly Metric[]): Stats {
   const stats: Stats = {
     metrics,
     watchers,
+    sharers,
     lastEventId: 0,
     fromTick: world.tick,
     periodFrom: world.tick,
@@ -242,6 +265,21 @@ function takeNewEvents(stats: Stats, world: World): void {
   if (list.length > 0) stats.lastEventId = list[list.length - 1]!.id;
 }
 
+/** One tick of every share metric: each villager (the dead leave the list) counts once. */
+function sample(stats: Stats, world: World): void {
+  const villagers = world.villagers.list;
+  const all = villagers.length;
+  for (const index of stats.sharers) {
+    const metric = stats.metrics[index] as ShareMetric;
+    let picked = 0;
+    for (const villager of villagers) if (metric.test(villager)) picked++;
+    stats.total.value[index]! += picked;
+    stats.total.events[index]! += all;
+    stats.period.value[index]! += picked;
+    stats.period.events[index]! += all;
+  }
+}
+
 function results(stats: Stats, acc: Accumulator, world: World): Record<string, MetricValue> {
   const values: Record<string, MetricValue> = {};
   stats.metrics.forEach((metric, index) => {
@@ -256,6 +294,7 @@ function results(stats: Stats, acc: Accumulator, world: World): Record<string, M
         values[metric.id] = value;
         break;
       case 'mean':
+      case 'share':
         values[metric.id] = events > 0 ? value / events : null;
         break;
       case 'max':
@@ -281,6 +320,7 @@ function closePeriod(stats: Stats, world: World): void {
 /** Take into account everything the last tick did. Call after every `stepWorld`. */
 export function recordTick(stats: Stats, world: World): void {
   takeNewEvents(stats, world);
+  if (stats.sharers.length > 0) sample(stats, world);
   if (world.tick % TICKS_PER_YEAR === 0 && world.tick > stats.periodFrom) closePeriod(stats, world);
 }
 
