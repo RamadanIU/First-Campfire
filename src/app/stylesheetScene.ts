@@ -91,7 +91,7 @@ export const STILL: Placement[] = [
   { sprite: 'bed', x: 98, y: 136 },
   // Asleep (step 1.5): a man on the bed, a woman on the bare ground by the lean-to.
   { sprite: 'man_asleep', x: 98, y: 137, swap: { hair_brown: 'hair_chestnut' } },
-  { sprite: 'bubble_sleep', x: 95, y: 128, over: true },
+  { sprite: 'bubble_sleep', x: 92, y: 126, over: true },
   {
     sprite: 'woman_asleep',
     x: 104,
@@ -99,18 +99,18 @@ export const STILL: Placement[] = [
     swap: { skin_light: 'skin_olive', hair_brown: 'hair_blond' },
     phase: 400,
   },
-  { sprite: 'bubble_sleep', x: 101, y: 107, over: true, phase: 300 },
+  { sprite: 'bubble_sleep', x: 98, y: 105, over: true, phase: 300 },
   { sprite: 'branch_pile', x: 198, y: 136 },
-  // Carrying branches to the pile (step 1.7): a bundle held up over the head, skin recoloured.
+  // Carrying branches to the pile (step 1.7): a bundle held up over the head in raised hands.
   {
     sprite: 'man',
     x: 176,
     y: 116,
-    animation: 'idle_e',
+    animation: 'hold_e',
     swap: { skin_light: 'skin_brown', hair_brown: 'hair_red' },
     phase: 500,
   },
-  { sprite: 'carry_bundle', x: 176, y: 106, swap: { skin_light: 'skin_brown' }, over: true },
+  { sprite: 'carry_bundle', x: 176, y: 96, over: true },
   { sprite: 'campfire', x: 168, y: 154, animation: 'burning' },
   // The river banks.
   { sprite: 'stone', x: 238, y: 104 },
@@ -140,7 +140,7 @@ export const STILL: Placement[] = [
 ];
 
 export const MAN: Placement = { sprite: 'man', x: 148, y: 152, animation: 'idle_e' };
-export const MAN_THINKS: Placement = { sprite: 'bubble_food', x: 151, y: 131, over: true };
+export const MAN_THINKS: Placement = { sprite: 'bubble_food', x: 151, y: 126, over: true };
 /** The woman: dark hair, tanned skin — the palette swaps of the same sprite. */
 const WOMAN_LOOK = { skin_light: 'skin_tan', hair_brown: 'hair_black' } as const;
 
@@ -159,7 +159,7 @@ export function womanAt(timeMs: number): Placement[] {
     const x = Math.round(CAMP_X + ((RIVER_X - CAMP_X) * t) / ERRAND.go);
     return [
       { ...base, x, animation: 'walk_e' },
-      { sprite: 'bubble_water', x: x + 3, y: PATH_Y - 21, over: true },
+      { sprite: 'bubble_water', x: x + 3, y: PATH_Y - 26, over: true },
     ];
   }
   if (t < ERRAND.go + ERRAND.drink) return [{ ...base, x: RIVER_X, animation: 'idle_e' }];

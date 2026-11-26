@@ -1,23 +1,60 @@
-import { defineSprite } from '../sprite.ts';
+import { composeFrame, defineSprite } from '../sprite.ts';
 
 /*
- * A woman of epoch 0 asleep on the ground (step 1.5), 18×9: lying on her side, head to the left,
- * long hair, eyes shut, the rawhide dress with the necklace of shells, bare feet at the right. Two
- * frames — breathing. The colours and swaps are those of `woman`; the anchor is the middle of the
- * body on the ground.
+ * A woman of epoch 0 asleep on the ground (step 1.5; 24×12 since ADR-033): lying on her side,
+ * head to the left, eyes shut, her long hair spread behind the head, the hide dress with the
+ * necklace of shells, bare feet out at the right. Breathing: on the inhale the dress rises a pixel.
+ * The colours and swaps are those of `woman`; the anchor is the middle of the body on the ground.
  */
+
+const HEAD = `
+  ..oooo....
+  .oJJjjoo..
+  oJjjjjjhoo
+  ojjhKKKkho
+  ojhKKKKKko
+  ojhooKooho
+  ojhsKKKsho
+  ojhKKssKho
+  ojhhoKKoho
+  .ojjhooohjo
+  ..oohhhhoo.
+`;
+const BODY = `
+  ..ooooooo.....
+  .oGGGGggfo....
+  oGGgGgggffo...
+  oWwWwggggffo..
+  oGGggggggffo..
+  oGgggggffffo..
+  ofgfgfgffoKko.
+  offffffffoKkko
+  oooooooooooooo
+`;
+const W = 24;
+const H = 12;
+const exhale = composeFrame(W, H, [
+  { grid: BODY, x: 9, y: 3 },
+  { grid: HEAD, y: 1 },
+]);
+const inhale = composeFrame(W, H, [
+  { grid: BODY, x: 9, y: 3 },
+  { grid: BODY, x: 9, y: 2 },
+  { grid: HEAD, y: 1 },
+]);
 
 export default defineSprite({
   name: 'woman_asleep',
   title: 'Женщина спит',
   kind: 'character',
-  width: 18,
-  height: 9,
-  anchor: { x: 9, y: 8 },
+  width: W,
+  height: H,
+  anchor: { x: 12, y: 11 },
   legend: {
     o: 'ink.0',
     h: 'hair_brown.0',
     j: 'hair_brown.1',
+    J: 'hair_brown.2',
     s: 'skin_light.0',
     k: 'skin_light.1',
     K: 'skin_light.2',
@@ -28,35 +65,9 @@ export default defineSprite({
     W: 'bone.2',
   },
   animations: {
-    idle: {
-      frames: [
-        `
-          ..oooo............
-          .ojjjhooooooooo...
-          ojjjjhhoGGGGgggoo.
-          ojjKKkhoGgGgggggfo
-          ojKsKksoWwWwgggffo
-          ojjKKkkoGGgggggffo
-          .ohkKkooGgggggfKko
-          ..oooo.ooooooKkkko
-          .............oooo.
-          `,
-        `
-          ..oooo.ooooooo....
-          .ojjjhooGGGGggooo.
-          ojjjjhhoGGGgggggoo
-          ojjKKkhoGgGgggggfo
-          ojKsKksoWwWwgggffo
-          ojjKKkkoGGgggggffo
-          .ohkKkooGgggggfKko
-          ..oooo.ooooooKkkko
-          .............oooo.
-          `,
-      ],
-      frameMs: 900,
-    },
+    idle: { frames: [exhale, inhale], frameMs: [1100, 900] },
   },
-  shadow: { width: 16, height: 3, x: 1, y: -1 },
+  shadow: { width: 22, height: 4, x: 1, y: -1 },
   variants: {
     skin_pale: { skin_light: 'skin_pale' },
     skin_tan: { skin_light: 'skin_tan' },
