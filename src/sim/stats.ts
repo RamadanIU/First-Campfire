@@ -76,7 +76,11 @@ export function gauge(id: string, name: string, read: (world: World) => number):
  * Share of the villagers' time (0…1) the test picks: sampled after every tick over the living
  * villagers (`null` if nobody lived through the period).
  */
-export function share(id: string, name: string, test: (villager: Villager) => boolean): ShareMetric {
+export function share(
+  id: string,
+  name: string,
+  test: (villager: Villager) => boolean,
+): ShareMetric {
   return { id, name, kind: 'share', test };
 }
 

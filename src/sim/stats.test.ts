@@ -14,8 +14,8 @@ import {
   mean,
   min,
   recordTick,
-  share,
   type StatsReport,
+  share,
   sum,
 } from './stats.ts';
 import { createWorld, runTicks, stepWorld, type World } from './world.ts';
