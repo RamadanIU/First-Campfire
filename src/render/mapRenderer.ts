@@ -5,9 +5,9 @@
  *   - Ground: one ./terrainLayer.ts per chunk of the map (`chunkSize` tiles), each with its own
  *     cache of ripple states; a chunk without water has a single state.
  *   - Shadows: one layer for every object, drawn once (objects stand still) and put on the
- *     ground with the shadow colour's opacity, so overlapping shadows merge. The ground of a
- *     chunk with its shadows is cached as one picture per ripple state, so a frame costs one
- *     drawImage per chunk; the pictures are redone when objects appear or disappear.
+ *     ground with the shadow colour's opacity, so overlapping shadows merge; redone when objects
+ *     appear or disappear. (Step 1.13 removed the ground pictures with the shadows baked in: they
+ *     were made but never drawn — the villagers' and items' shadows join the layer every frame.)
  *   - Objects: sorted by depth once (anchor y, then x); rebuilt only when objects appear or
  *     disappear. Each object stands on its tile, shifted by a few pixels by its id so the forest
  *     does not look planted in rows; it sways in the wind's wave (`WIND`) — later to the right and
@@ -38,7 +38,7 @@
 
 import { objectSwap, type SeasonId } from '../art/seasons.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
-import { type TerrainArt, terrainStateTimes } from '../art/terrain.ts';
+import type { TerrainArt } from '../art/terrain.ts';
 import { DATA } from '../data/index.ts';
 import { calendarAt, TIME } from '../sim/calendar.ts';
 import { chunkGrid, chunkRect, groundAt } from '../sim/map.ts';
@@ -178,8 +178,6 @@ export function createMapRenderer(
     rect: { x: number; y: number; width: number; height: number };
     x: number;
     y: number;
-    /** Ground with shadows, by state of the ground. */
-    pictures: Map<string, HTMLCanvasElement>;
   }[] = [];
   for (let cy = 0; cy < grid.rows; cy++) {
     for (let cx = 0; cx < grid.cols; cx++) {
@@ -189,7 +187,6 @@ export function createMapRenderer(
         rect,
         x: rect.x * TILE_SIZE,
         y: rect.y * TILE_SIZE,
-        pictures: new Map(),
       });
     }
   }
@@ -215,7 +212,6 @@ export function createMapRenderer(
     }
     return layer;
   };
-  const art = arts.summer;
   const chunkPx = map.chunkSize * TILE_SIZE;
 
   const shadows = document.createElement('canvas');
@@ -316,28 +312,9 @@ export function createMapRenderer(
       sheet.drawShadow(shadowCtx, placement.sprite, placement.x, placement.y, { opaque: true });
     }
     builtFor = `${world.objects.nextId}/${objects.length}`;
-    for (const chunk of chunks) chunk.pictures.clear();
     liveCtx.clearRect(0, 0, width, height);
     liveCtx.drawImage(shadows, 0, 0);
     patched = [];
-  }
-
-  /** The ground of a chunk with the shadows on it, at `timeMs`. */
-  function pictureOf(chunk: (typeof chunks)[number], timeMs: number): HTMLCanvasElement {
-    const layer = layerOf(chunk, seasonOf(world));
-    const key = layer.stateAt(timeMs);
-    let picture = chunk.pictures.get(key);
-    if (!picture) {
-      picture = document.createElement('canvas');
-      picture.width = chunkPx;
-      picture.height = chunkPx;
-      const ctx = picture.getContext('2d')!;
-      ctx.drawImage(layer.canvasAt(timeMs), 0, 0);
-      ctx.globalAlpha = sheet.shadowOpacity;
-      ctx.drawImage(shadows, chunk.x, chunk.y, chunkPx, chunkPx, 0, 0, chunkPx, chunkPx);
-      chunk.pictures.set(key, picture);
-    }
-    return picture;
   }
 
   return {
@@ -347,7 +324,6 @@ export function createMapRenderer(
       rebuild();
       for (const chunk of chunks) {
         layerOf(chunk, seasonOf(world)).composeAll();
-        for (const timeMs of terrainStateTimes(art)) pictureOf(chunk, timeMs);
       }
     },
     villagers: posesAt,
