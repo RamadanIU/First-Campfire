@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TICKS_PER_YEAR } from './calendar.ts';
 import type { WorldEvent } from './events.ts';
 import { hashState } from './hash.ts';
-import { METRICS } from './metrics.ts';
+import { METRICS, timeOf } from './metrics.ts';
 import {
   checkMetrics,
   count,
@@ -15,6 +15,7 @@ import {
   min,
   recordTick,
   type StatsReport,
+  share,
   sum,
 } from './stats.ts';
 import { createWorld, runTicks, stepWorld, type World } from './world.ts';
@@ -183,6 +184,49 @@ describe('статистика мира', () => {
       'показатель «empty»: нет названия',
     ]);
     expect(() => createStats(createWorld(1), broken)).toThrow(/Ошибки в списке показателей/);
+  });
+});
+
+describe('доля времени (share)', () => {
+  it('считает тики жителей, выбранные проверкой, — как ручной подсчёт после каждого тика', () => {
+    const world = createWorld(3);
+    const asleep = share('asleep', 'Спят', (v) => v.action.kind === 'sleep');
+    const stats = createStats(world, [asleep]);
+    let picked = 0;
+    let all = 0;
+    for (let i = 0; i < 2 * TICKS_PER_YEAR; i++) {
+      stepWorld(world);
+      recordTick(stats, world);
+      for (const v of world.villagers.list) {
+        all++;
+        if (v.action.kind === 'sleep') picked++;
+      }
+    }
+    const report = finishStats(stats, world);
+    expect(report.totals.asleep).toBeCloseTo(picked / all, 12);
+    expect(report.years).toHaveLength(2);
+  });
+
+  it('никого нет — пусто (null), а не ноль', () => {
+    const world = createWorld(3);
+    world.villagers.list = [];
+    const { totals } = record(world, 10, [share('any', 'Все', () => true)]);
+    expect(totals.any).toBeNull();
+  });
+
+  it('работа, сон, еда и досуг делят всё время жителей без остатка (за год мира 1)', () => {
+    const world = createWorld(1);
+    const { totals } = record(world, TICKS_PER_YEAR, METRICS);
+    const work = totals.time_work ?? 0;
+    const sleep = totals.time_sleep ?? 0;
+    const leisure = totals.time_leisure ?? 0;
+    expect(work + sleep + leisure).toBeCloseTo(1, 12);
+    expect(totals.time_meals ?? 0).toBeLessThanOrEqual(leisure);
+    // Sleep is the day of GDD §13.1 (30 %); work and leisure — see docs/journal/1.13.md.
+    expect(sleep).toBeGreaterThan(0.25);
+    expect(sleep).toBeLessThan(0.35);
+    expect(work).toBeGreaterThan(0.15);
+    expect(['work', 'sleep', 'leisure']).toContain(timeOf(world.villagers.list[0]!));
   });
 });
 
