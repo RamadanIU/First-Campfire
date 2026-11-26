@@ -95,7 +95,7 @@ import {
 import { defOf, hasFood, type MapObject, objectAt } from './objects.ts';
 import { DIAGONAL, findNearest, findPath, leastCost, type Tile, tileSpeed } from './path.ts';
 import { floatRange } from './rng.ts';
-import { isGoalOfAnother, isTaken, type Source, type Villager } from './villagers.ts';
+import { isGoalOfAnother, isTaken, paceOf, type Source, type Villager } from './villagers.ts';
 import { airTemperature, isRaining } from './weather.ts';
 import type { World } from './world.ts';
 
@@ -1339,7 +1339,7 @@ function scout(
 function warmEnough(world: World, villager: Villager, goal: Tile, cost: number): boolean {
   const loss = -warmthPerTick(airTemperature(world));
   if (loss <= 0) return true;
-  const walk = (cost + leastCost(goal, world.camp)) * DATA.balance.movement.walkTicksPerTile;
+  const walk = (cost + leastCost(goal, world.camp)) * paceOf(villager);
   return villager.needs.warmth - walk * loss >= DATA.balance.ai.reservePoints;
 }
 
@@ -1496,7 +1496,7 @@ export function coldReach(world: World, villager: Villager): number {
   if (loss <= 0) return Number.POSITIVE_INFINITY;
   const spare = villager.needs.warmth - DATA.balance.ai.reservePoints;
   if (spare <= 0) return 0;
-  const budget = spare / (loss * DATA.balance.movement.walkTicksPerTile);
+  const budget = spare / (loss * paceOf(villager));
   return Math.max(0, (budget - leastCost(villager, world.camp)) / 2);
 }
 
@@ -1526,8 +1526,7 @@ function precaution(
   trip: Trip | Scout,
   considered?: Considered[],
 ): Choice | null {
-  const ticks =
-    2 * trip.cost * DATA.balance.movement.walkTicksPerTile + fillTicks(trip.need, villager);
+  const ticks = 2 * trip.cost * paceOf(villager) + fillTicks(trip.need, villager);
   for (const activity of ACTIVITIES) {
     if (activity.need === trip.need) continue;
     const now = villager.needs[activity.need];
@@ -1546,6 +1545,10 @@ function precaution(
       nowhere: false,
       current: false,
     });
+    // The trip put first is a trip too (step 1.12): in the cold, warm up before it as well — a
+    // starving one sent for far food ahead of a drink froze on the way.
+    const warm = warmFirst(world, villager, found.cost, found.goal, trip, considered);
+    if (warm) return warm;
     // It is worth what the trip it goes ahead of is worth: that is what it holds on with.
     return {
       kind: activity.id,
@@ -1555,25 +1558,39 @@ function precaution(
       ...found,
     };
   }
-  // In the cold (step 1.10): would warmth fall below the reserve on the way? Warm up at the fire first.
-  // The way back is to the fire (step 1.11b): from afar — a scout far from the camp — it is longer.
+  return warmFirst(world, villager, trip.cost, trip.goal, trip, considered);
+}
+
+/**
+ * In the cold (step 1.10): would warmth fall below the reserve on a trip of `cost` to `goal` and back
+ * to the fire (step 1.11b: from afar — a scout far from the camp — the way back is longer; step 1.12:
+ * at the villager's own pace)? Then warm up at the fire first, ahead of `trip`. Null — warm enough,
+ * or no fire to warm at.
+ */
+function warmFirst(
+  world: World,
+  villager: Villager,
+  cost: number,
+  goal: Tile,
+  trip: Trip | Scout,
+  considered?: Considered[],
+): Choice | null {
   const loss = -warmthPerTick(airTemperature(world));
-  const back = Math.max(trip.cost, leastCost(trip.goal, world.camp));
-  const walk = (trip.cost + back) * DATA.balance.movement.walkTicksPerTile;
-  if (loss > 0 && villager.needs.warmth - walk * loss < DATA.balance.ai.reservePoints) {
-    const seat = isBurning(world) ? searchSeat(world, villager) : null;
-    if (seat) {
-      considered?.push({
-        kind: 'warm',
-        utility: warmWorth(world, villager) * availability(seat.cost),
-        searched: true,
-        nowhere: false,
-        current: false,
-      });
-      return { kind: 'warm', utility: trip.utility, ahead: trip.kind, ...seat };
-    }
+  const back = Math.max(cost, leastCost(goal, world.camp));
+  const walk = (cost + back) * paceOf(villager);
+  if (loss <= 0 || villager.needs.warmth - walk * loss >= DATA.balance.ai.reservePoints) {
+    return null;
   }
-  return null;
+  const seat = isBurning(world) ? searchSeat(world, villager) : null;
+  if (!seat) return null;
+  considered?.push({
+    kind: 'warm',
+    utility: warmWorth(world, villager) * availability(seat.cost),
+    searched: true,
+    nowhere: false,
+    current: false,
+  });
+  return { kind: 'warm', utility: trip.utility, ahead: trip.kind, ...seat };
 }
 
 /** About how many ticks it takes to fill a need from where it is now (bites, sips). */

@@ -135,6 +135,18 @@ const parts: PersonParts = {
   limbEdge: 'f',
   mirrorSwap: { J: 'h', G: 'f', W: 'w' },
   hairShades: 'Jjh',
+  yawnS: {
+    grid: `
+      ..ojjoKookojjo..
+    `,
+    y: 9,
+  },
+  yawnE: {
+    grid: `
+      ..ohjjjhKKKkoo..
+    `,
+    y: 8,
+  },
 };
 
 export default defineSprite({

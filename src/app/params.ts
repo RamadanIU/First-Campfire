@@ -89,6 +89,11 @@ export interface LaunchParams {
   /** The menu «Мир» of the observer's panel is open at the start (step 1.6). */
   menu: boolean;
   /**
+   * Thought bubbles over the villagers (step 1.12): `bubbles=0` — off, `bubbles=1` — on; null —
+   * as the observer left them (key B, the menu «Мир»).
+   */
+  bubbles: boolean | null;
+  /**
    * The world is given by the address (`seed=` or `ticks=`, without `slot=`): the world scene
    * shows exactly that world and neither reads nor writes the autosave.
    */
@@ -114,6 +119,7 @@ export const DEFAULT_PARAMS: LaunchParams = {
   douse: null,
   select: null,
   menu: false,
+  bubbles: null,
   worldFromUrl: false,
 };
 
@@ -205,6 +211,7 @@ export function parseParams(search: string): LaunchParams {
     douse: parseInteger(query.get('douse'), 0),
     select: parseInteger(query.get('select'), 1),
     menu: query.get('menu') === '1',
+    bubbles: query.get('bubbles') === '0' ? false : query.get('bubbles') === '1' ? true : null,
     worldFromUrl: (seed !== null || ticks !== null) && slot === null,
   };
 }

@@ -26,6 +26,7 @@ describe('parseParams', () => {
       douse: null,
       select: null,
       menu: false,
+      bubbles: null,
       worldFromUrl: true,
     });
   });
@@ -38,6 +39,13 @@ describe('parseParams', () => {
     expect(parseParams('?menu=1').menu).toBe(true);
     expect(parseParams('?menu=0').menu).toBe(false);
     expect(parseParams('').menu).toBe(false);
+  });
+
+  it('reads bubbles=0 / bubbles=1 (step 1.12); otherwise null — as the observer left them', () => {
+    expect(parseParams('?bubbles=0').bubbles).toBe(false);
+    expect(parseParams('?bubbles=1').bubbles).toBe(true);
+    expect(parseParams('?bubbles=x').bubbles).toBeNull();
+    expect(parseParams('').bubbles).toBeNull();
   });
 
   it('a world given by seed= or ticks= comes from the address, unless slot= prepares a save', () => {

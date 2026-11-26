@@ -587,11 +587,30 @@ export function isGoalOfAnother(world: World, goal: Tile, self: Villager): boole
   );
 }
 
-/** Ticks a step onto (toX, toY) takes: its length over the speed of the ground entered. */
+/** Is the villager so hungry it trudges, a hand on the belly (step 1.12, GDD pillar 2)? */
+export function isTrudging(villager: Villager): boolean {
+  return villager.needs.food < DATA.balance.movement.hungryPoints;
+}
+
+/**
+ * Ticks a tile of grass takes this villager at its pace now: the hungry trudge slower (step 1.12).
+ * The mind reckons its trips by it (./minds.ts) — a starving one knows the way back takes longer.
+ */
+export function paceOf(villager: Villager): number {
+  const { walkTicksPerTile, hungrySpeed } = DATA.balance.movement;
+  return isTrudging(villager) ? walkTicksPerTile / hungrySpeed : walkTicksPerTile;
+}
+
+/**
+ * Ticks a step onto (toX, toY) takes: its length over the speed of the ground entered; the hungry
+ * trudge slower (`movement.hungrySpeed`, step 1.12).
+ */
 function stepTicks(world: World, villager: Villager): number {
+  const { walkTicksPerTile, hungrySpeed } = DATA.balance.movement;
   const diagonal = villager.toX !== villager.x && villager.toY !== villager.y;
-  const speed = tileSpeed(world.map, world.objects, villager.toX, villager.toY) || 1;
-  return (DATA.balance.movement.walkTicksPerTile * (diagonal ? DIAGONAL : 1)) / speed;
+  const ground = tileSpeed(world.map, world.objects, villager.toX, villager.toY) || 1;
+  const speed = isTrudging(villager) ? ground * hungrySpeed : ground;
+  return (walkTicksPerTile * (diagonal ? DIAGONAL : 1)) / speed;
 }
 
 /**

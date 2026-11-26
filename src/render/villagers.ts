@@ -19,6 +19,13 @@
  *   - Carrying (step 1.7): arms raised — `carry_*` walking, `hold_*` standing (ADR-033) — and the
  *     load's look on the hands (./items.ts `loadLook`); walking, it sinks with the hands on the low
  *     frames of the walk (../art/people.ts `walkBob`), so the bundle bobs with the steps.
+ *   - Actions (step 1.12, `animationOf`): each action has its pose (`ACTION_ANIMATION`) — squats to
+ *     pick up, put down and take wood (`crouch_*`), picks from a bush (`gather_*`), eats at it
+ *     (`eat_*`), eats from the store squatting (`munch_*`), drinks squatting at the water
+ *     (`drink_*`), lights the fire with a drill (`kindle_*`), feeds it (`stoke_*`); sits facing any
+ *     way (`sit_*`); standing cold — shivers, arms hugging the body (`shiver_*`); standing sleepy —
+ *     yawns and stretches (`yawn_*`); hungry — trudges, a hand on the belly (`trudge_*`; the
+ *     simulation slows it down too). Squatting, the load is not drawn overhead (it is at the hands).
  *   - Depth: like an object's (anchor y), a little in front of the low flowers and grass of its
  *     own tile (they stand up to 2 px lower), never in front of anything of the row below.
  */
@@ -26,8 +33,8 @@ import type { PaletteSwap } from '../art/palette.ts';
 import { WALK_FRAMES, walkBob } from '../art/people.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { isShivering } from '../sim/needs.ts';
-import type { Villager } from '../sim/villagers.ts';
-import { positionOf } from '../sim/villagers.ts';
+import type { Villager, VillagerAction } from '../sim/villagers.ts';
+import { isTrudging, positionOf } from '../sim/villagers.ts';
 import type { LoadLook } from './items.ts';
 
 /** Skin tones by the villager's `skin` index; the first is the sprite's own colours. */
@@ -73,8 +80,8 @@ export interface VillagerPose {
   readonly walking: boolean;
   /** Asleep (step 1.5): lying, with a bubble of sleep over the head. */
   readonly asleep: boolean;
-  /** Shivering with cold (step 1.10, src/sim/needs.ts `isShivering`): awake, it jitters by a pixel. */
-  readonly shivering: boolean;
+  /** How high the head's top is above the feet, px: a bubble floats over it (step 1.12). */
+  readonly top: number;
   /** What it carries (step 1.7): the load's sprite and its anchor on the raised hands; or null. */
   readonly load: {
     readonly sprite: string;
@@ -114,15 +121,41 @@ export function strideOf(
   return (frameMs * ticksPerSecond) / (walkTicksPerTile * 1000);
 }
 
+/** The pose of each action done standing on its place (step 1.12); the rest stand, walk or sleep. */
+export const ACTION_ANIMATION = {
+  eat: 'eat',
+  eat_stored: 'munch',
+  pick: 'gather',
+  drink: 'drink',
+  pick_up: 'crouch',
+  put_down: 'crouch',
+  take: 'crouch',
+  kindle: 'kindle',
+  stoke: 'stoke',
+  sit: 'sit',
+} as const satisfies Partial<Record<VillagerAction['kind'], string>>;
+
+/** Poses low to the ground: the load is at the hands, not overhead; the head is lower. */
+const SQUATTING: ReadonlySet<string> = new Set(['crouch', 'munch', 'drink', 'kindle', 'stoke']);
+/** How high the head's top is above the feet in a pose, px (bubbles float over it). */
+const TOP: Readonly<Record<string, number>> = { sit: 19, crouch: 20, munch: 20, drink: 20 };
+const STANDING_TOP = 24;
+/** Below this much sleep a villager standing idle yawns and stretches (step 1.12). */
+export const SLEEPY_POINTS = 35;
+
 /**
- * The animation of an awake villager: walking, sitting by the fire sideways (step 1.9), standing;
- * with a load — arms up, walking or standing (ADR-033).
+ * The animation of an awake villager (its name without the direction): walking — with a load arms
+ * up, hungry — trudging; an action's own pose; standing — cold: shivering, sleepy: yawning, with a
+ * load: holding it overhead.
  */
-function animationOf(villager: Villager, walking: boolean, loaded: boolean): string {
-  if (walking) return `${loaded ? 'carry' : 'walk'}_${villager.facing}`;
-  const sideways = villager.facing === 'e' || villager.facing === 'w';
-  if (villager.action.kind === 'sit' && sideways) return `sit_${villager.facing}`;
-  return `${loaded ? 'hold' : 'idle'}_${villager.facing}`;
+export function animationOf(villager: Villager, walking: boolean, loaded: boolean): string {
+  if (walking) return loaded ? 'carry' : isTrudging(villager) ? 'trudge' : 'walk';
+  const kind = villager.action.kind;
+  if (kind in ACTION_ANIMATION) return ACTION_ANIMATION[kind as keyof typeof ACTION_ANIMATION];
+  if (loaded) return 'hold';
+  if (isShivering(villager.needs.warmth)) return 'shiver';
+  if (villager.needs.sleep < SLEEPY_POINTS) return 'yawn';
+  return 'idle';
 }
 
 /**
@@ -148,20 +181,21 @@ export function villagerPose(
   const feetX = Math.round(x * TILE_SIZE + FEET.x);
   // On the low frames of the walk the body is a pixel lower, and the hands with the load.
   const bob = frame !== null ? walkBob(frame) : 0;
-  const loaded = load !== null && !asleep;
+  const pose = asleep ? 'idle' : animationOf(villager, walking, load !== null);
+  const loaded = load !== null && !asleep && !SQUATTING.has(pose);
   return {
     id: villager.id,
     sprite: asleep ? `${spriteOf(villager)}_asleep` : spriteOf(villager),
     swap: swapOf(villager),
     x: feetX,
     y: feetY,
-    animation: asleep ? 'idle' : animationOf(villager, walking, loaded),
+    animation: asleep ? 'idle' : `${pose}_${villager.facing}`,
     frame,
     phase: (villager.id * 617) % 1600,
     depth: feetY + DEPTH_AHEAD,
     walking,
     asleep,
-    shivering: !asleep && isShivering(villager.needs.warmth),
+    top: asleep ? 0 : (TOP[pose] ?? STANDING_TOP),
     load: loaded ? { sprite: load.sprite, x: feetX, y: feetY + load.y + bob } : null,
   };
 }

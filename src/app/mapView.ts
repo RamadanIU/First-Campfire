@@ -33,6 +33,7 @@ import { DEBUG, deathNote, MIND, needsLine, villagerName } from '../ui/texts.ts'
 import { bindCameraInput, type CameraControl, createCameraControl } from './cameraControl.ts';
 import { bindSpeedKeys } from './controls.ts';
 import { createGameLoop, type GameLoop } from './loop.ts';
+import { browserStorage } from './saveSlot.ts';
 import { PRESENTATION_FPS, type Scene, type SceneContext } from './scene.ts';
 
 /** The name of a resource for the words of the panel (data/resources.json). */
@@ -86,6 +87,10 @@ export interface MapView {
   camera: CameraControl;
   /** The chosen villager (its id; it may have died since), or null — none (step 1.6). */
   selected(): number | null;
+  /** Are thought bubbles shown (step 1.12)? */
+  bubbles(): boolean;
+  /** Show or hide the thought bubbles (key B, the menu «Мир»); remembered in the browser. */
+  setBubbles(on: boolean): void;
   /** Choose a villager (null — none); `select=` in the address chooses one at the start. */
   select(id: number | null): void;
   /** Fly the camera to a tile and mark the place for a few seconds (a click on the event feed). */
@@ -132,8 +137,30 @@ export interface CameraInfo {
   worldAt(x: number, y: number): { x: number; y: number };
 }
 
+/** Where the observer's choice of thought bubbles is kept (localStorage, step 1.12). */
+export const BUBBLES_KEY = 'first-campfire/bubbles';
+
+/** The observer's choice of thought bubbles: on unless turned off. */
+function readBubbles(): boolean {
+  try {
+    return browserStorage()?.getItem(BUBBLES_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 export function createMapView({ canvas, params }: SceneContext, world: World): MapView {
   const screen = canvas.getContext('2d')!;
+  // Thought bubbles (step 1.12): the address decides; otherwise as the observer left them.
+  let bubbles = params.bubbles ?? readBubbles();
+  const setBubbles = (on: boolean) => {
+    bubbles = on;
+    try {
+      browserStorage()?.setItem(BUBBLES_KEY, on ? '1' : '0');
+    } catch {
+      // A full or forbidden storage: the choice lasts until the page is closed.
+    }
+  };
   const loop = createGameLoop(() => stepWorld(world), {
     ticksPerSecond: TIME.ticksPerSecond,
     speed: params.speed,
@@ -245,6 +272,11 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
   bindCameraInput(canvas, window, camera, onTap);
   window.addEventListener('keydown', (event) => {
     if (event.code === 'Escape') selected = null;
+    // Thought bubbles on and off (step 1.12); not while typing in a field.
+    const field = event.target instanceof HTMLElement && event.target.closest('input, textarea');
+    if (event.code === 'KeyB' && !field && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      setBubbles(!bubbles);
+    }
   });
 
   /** Paths of the walking villagers, the chosen one's arrow, a refused order. */
@@ -393,7 +425,10 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
         }
         if (fire) drawSparks(ctx, fire, viewX, viewY, timeMs);
         drawFireflies(ctx, layout.view, world.fireflies.swarm, alpha);
-        renderer.drawSigns(ctx, timeMs, layout.view, alpha);
+        renderer.drawSigns(ctx, timeMs, layout.view, alpha, {
+          zoom: camera.camera.zoom,
+          bubbles,
+        });
         if (placeMark) {
           // The mark counts from the first frame drawn after the flight was asked for.
           placeMark.sinceMs ??= timeMs;
@@ -448,6 +483,8 @@ export function createMapView({ canvas, params }: SceneContext, world: World): M
     loop,
     camera,
     selected: () => selected,
+    bubbles: () => bubbles,
+    setBubbles,
     select(id) {
       selected = id;
     },

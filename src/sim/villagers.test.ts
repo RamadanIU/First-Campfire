@@ -7,6 +7,7 @@ import { DIAGONAL, tileSpeed } from './path.ts';
 import {
   facingOf,
   isStepping,
+  isTrudging,
   LOOKS,
   orderWalk,
   positionOf,
@@ -88,6 +89,25 @@ describe('ходьба', () => {
     expect(man.facing).toBe('e');
     expect(man.walked).toBeCloseTo(5, 12);
     expect(man.action.kind).toBe('idle');
+  });
+
+  it('голодный бредёт медленнее (шаг 1.12, столп 2): сытость ниже порога — скорость × hungrySpeed', () => {
+    const { hungryPoints, hungrySpeed } = DATA.balance.movement;
+    expect(hungrySpeed).toBeLessThan(1);
+    const walk = (food: number) => {
+      const world = worldOn(meadow(12, 6), [
+        { x: 1, y: 2 },
+        { x: 10, y: 5 },
+      ]);
+      const [man, woman] = world.villagers.list as [Villager, Villager];
+      hold(woman);
+      man.needs.food = food;
+      expect(isTrudging(man)).toBe(food < hungryPoints);
+      expect(orderWalk(world, man, { x: 6, y: 2 }).ok).toBe(true);
+      return ticksToReach(world, man, { x: 6, y: 2 });
+    };
+    expect(walk(hungryPoints + 5)).toBe(5 * WALK);
+    expect(walk(hungryPoints - 5)).toBe(Math.ceil((5 * WALK) / hungrySpeed - 1e-9));
   });
 
   it('по песку медленнее (скорость 0,8 — тайл за 5 тиков), наискосок — в √2 дольше', () => {

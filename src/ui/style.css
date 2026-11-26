@@ -1020,6 +1020,13 @@ button.menu-card:focus-visible {
   padding: 4px 10px;
 }
 
+/* Thought bubbles on and off (step 1.12): a switch on a line of its own. */
+.world-panel-bubbles {
+  display: block;
+  margin-top: 8px;
+  padding: 4px 10px;
+}
+
 /* The event feed: under the bar on the left. */
 .hud-feed {
   position: absolute;

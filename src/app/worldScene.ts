@@ -143,7 +143,7 @@ function iconCanvas(sheet: SpriteSheet, name: string, scale: number): HTMLCanvas
 function createWorldPanel(
   hud: Hud,
   world: World,
-  { loop, camera, debugNote, needsNotes, mindNotes }: MapView,
+  { loop, camera, debugNote, needsNotes, mindNotes, bubbles, setBubbles }: MapView,
   autosave: Autosave,
   origin: 'url' | 'saved' | 'new',
   warnings: LoadWarning[],
@@ -168,6 +168,11 @@ function createWorldPanel(
     notes.append(row);
   }
   const buttons = line('world-panel-buttons');
+  const bubblesButton = document.createElement('button');
+  bubblesButton.type = 'button';
+  bubblesButton.className = 'world-panel-bubbles';
+  bubblesButton.title = HUD.bubblesTitle;
+  bubblesButton.addEventListener('click', () => setBubbles(!bubbles()));
   const toFile = document.createElement('button');
   toFile.type = 'button';
   toFile.textContent = HUD.toFile;
@@ -175,7 +180,7 @@ function createWorldPanel(
   toMenu.type = 'button';
   toMenu.textContent = HUD.toMenu;
   buttons.append(toFile, toMenu);
-  hud.menu.append(title, date, clock, view, status, hint, notes, buttons);
+  hud.menu.append(title, date, clock, view, status, hint, notes, bubblesButton, buttons);
 
   const debugLine = line('world-panel-debug');
   const needsBlock = line('world-panel-debug world-panel-needs');
@@ -245,6 +250,8 @@ function createWorldPanel(
         speedName(loop.speed) + (loop.speed !== 0 && loop.lagging ? ` (${HUD.lagging})` : '');
       set(clock, `${HUD.tick(world.tick)} · ${speed} · ${HUD.keysSpeed}`);
       set(view, HUD.zoomLine(camera.camera.zoom));
+      set(bubblesButton, HUD.bubbles(bubbles()));
+      bubblesButton.setAttribute('aria-pressed', String(bubbles()));
       let text: string;
       if (origin === 'url') text = HUD.fromUrl(world.seed);
       else if (autosave.error !== null) text = HUD.warn(autosave.error);
