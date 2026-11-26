@@ -79,6 +79,11 @@ export interface LaunchParams {
    */
   food: { value: number; tick: number } | null;
   /**
+   * Debug (step 1.12): `warmth=10@3600` — the same for the first villager's warmth: it shivers
+   * and thinks of the cold, reproducible by URL.
+   */
+  warmth: { value: number; tick: number } | null;
+  /**
    * Debug (step 1.9): `douse=1130` — at tick 1130 of a world given by the address (on the way to
    * `ticks=`) the wood in the campfire is gone: it goes out on the next tick, reproducible by URL
    * (a dead fire at night, lighting it again in the morning).
@@ -116,6 +121,7 @@ export const DEFAULT_PARAMS: LaunchParams = {
   debug: [],
   go: null,
   food: null,
+  warmth: null,
   douse: null,
   select: null,
   menu: false,
@@ -208,6 +214,7 @@ export function parseParams(search: string): LaunchParams {
     debug: parseDebug(query.get('debug')),
     go: parseTile(query.get('go')),
     food: parseFood(query.get('food')),
+    warmth: parseFood(query.get('warmth')),
     douse: parseInteger(query.get('douse'), 0),
     select: parseInteger(query.get('select'), 1),
     menu: query.get('menu') === '1',

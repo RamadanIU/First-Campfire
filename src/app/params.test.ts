@@ -23,6 +23,7 @@ describe('parseParams', () => {
       debug: [],
       go: null,
       food: null,
+      warmth: null,
       douse: null,
       select: null,
       menu: false,
@@ -131,6 +132,8 @@ describe('parseParams', () => {
     expect(parseParams('?food=15').food).toBeNull();
     expect(parseParams('?food=15@-3').food).toBeNull();
     expect(parseParams('').food).toBeNull();
+    expect(parseParams('?warmth=10@3600').warmth).toEqual({ value: 10, tick: 3600 });
+    expect(parseParams('?warmth=x@1').warmth).toBeNull();
   });
 
   it('reads the gallery sprite name', () => {

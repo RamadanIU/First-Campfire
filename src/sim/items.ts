@@ -17,7 +17,7 @@
  *     some lie there from the start (`items.startLitter`). Branches of one place gather into one
  *     stack: nothing falls within `items.litterSpacing` of another loose stack but onto it. Not
  *     above `items.maxLoose` stacks lie loose on the map: when there are as many, the oldest of them
- *     rots away before the next falls (step 1.10) — so branches never stop falling near the camp
+ *     rots away before the next falls (step 1.10) or a load is let go on the ground (step 1.12) — so branches never stop falling near the camp
  *     while the far bank of a river is full of them.
  *
  * Conservation (docs/ARCHITECTURE.md, rule 5): `made` counts every unit that ever appeared, `burned`
@@ -344,6 +344,10 @@ export function lay(
     return placed;
   }
   const items = world.items;
+  const place = isPileTile(world, x, y) ? 'pile' : 'ground';
+  // Not above `items.maxLoose` loose stacks (step 1.10), whatever lays one: a load let go on the
+  // ground too (step 1.12) — the oldest rots away first.
+  if (place === 'ground' && looseCount(world) >= DATA.balance.items.maxLoose) rotOldest(world);
   const item: Item = {
     id: id ?? items.nextId++,
     resource,
@@ -351,7 +355,7 @@ export function lay(
     spoils,
     x,
     y,
-    place: isPileTile(world, x, y) ? 'pile' : 'ground',
+    place,
   };
   // Keep the list in the order of ids: an id from the hands may be older than the last one.
   let at = items.list.length;

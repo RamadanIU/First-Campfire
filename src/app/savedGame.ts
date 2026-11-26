@@ -37,7 +37,8 @@ export function randomSeed(random: () => number = Math.random): number {
  * The world of the address: `seed=`, fast-forwarded to `ticks=`. With `go=x,y` (debug) the first
  * villager is sent to that tile at the very start — the walk is reproducible by URL; with
  * `food=value@tick` (debug, step 1.8) its satiety becomes `value` at that tick on the way; with
- * `douse=tick` (debug, step 1.9) the campfire loses its wood at that tick and goes out.
+ * `douse=tick` (debug, step 1.9) the campfire loses its wood at that tick and goes out; with
+ * `warmth=value@tick` (debug, step 1.12) its warmth becomes `value` at that tick.
  */
 export function worldFromParams(params: LaunchParams): World {
   const world = createWorld(params.seed);
@@ -45,7 +46,16 @@ export function worldFromParams(params: LaunchParams): World {
   if (params.go && first) orderWalk(world, first, params.go);
   // Debug changes on the way to `ticks=`, in the order of their ticks.
   const changes: { tick: number; apply: () => void }[] = [];
-  const { food, douse } = params;
+  const { food, douse, warmth } = params;
+  if (warmth) {
+    changes.push({
+      tick: warmth.tick,
+      apply: () => {
+        const villager = findVillager(world, 1);
+        if (villager) villager.needs.warmth = warmth.value;
+      },
+    });
+  }
   if (food) {
     changes.push({
       tick: food.tick,

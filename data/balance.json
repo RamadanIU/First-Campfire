@@ -9,7 +9,7 @@
     "walkTicksPerTile": 4,
     "pathSearchTiles": 4096,
     "hungryPoints": 20,
-    "hungrySpeed": 0.7
+    "hungrySpeed": 0.85
   },
   "life": {
     "dayPercent": { "work": 55, "sleep": 30, "leisure": 15 },

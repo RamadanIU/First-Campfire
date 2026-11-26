@@ -140,6 +140,8 @@ const SQUATTING: ReadonlySet<string> = new Set(['crouch', 'munch', 'drink', 'kin
 /** How high the head's top is above the feet in a pose, px (bubbles float over it). */
 const TOP: Readonly<Record<string, number>> = { sit: 19, crouch: 20, munch: 20, drink: 20 };
 const STANDING_TOP = 24;
+/** A load overhead reaches this far above its anchor (a bundle 6 px, an item's icon up to 10). */
+const LOAD_TOP = 10;
 /** Below this much sleep a villager standing idle yawns and stretches (step 1.12). */
 export const SLEEPY_POINTS = 35;
 
@@ -195,7 +197,7 @@ export function villagerPose(
     depth: feetY + DEPTH_AHEAD,
     walking,
     asleep,
-    top: asleep ? 0 : (TOP[pose] ?? STANDING_TOP),
+    top: asleep ? 0 : Math.max(TOP[pose] ?? STANDING_TOP, loaded ? LOAD_TOP - load.y : 0),
     load: loaded ? { sprite: load.sprite, x: feetX, y: feetY + load.y + bob } : null,
   };
 }
