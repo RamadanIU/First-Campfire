@@ -649,6 +649,25 @@ const AHEAD_WORDS: Readonly<Record<string, string>> = {
   roam: 'прогулка',
 };
 
+/**
+ * A relation −100…+100 in a word (step 2.2): hostility, dislike, acquaintance, liking, friendship,
+ * closeness. The edges are the card's, not the game's (GDD §4.7 gives only the number).
+ */
+export function relationWord(value: number): string {
+  if (value <= -60) return 'вражда';
+  if (value <= -20) return 'неприязнь';
+  if (value < 15) return 'знакомы';
+  if (value < 40) return 'симпатия';
+  if (value < 70) return 'дружба';
+  return 'близость';
+}
+
+/** «+45», «−12», «0». */
+function signed(value: number): string {
+  if (value === 0) return '0';
+  return `${value > 0 ? '+' : '−'}${Math.abs(value)}`;
+}
+
 /** The words of the villager's card (step 2.1, GDD §11.4). */
 export const CARD = {
   /** «мужчина, 20 лет». */
@@ -672,6 +691,12 @@ export const CARD = {
   /** A relative in the list: «Любава», a dead one — «Любава †». */
   kin: (name: string, alive: boolean) => (alive ? name : `${name} †`),
   kinTitle: (name: string) => `Открыть карточку: ${name}`,
+  /** Relations with acquaintances (step 2.2, GDD §4.7). */
+  relations: 'Отношения',
+  /** A relation in words and its number: «дружба, +45». */
+  relation: (value: number) => `${relationWord(value)}, ${signed(Math.round(value))}`,
+  relationsEmpty: (sex: Sex) => `Пока ни с кем не ${bySex(sex, 'знаком', 'знакома')}`,
+  relationsMore: (n: number) => `…и ещё ${n}`,
   memory: 'Память',
   memoryEmpty: (sex: Sex) => `Пока ничего не ${bySex(sex, 'запомнил', 'запомнила')}`,
   portrait: (name: string) => `Портрет: ${name}`,

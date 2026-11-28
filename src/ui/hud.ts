@@ -28,6 +28,7 @@ import { calendarAt, type DayPhase } from '../sim/calendar.ts';
 import type { Decision } from '../sim/minds.ts';
 import type { Tile } from '../sim/path.ts';
 import { ageOf, cameFromOutside } from '../sim/profile.ts';
+import { acquaintancesOf } from '../sim/social.ts';
 import { findVillager, type Villager } from '../sim/villagers.ts';
 import { airTemperature, type WeatherKind } from '../sim/weather.ts';
 import type { World } from '../sim/world.ts';
@@ -53,6 +54,9 @@ const WEATHER_ICON: Readonly<Record<WeatherKind, string | null>> = {
   rain: 'hud_rain',
   snow: 'hud_snow',
 };
+
+/** How many acquaintances the card lists (the closest; step 2.2). */
+const RELATIONS_SHOWN = 5;
 
 /** The name of a resource for the words of the panel (data/resources.json). */
 const resourceName = (id: string): string => DATA.resources.get(id).name;
@@ -264,18 +268,20 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   close.addEventListener('click', () => source.select(null));
   const cardDoing = h('div', 'hud-card-doing');
   const cardWhy = h('div', 'hud-card-why');
-  const scales = (['food', 'water', 'sleep', 'warmth', 'health'] as const).map((key) => {
-    const fill = h('i', 'hud-scale-fill');
-    const value = h('span', 'hud-scale-value');
-    const row = h(
-      'div',
-      `hud-scale hud-scale-${key}`,
-      h('span', 'hud-scale-name', SCALE_NAME[key]),
-      h('span', 'hud-scale-bar', fill),
-      value,
-    );
-    return { key, row, fill, value };
-  });
+  const scales = (['food', 'water', 'sleep', 'warmth', 'social', 'leisure', 'health'] as const).map(
+    (key) => {
+      const fill = h('i', 'hud-scale-fill');
+      const value = h('span', 'hud-scale-value');
+      const row = h(
+        'div',
+        `hud-scale hud-scale-${key}`,
+        h('span', 'hud-scale-name', SCALE_NAME[key]),
+        h('span', 'hud-scale-bar', fill),
+        value,
+      );
+      return { key, row, fill, value };
+    },
+  );
   const cardScales = h('div', 'hud-card-scales', ...scales.map((scale) => scale.row));
   const familyRows = h('dl', 'hud-card-family');
   const cardFamily = h(
@@ -283,6 +289,13 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
     'hud-card-section',
     h('h3', 'hud-card-heading', CARD.family),
     familyRows,
+  );
+  const relationRows = h('dl', 'hud-card-family hud-card-relations');
+  const cardRelations = h(
+    'section',
+    'hud-card-section',
+    h('h3', 'hud-card-heading', CARD.relations),
+    relationRows,
   );
   const memoryList = h('ol', 'hud-card-memory');
   const cardMemory = h(
@@ -298,6 +311,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
     cardWhy,
     cardScales,
     cardFamily,
+    cardRelations,
     cardMemory,
   );
   const card = h(
@@ -383,6 +397,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   let shownId: number | null = null;
   let shownFamily = '';
   let shownMemory = '';
+  let shownRelations = '';
   let shownPortrait = '';
 
   const showFamily = (villager: Villager) => {
@@ -408,6 +423,31 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
       ),
       ...familyRow(CARD.children, ...kinList(villager.children)),
     );
+  };
+
+  /** Relations (step 2.2): the closest acquaintances first, a word and the number. */
+  const showRelations = (villager: Villager) => {
+    const known = acquaintancesOf(world, villager.id);
+    const shown = known.slice(0, RELATIONS_SHOWN);
+    const key = JSON.stringify([known.length, shown.map((r) => [r.id, Math.round(r.value)])]);
+    if (key === shownRelations) return;
+    shownRelations = key;
+    if (known.length === 0) {
+      relationRows.replaceChildren(
+        h('dd', 'hud-card-empty hud-card-wide', CARD.relationsEmpty(villager.sex)),
+      );
+      return;
+    }
+    const rows: HTMLElement[] = shown.flatMap((relation) => [
+      h('dt', '', kinButton(relation.id)),
+      h('dd', '', CARD.relation(relation.value)),
+    ]);
+    if (known.length > shown.length) {
+      rows.push(
+        h('dd', 'hud-card-empty hud-card-wide', CARD.relationsMore(known.length - shown.length)),
+      );
+    }
+    relationRows.replaceChildren(...rows);
   };
 
   const showMemory = (villager: Villager) => {
@@ -447,6 +487,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
       shownId = id;
       shownFamily = '';
       shownMemory = '';
+      shownRelations = '';
       shownPortrait = '';
     }
     const villager = findVillager(world, id);
@@ -488,6 +529,7 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
       scale.row.classList.toggle('low', value <= 20);
     }
     showFamily(villager);
+    showRelations(villager);
     showMemory(villager);
   };
 

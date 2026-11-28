@@ -1573,7 +1573,7 @@ function awaiting(
   action: Extract<VillagerAction, { kind: 'await' }>,
 ): void {
   const comer = findVillager(world, action.with);
-  if (!comer || comer.plan.activity !== 'talk' || world.tick >= action.until) {
+  if (comer?.plan.activity !== 'talk' || world.tick >= action.until) {
     fail(world, villager, 0);
     return;
   }

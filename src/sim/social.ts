@@ -130,6 +130,17 @@ export function isSeated(villager: Villager): boolean {
   return action.kind === 'sit' || (action.kind === 'talk' && action.seated);
 }
 
+/**
+ * Is it the villager's turn to speak at `tick` (step 2.2)? Talkers speak in turns of
+ * `social.turnTicks`, the one who came to talk first. Seen as gestures and a speech bubble.
+ */
+export function isSpeaking(villager: Villager, tick: number): boolean {
+  const action = villager.action;
+  if (action.kind !== 'talk') return false;
+  const turn = Math.floor(Math.max(0, tick - action.since) / DATA.balance.social.turnTicks);
+  return turn % 2 === (action.lead ? 0 : 1);
+}
+
 /** Are the two spending time together now (not talking: a talk counts by itself)? */
 function together(a: Villager, b: Villager): boolean {
   const near = DATA.balance.social.togetherTiles;

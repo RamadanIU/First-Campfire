@@ -327,8 +327,19 @@ const SIT_LEGS = `
   .....oooooo.oooo
 `;
 
-/** Sitting on the ground in profile (by the fire): knees up, the near hand on the knee. */
-function sitFrame(parts: PersonParts, exhale: number, blink: boolean): SideLayer[] {
+/** The near arm of one sitting in profile: the hand on the knee. */
+const SIT_HAND: readonly Joint[] = [j(8, 17), j(9, 19), j(11, 18)];
+
+/**
+ * Sitting on the ground in profile (by the fire): knees up, the near hand on the knee — or, talking
+ * (step 2.2), where `hand` puts it (joints from the shoulder at y 17, before the breath).
+ */
+function sitFrame(
+  parts: PersonParts,
+  exhale: number,
+  blink: boolean,
+  hand: readonly Joint[] = SIT_HAND,
+): SideLayer[] {
   const lift = 5;
   const head = blink ? recolorGrid(parts.headE, { e: 'K' }) : parts.headE;
   const edge = { o: parts.limbEdge };
@@ -340,7 +351,7 @@ function sitFrame(parts: PersonParts, exhale: number, blink: boolean): SideLayer
   if (parts.backE) layers.push({ grid: parts.backE.grid, y: parts.backE.y + lift + exhale });
   layers.push({
     grid: drawLimb(W, H, {
-      joints: [j(8, 17 + exhale), j(9, 19), j(11, 18)],
+      joints: hand.map((joint, i) => (i === 0 ? j(joint.x, joint.y + exhale) : joint)),
       ink: NEAR,
       hand: true,
     }),
@@ -847,6 +858,72 @@ function actionAnimations(parts: PersonParts): Record<string, AnimationDef> {
   const sitS = [sitPose(0, false, false), sitPose(1, false, false), sitPose(0, true, false)];
   const sitN = [sitPose(0, false, true), sitPose(1, false, true), sitPose(0, true, true)];
 
+  // Talking (step 2.2): standing, the near hand speaks — forward at the chest, higher, open — then
+  // rests while the head nods; from the front and the back one hand, then the other, rises.
+  const talkMs = [350, 300, 400, 450];
+  const talkE = [
+    actionSide(parts, { ...standSide, near: js([8, 12], [10, 14], [12, 12]), far: null }),
+    actionSide(parts, { ...standSide, near: js([8, 12], [10, 13], [12, 10]), far: null }),
+    actionSide(parts, {
+      ...standSide,
+      near: js([8, 12], [10, 14], [12, 12]),
+      far: js([7, 12], [9, 14], [11, 13]),
+    }),
+    actionSide(parts, { ...standSide, nod: 1, near: null, far: null }),
+  ];
+  const nearTalk = (hand: number, on: Arm['on']): Arm => ({
+    joints: js([2, 12], [0, 15], [1, 12 - hand]),
+    side: -1,
+    on,
+  });
+  const farTalk = (on: Arm['on']): Arm => ({
+    joints: js([13, 12], [15, 15], [14, 12]),
+    side: 1,
+    on,
+  });
+  const talkS: ActionFront[] = [
+    { ...stand, arms: [nearTalk(0, 'body')], hang: 'right' },
+    { ...stand, arms: [nearTalk(2, 'body')], hang: 'right' },
+    { ...stand, arms: [farTalk('body')], hang: 'left' },
+    { ...stand, nod: 1, arms: 'down' },
+  ];
+  const talkN: ActionFront[] = [
+    { ...stand, arms: [nearTalk(0, 'under')], hang: 'right' },
+    { ...stand, arms: [nearTalk(2, 'under')], hang: 'right' },
+    { ...stand, arms: [farTalk('under')], hang: 'left' },
+    { ...stand, arms: 'down' },
+  ];
+  // Talking sitting at the fire: the near hand leaves the knee and speaks.
+  const sitTalkE = [
+    sitFrame(parts, 0, false, js([8, 17], [10, 18], [12, 16])),
+    sitFrame(parts, 0, false, js([8, 17], [10, 17], [12, 14])),
+    sitFrame(parts, 1, false, js([8, 17], [10, 18], [12, 16])),
+    sitFrame(parts, 0, false),
+  ];
+  const sitTalkPose = (arms: readonly Arm[] | 'down', back: boolean): ActionFront => ({
+    lower: 5,
+    legs: CROSSED_LEGS,
+    legsY: 20,
+    legsOver: !back,
+    arms,
+    ...(arms === 'down' ? {} : { hang: 'right' as const }),
+  });
+  const sitHand = (hand: number, on: Arm['on']): Arm[] => [
+    { joints: js([2, 17], [0, 19], [1, 16 - hand]), side: -1, on },
+  ];
+  const sitTalkS = [
+    sitTalkPose(sitHand(0, 'body'), false),
+    sitTalkPose(sitHand(2, 'body'), false),
+    sitTalkPose(sitHand(0, 'body'), false),
+    sitTalkPose('down', false),
+  ];
+  const sitTalkN = [
+    sitTalkPose(sitHand(0, 'under'), true),
+    sitTalkPose(sitHand(2, 'under'), true),
+    sitTalkPose(sitHand(0, 'under'), true),
+    sitTalkPose('down', true),
+  ];
+
   // The hungry trudge (GDD, pillar 2): hunched, the head hanging forward, a hand on the belly;
   // the legs of the walk, the frame picked by the way walked like any walk.
   const trudgeE = SIDE_STEPS.map((steps, i) => {
@@ -900,6 +977,10 @@ function actionAnimations(parts: PersonParts): Record<string, AnimationDef> {
     ...sides('yawn', yawnE, yawnMs),
     ...fronts('yawn', yawnS, yawnN, yawnMs),
     ...fronts('sit', sitS, sitN, sitMs),
+    ...sides('talk', talkE, talkMs),
+    ...fronts('talk', talkS, talkN, talkMs),
+    ...sides('sit_talk', sitTalkE, talkMs),
+    ...fronts('sit_talk', sitTalkS, sitTalkN, talkMs),
   };
 }
 

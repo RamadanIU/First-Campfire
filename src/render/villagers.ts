@@ -14,6 +14,8 @@
  *     mid-stride (BACKLOG, 0.4).
  *   - Standing: the breathing `idle_*`, each villager with its own phase.
  *   - Sitting by the fire (step 1.9): `sit_e` / `sit_w`, facing it, breathing.
+ *   - Talking (step 2.2): the one whose turn it is gestures — `talk_*` standing, `sit_talk_*` sitting
+ *     at the fire; the listener stands (`idle_*`) or sits (`sit_*`) still. `tick` picks the turn.
  *   - Asleep (step 1.5): `man_asleep` / `woman_asleep` — lying on the ground, breathing slowly; the
  *     same swaps. A bubble of sleep floats over the head (./mapRenderer.ts, `drawSigns`).
  *   - Carrying (step 1.7): arms raised — `carry_*` walking, `hold_*` standing (ADR-033) — and the
@@ -33,6 +35,7 @@ import type { PaletteSwap } from '../art/palette.ts';
 import { WALK_FRAMES, walkBob } from '../art/people.ts';
 import { TILE_SIZE } from '../art/sprite.ts';
 import { isShivering } from '../sim/needs.ts';
+import { isSpeaking } from '../sim/social.ts';
 import type { Villager, VillagerAction } from '../sim/villagers.ts';
 import { isTrudging, positionOf } from '../sim/villagers.ts';
 import type { LoadLook } from './items.ts';
@@ -138,7 +141,13 @@ export const ACTION_ANIMATION = {
 /** Poses low to the ground: the load is at the hands, not overhead; the head is lower. */
 const SQUATTING: ReadonlySet<string> = new Set(['crouch', 'munch', 'drink', 'kindle', 'stoke']);
 /** How high the head's top is above the feet in a pose, px (bubbles float over it). */
-const TOP: Readonly<Record<string, number>> = { sit: 19, crouch: 20, munch: 20, drink: 20 };
+const TOP: Readonly<Record<string, number>> = {
+  sit: 19,
+  sit_talk: 19,
+  crouch: 20,
+  munch: 20,
+  drink: 20,
+};
 const STANDING_TOP = 24;
 /** A load overhead reaches this far above its anchor (a bundle 6 px, an item's icon up to 10). */
 const LOAD_TOP = 10;
@@ -150,9 +159,20 @@ export const SLEEPY_POINTS = 35;
  * up, hungry — trudging; an action's own pose; standing — cold: shivering, sleepy: yawning, with a
  * load: holding it overhead.
  */
-export function animationOf(villager: Villager, walking: boolean, loaded: boolean): string {
+export function animationOf(
+  villager: Villager,
+  walking: boolean,
+  loaded: boolean,
+  tick = 0,
+): string {
   if (walking) return loaded ? 'carry' : isTrudging(villager) ? 'trudge' : 'walk';
   const kind = villager.action.kind;
+  // Talking (step 2.2): the speaker gestures, the listener stands or sits still.
+  if (kind === 'talk') {
+    const seated = villager.action.seated;
+    if (isSpeaking(villager, tick)) return seated ? 'sit_talk' : 'talk';
+    return seated ? 'sit' : 'idle';
+  }
   if (kind in ACTION_ANIMATION) return ACTION_ANIMATION[kind as keyof typeof ACTION_ANIMATION];
   if (loaded) return 'hold';
   if (isShivering(villager.needs.warmth)) return 'shiver';
@@ -169,6 +189,7 @@ export function villagerPose(
   alpha: number,
   strideTiles: number,
   load: LoadLook | null = null,
+  tick = 0,
 ): VillagerPose {
   const now = positionOf(villager);
   const x = villager.prevX + (now.x - villager.prevX) * alpha;
@@ -183,7 +204,7 @@ export function villagerPose(
   const feetX = Math.round(x * TILE_SIZE + FEET.x);
   // On the low frames of the walk the body is a pixel lower, and the hands with the load.
   const bob = frame !== null ? walkBob(frame) : 0;
-  const pose = asleep ? 'idle' : animationOf(villager, walking, load !== null);
+  const pose = asleep ? 'idle' : animationOf(villager, walking, load !== null, tick);
   const loaded = load !== null && !asleep && !SQUATTING.has(pose);
   return {
     id: villager.id,

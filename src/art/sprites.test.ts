@@ -77,6 +77,7 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
     'bubble_carry',
     'bubble_lost',
     'bubble_fire',
+    'bubble_talk',
   ];
 
   it('есть всё из карточки: земля, природа, стоянка, мужчина и женщина, пузырьки', () => {
@@ -156,6 +157,10 @@ describe('набор графики эпохи 0 (шаг 0.4)', () => {
         ].flatMap((action) => ['e', 'w', 's', 'n'].map((d) => `${action}_${d}`)),
         'sit_s',
         'sit_n',
+        // Step 2.2: talking, standing and sitting at the fire (profile first, then front and back).
+        ...['talk', 'sit_talk'].flatMap((action) =>
+          ['e', 'w', 's', 'n'].map((d) => `${action}_${d}`),
+        ),
       ]);
       for (const d of directions) {
         expect(person.animations[`trudge_${d}`]!.frames).toHaveLength(8);

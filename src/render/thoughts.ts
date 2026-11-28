@@ -3,6 +3,8 @@
  * wants. A pure function of the villager and the tick — the same picture for the same address.
  *
  *   - Asleep — the bubble of sleep (step 1.5), always.
+ *   - Talking (step 2.2) — a speech bubble over the one whose turn it is to speak (they take turns,
+ *     ../sim/social.ts `isSpeaking`); at ×1 and nearer.
  *   - A pressing need — its bubble for as long as it presses: hunger (the trudge,
  *     `movement.hungryPoints`), thirst, cold (shivering, `needs.warmth.shiverPoints`), sleepiness;
  *     the most pressing one if several.
@@ -15,9 +17,10 @@
 import { DATA } from '../data/index.ts';
 import type { Activity } from '../sim/minds.ts';
 import { isShivering } from '../sim/needs.ts';
+import { isSpeaking } from '../sim/social.ts';
 import { isTrudging, type Villager } from '../sim/villagers.ts';
 
-export type Thought = 'food' | 'water' | 'sleep' | 'cold' | 'carry' | 'lost' | 'fire';
+export type Thought = 'food' | 'water' | 'sleep' | 'cold' | 'carry' | 'lost' | 'fire' | 'talk';
 
 /** The sprite of each thought (src/art/sprites/bubble_*.ts). */
 export const BUBBLE_SPRITE: Readonly<Record<Thought, string>> = {
@@ -28,6 +31,7 @@ export const BUBBLE_SPRITE: Readonly<Record<Thought, string>> = {
   carry: 'bubble_carry',
   lost: 'bubble_lost',
   fire: 'bubble_fire',
+  talk: 'bubble_talk',
 };
 
 /** How long a new intention shows over the head, ticks (5 s at ×1). */
@@ -84,6 +88,8 @@ export function bubbleOf(
 ): Thought | null {
   if (zoom < 1) return null;
   if (asleep) return 'sleep';
+  // Talking (step 2.2): the one whose turn it is to speak.
+  if (isSpeaking(villager, tick)) return 'talk';
   const pressing = pressingOf(villager);
   if (pressing) return pressing;
   return zoom >= 2 ? intentOf(villager, tick) : null;

@@ -1235,6 +1235,11 @@ button.menu-card:focus-visible {
   margin: 0;
 }
 
+/* A line across both columns (step 2.2: «no acquaintances yet»). */
+.hud-card-family .hud-card-wide {
+  grid-column: 1 / -1;
+}
+
 .observer .hud-kin {
   padding: 0 3px;
   color: #ffe48f;
@@ -1305,6 +1310,14 @@ button.menu-card:focus-visible {
 
 .hud-scale-warmth .hud-scale-fill {
   background: #e8692c;
+}
+
+.hud-scale-social .hud-scale-fill {
+  background: #c58bd6;
+}
+
+.hud-scale-leisure .hud-scale-fill {
+  background: #e6c24a;
 }
 
 .hud-scale-health .hud-scale-fill {
