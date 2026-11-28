@@ -205,6 +205,8 @@ const STEPS_OF: Record<Activity, readonly string[]> = {
   warm: ['walk:sit', 'sit'],
   scout: ['walk:scout'],
   store: ['walk:pick', 'pick', 'walk:carry', 'put_down'],
+  talk: ['walk:talk', 'await', 'talk'],
+  roam: ['walk:roam', 'gaze'],
   order: ['walk:order'],
 };
 

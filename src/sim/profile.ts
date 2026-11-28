@@ -11,7 +11,8 @@
  * - Memory: the last `life.memorySize` significant events (GDD §4.1: 5–10). Significant are the
  *   rare events that change a life or are remembered for ever (`MEMORABLE` below): coming to the
  *   world, lighting the first fire of the camp, fainting from want of sleep, nearly dying of
- *   hunger, thirst or cold (health below `life.nearDeathHealth`), the death of another villager.
+ *   hunger, thirst or cold (health below `life.nearDeathHealth`), the death of a relative or of an
+ *   acquaintance (step 2.2: of someone one knew — ./social.ts).
  *   The everyday — eating (even for the first time), drinking, sleeping, work, the weather, a need
  *   at zero — is not remembered.
  *
@@ -27,6 +28,7 @@ import { pickName } from './names.ts';
 import type { Deadly } from './needs.ts';
 import type { Tile } from './path.ts';
 import { intRange } from './rng.ts';
+import { forget, knows } from './social.ts';
 import type { Sex, Villager } from './villagers.ts';
 import type { System, World } from './world.ts';
 
@@ -105,8 +107,21 @@ export function addMemory(villager: Villager, memory: Memory): void {
   if (extra > 0) villager.memories.splice(0, extra);
 }
 
-/** Whom an event is memorable for — `null`: everyone alive — and what they remember. */
-type Remembered = { who: number | null; memory: Memory };
+/**
+ * Whom an event is memorable for — a villager by id; `null` — everyone alive; `close` — the kin and
+ * the acquaintances of that villager (step 2.2: a death) — and what they remember.
+ */
+type Remembered = { who: number | null; close?: number; memory: Memory };
+
+/** Is `id` kin of the villager: mother, father, spouse, child? */
+export function isKin(villager: Villager, id: number): boolean {
+  return (
+    villager.mother === id ||
+    villager.father === id ||
+    villager.spouse === id ||
+    villager.children.includes(id)
+  );
+}
 
 /**
  * The rule of memory: which events of the journal are significant and for whom (see the comment
@@ -126,6 +141,7 @@ export function memorable(event: WorldEvent): Remembered | null {
     case 'villager_died':
       return {
         who: null,
+        close: event.villager,
         memory: {
           ...at,
           kind: 'loss',
@@ -148,11 +164,21 @@ export function recallTick(world: World): void {
   for (let i = first; i < list.length; i++) {
     const remembered = memorable(list[i]!);
     if (!remembered) continue;
+    const { who, close } = remembered;
     for (const villager of world.villagers.list) {
-      if (remembered.who !== null && villager.id !== remembered.who) continue;
+      if (who !== null && villager.id !== who) continue;
+      // Step 2.2: a death is remembered by the kin and the acquaintances only.
+      if (close !== undefined && !isKin(villager, close) && !knows(world, villager.id, close)) {
+        continue;
+      }
       // The dead are gone from the list; one does not mourn oneself.
       addMemory(villager, { ...remembered.memory });
     }
+  }
+  // Once mourned, the relations of the dead are forgotten (./social.ts).
+  for (let i = first; i < list.length; i++) {
+    const event = list[i]!;
+    if (event.type === 'villager_died') forget(world, event.villager);
   }
 }
 

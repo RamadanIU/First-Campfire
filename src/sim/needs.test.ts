@@ -56,15 +56,18 @@ describe('тик жизни', () => {
       health = result.health;
       for (const need of result.ranOut) ranOut.push(`${need}@${tick}`);
     }
-    // Sleep (never slept) empties at 600 ticks, water at 6 000, food at 10 000 (± rounding).
-    expect(ranOut).toHaveLength(3);
+    // Sleep (never slept) empties at 600 ticks, company (step 2.2) at 1 600, leisure at 2 000,
+    // water at 6 000, food at 10 000 (± rounding).
+    expect(ranOut).toHaveLength(5);
     expect(ranOut[0]).toMatch(/^sleep@(599|600|601)$/);
-    expect(Number(ranOut[1]!.split('@')[1])).toBeGreaterThanOrEqual(5999);
-    expect(Number(ranOut[1]!.split('@')[1])).toBeLessThanOrEqual(6001);
-    expect(ranOut[1]).toMatch(/^water@/);
-    expect(ranOut[2]).toMatch(/^food@/);
+    expect(ranOut[1]).toMatch(/^social@(1599|1600|1601)$/);
+    expect(ranOut[2]).toMatch(/^leisure@(1999|2000|2001)$/);
+    expect(Number(ranOut[3]!.split('@')[1])).toBeGreaterThanOrEqual(5999);
+    expect(Number(ranOut[3]!.split('@')[1])).toBeLessThanOrEqual(6001);
+    expect(ranOut[3]).toMatch(/^water@/);
+    expect(ranOut[4]).toMatch(/^food@/);
     // Warmth (step 1.10) follows the temperature, comfortable by default: it stays full.
-    expect(needs).toEqual({ food: 0, water: 0, sleep: 0, warmth: FULL });
+    expect(needs).toEqual({ food: 0, water: 0, sleep: 0, warmth: FULL, social: 0, leisure: 0 });
     // Sleep at zero harms nothing: only thirst and hunger did.
     // Thirst has harmed health for ≈ 5 000 ticks, hunger for ≈ 1 000.
     expect(health).toBeCloseTo(FULL - 5000 * harmPerTick('water') - 1000 * harmPerTick('food'), 0);

@@ -44,11 +44,11 @@ function villager(fields: Partial<Villager> = {}): Villager {
     facing: 's',
     walked: 0,
     action: { kind: 'idle', until: 0 },
-    needs: { food: 100, water: 100, sleep: 100, warmth: 100 },
+    needs: { food: 100, water: 100, sleep: 100, warmth: 100, social: 100, leisure: 100 },
     health: 100,
-    ranOut: { food: 0, water: 0, sleep: 0, warmth: 0 },
-    nowhere: { food: 0, water: 0, sleep: 0, warmth: 0 },
-    tooFar: { food: 0, water: 0, sleep: 0, warmth: 0 },
+    ranOut: { food: 0, water: 0, sleep: 0, warmth: 0, social: 0, leisure: 0 },
+    nowhere: { food: 0, water: 0, sleep: 0, warmth: 0, social: 0, leisure: 0 },
+    tooFar: { food: 0, water: 0, sleep: 0, warmth: 0, social: 0, leisure: 0 },
     load: null,
     noWork: 0,
     noStore: 0,
@@ -234,7 +234,7 @@ describe('позы действий (шаг 1.12)', () => {
 
   it('состояние видно по позе: голодный бредёт, замёрзший дрожит, сонный зевает', () => {
     const walking = { x: 10, toX: 11, progress: 0.5, prevX: 10.25, facing: 'e' as const };
-    const full = { food: 100, water: 100, sleep: 100, warmth: 100 };
+    const full = { food: 100, water: 100, sleep: 100, warmth: 100, social: 100, leisure: 100 };
     const hungry = { ...full, food: DATA.balance.movement.hungryPoints - 1 };
     expect(animation({ ...walking, needs: full })).toBe('walk_e');
     expect(animation({ ...walking, needs: hungry })).toBe('trudge_e');
@@ -262,7 +262,7 @@ describe('позы действий (шаг 1.12)', () => {
 });
 
 describe('пузырьки мыслей (шаг 1.12)', () => {
-  const full = { food: 100, water: 100, sleep: 100, warmth: 100 };
+  const full = { food: 100, water: 100, sleep: 100, warmth: 100, social: 100, leisure: 100 };
   const plan = (activity: Villager['plan']['activity'], since = 100) => ({
     activity,
     utility: 0.5,

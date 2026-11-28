@@ -104,6 +104,20 @@ export type EventBody =
    */
   | { type: 'food_stored'; villager: number; food: string; count: number; x: number; y: number }
   /**
+   * Two villagers began a talk (step 2.2): `villager` came to talk to `other` (standing face to
+   * face, or sitting at the fire — `seated`); `relation` — their relation after it. The cause is
+   * the decision of `villager` to talk.
+   */
+  | {
+      type: 'villagers_talked';
+      villager: number;
+      other: number;
+      x: number;
+      y: number;
+      seated: boolean;
+      relation: number;
+    }
+  /**
    * A villager died (step 1.4). `reason` — of what; the cause is the event of the need that ran
    * out first. Could food, water and warmth be reached from where it died (`foodReachable`,
    * `waterReachable`, `warmReachable`)? Death of a need that could be met is a mistake of the mind

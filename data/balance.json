@@ -31,6 +31,8 @@
     "water": { "emptyDays": 15, "deathDays": 20 },
     "sleep": { "emptyDays": 1.5 },
     "warmth": { "comfort": 10, "pointsPerDegreeDay": 6, "deathDays": 1, "shiverPoints": 40 },
+    "social": { "emptyDays": 4 },
+    "leisure": { "emptyDays": 5 },
     "healDays": 2
   },
   "sleeping": {
@@ -104,6 +106,25 @@
     "heatRadius": 4,
     "woodReserve": 20,
     "woodBoost": 0.2
+  },
+  "social": {
+    "talkTicks": { "min": 40, "max": 80 },
+    "talkFillDays": 0.3,
+    "reachTiles": 24,
+    "seatedTiles": 2,
+    "awaitTicks": 80,
+    "turnTicks": 20,
+    "talkPoints": 4,
+    "togetherPerDay": 6,
+    "togetherTiles": 3,
+    "chemistryWeight": 0.5
+  },
+  "leisure": {
+    "fireFillDays": 1,
+    "roamFillDays": 0.25,
+    "roamTiles": { "min": 6, "max": 14 },
+    "gazeTicks": { "min": 30, "max": 60 },
+    "roamTries": 6
   },
   "weather": {
     "seasonTemp": { "spring": 12, "summer": 20, "autumn": 8, "winter": -6 },

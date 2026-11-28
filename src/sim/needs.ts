@@ -22,8 +22,11 @@
 import { DATA } from '../data/index.ts';
 import { TIME } from './calendar.ts';
 
-/** Needs, in a fixed order (the order of checks and of the debug bars); sleep — step 1.5, warmth — 1.10. */
-export const NEEDS = ['food', 'water', 'sleep', 'warmth'] as const;
+/**
+ * Needs, in a fixed order (the order of checks and of the debug bars); sleep — step 1.5, warmth —
+ * 1.10; social life and leisure — step 2.2 (GDD §4.2: «общение», «досуг»).
+ */
+export const NEEDS = ['food', 'water', 'sleep', 'warmth', 'social', 'leisure'] as const;
 export type Need = (typeof NEEDS)[number];
 
 /** Needs met at a source by eating or drinking (bites, sips), and whose absence kills. */
@@ -41,8 +44,16 @@ export type Deadly = (typeof DEADLY)[number];
 
 /** Does this need at zero harm health? */
 export function isDeadly(need: Need): need is Deadly {
-  return need !== 'sleep';
+  return need === 'food' || need === 'water' || need === 'warmth';
 }
+
+/**
+ * Needs of the soul (step 2.2): they fall by the clock and come back by company (a talk) and by
+ * leisure (sitting at the fire, a stroll — ./social.ts). At zero they do not harm health
+ * (GDD §4.2: longing, quarrels, irritability — later steps).
+ */
+export const SOUL = ['social', 'leisure'] as const;
+export type Soul = (typeof SOUL)[number];
 
 /** A value per need: the scales of a villager, ids of events… */
 export type PerNeed<T> = Record<Need, T>;
@@ -51,16 +62,16 @@ export type PerNeed<T> = Record<Need, T>;
 export const FULL = 100;
 
 export function fullNeeds(): PerNeed<number> {
-  return { food: FULL, water: FULL, sleep: FULL, warmth: FULL };
+  return perNeed(FULL);
 }
 
 /** A value of `value` for every need. */
 export function perNeed<T>(value: T): PerNeed<T> {
-  return { food: value, water: value, sleep: value, warmth: value };
+  return { food: value, water: value, sleep: value, warmth: value, social: value, leisure: value };
 }
 
 /** How much a need that falls by the clock falls in a tick (sleep — while awake). */
-export function fallPerTick(need: Meal | 'sleep'): number {
+export function fallPerTick(need: Meal | Soul | 'sleep'): number {
   return FULL / (DATA.balance.needs[need].emptyDays * TIME.ticksPerDay);
 }
 

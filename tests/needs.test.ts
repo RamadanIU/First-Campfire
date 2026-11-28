@@ -64,7 +64,11 @@ describe('критерий: на зёрнах 1…20 двое живут 7 су�
         }
       }
       expect(world.villagers.list, `зерно ${seed}: живы оба`).toHaveLength(2);
-      expect(events(world, 'need_ran_out'), `зерно ${seed}`).toEqual([]);
+      // Hunger and thirst (company and leisure — step 2.2 — are needs of their own).
+      const meals = events(world, 'need_ran_out').filter(
+        (e) => e.need === 'food' || e.need === 'water',
+      );
+      expect(meals, `зерно ${seed}`).toEqual([]);
       expect(food, `зерно ${seed}: сытость`).toBeGreaterThan(0);
       expect(water, `зерно ${seed}: жажда`).toBeGreaterThan(0);
       expect([...ate].sort(), `зерно ${seed}: ели оба`).toEqual([1, 2]);
@@ -341,7 +345,7 @@ describe('выбор: нужда² × доступность', () => {
       { x: 1, y: 1 },
     ]);
     const villager = world.villagers.list[0]!;
-    villager.needs = { sleep: FULL, warmth: FULL, ...needs };
+    villager.needs = { sleep: FULL, warmth: FULL, social: FULL, leisure: FULL, ...needs };
     // He has been to the bush (step 1.11b: one goes only to food one knows of).
     knowAll(world);
     return { world, villager };

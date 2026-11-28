@@ -146,6 +146,8 @@ const WALKS_TO = {
   bed: 'идёт спать к костру',
   scout: 'ищет еду: идёт в незнакомые места',
   pick: 'идёт собирать еду впрок',
+  talk: 'идёт поговорить',
+  roam: 'гуляет',
 } as const;
 
 /**
@@ -233,6 +235,12 @@ export function doingOf(villager: Villager, name: (resource: string) => string):
       return 'подкладывает дрова в костёр';
     case 'sit':
       return villager.plan.activity === 'warm' ? 'греется у костра' : 'сидит у костра';
+    case 'talk':
+      return action.seated ? 'беседует у костра' : 'разговаривает';
+    case 'await':
+      return 'ждёт собеседника';
+    case 'gaze':
+      return 'гуляет: любуется округой';
   }
 }
 
@@ -242,13 +250,15 @@ export const SCALE_NAME = {
   water: 'Жажда',
   sleep: 'Сон',
   warmth: 'Тепло',
+  social: 'Общение',
+  leisure: 'Досуг',
   health: 'Здоровье',
 } as const;
 
 /** A line of the debug panel for a villager (`debug=needs`): doing what, its scales. */
 export function needsLine(villager: Villager, name: (resource: string) => string): string {
   const round = (value: number) => Math.round(value);
-  return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager, name)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · тепло ${round(villager.needs.warmth)} · здоровье ${round(villager.health)}`;
+  return `${villagerName(villager.sex, villager.id)}: ${doingOf(villager, name)} · сытость ${round(villager.needs.food)} · жажда ${round(villager.needs.water)} · сон ${round(villager.needs.sleep)} · тепло ${round(villager.needs.warmth)} · общение ${round(villager.needs.social)} · досуг ${round(villager.needs.leisure)} · здоровье ${round(villager.health)}`;
 }
 
 // ── The mind of a villager: plans and decisions (step 1.8, `debug=mind`) ────────────────────
@@ -266,6 +276,8 @@ export const ACTIVITY_NAME: Record<Activity, string> = {
   warm: 'греться',
   scout: 'разведка',
   store: 'запас',
+  talk: 'разговор',
+  roam: 'прогулка',
   order: 'приказ',
 };
 
@@ -290,6 +302,8 @@ const STEP_NAME: Record<PlanStep, string> = {
   sit: 'сесть у огня',
   bed: 'лечь у огня',
   pick: 'собрать',
+  talk: 'поговорить',
+  gaze: 'полюбоваться',
 };
 
 /** A score of the mind: «0,52». */
@@ -324,6 +338,7 @@ const WHY_TEXT: Record<Exclude<Why, 'chose'>, (from: string, plan: string) => st
   failed: (from, plan) => `${from}: не вышло (источник пропал, нет пути или места) → ${plan}`,
   order: () => 'приказ наблюдателя',
   faint: () => 'упал без сил → сон',
+  invited: (_from, plan) => `позвали → ${plan}`,
 };
 
 export const MIND = {
@@ -399,6 +414,8 @@ const RAN_OUT: Record<Need, string> = {
   water: 'мучается жаждой',
   sleep: 'валится с ног от усталости',
   warmth: 'замерзает',
+  social: 'тоскует без общения',
+  leisure: 'скучает — нет досуга',
 };
 
 const NEED_GONE: Record<Need, string> = {
@@ -406,6 +423,8 @@ const NEED_GONE: Record<Need, string> = {
   water: 'кончилась вода',
   sleep: 'кончились силы — не спал',
   warmth: 'кончилось тепло — обморожение',
+  social: 'давно ни с кем не говорил',
+  leisure: 'давно не отдыхал душой',
 };
 
 const RULE_CAUSE: Record<Extract<Cause, { kind: 'rule' }>['rule'], string> = {
@@ -454,6 +473,8 @@ export function describeEvent(event: WorldEvent): string {
       return `житель ${event.villager} ест (${FOOD_NAME[event.food] ?? event.food}) в ${String(event.distance).replace('.', ',')} тайла от стоянки`;
     case 'food_stored':
       return `житель ${event.villager} сложил в запас: ${FOOD_NAME[event.food] ?? event.food}, ${event.count} ${plural(event.count, ['горсть', 'горсти', 'горстей'])}`;
+    case 'villagers_talked':
+      return `житель ${event.villager} говорит с жителем ${event.other}${event.seated ? ' у костра' : ''} (отношения ${String(event.relation).replace('.', ',')})`;
   }
 }
 
@@ -600,6 +621,12 @@ export function whyOf(villager: Villager, decision: Decision | undefined, night:
       return `вся знакомая еда собрана — ищет новую${before}`;
     case 'store':
       return 'осень — запасает еду на зиму';
+    case 'talk':
+      return decision.why === 'invited'
+        ? `${bySex(sex, 'с ним', 'с ней')} заговорили`
+        : `хочется поговорить — общение ${value('social')}`;
+    case 'roam':
+      return `хочется отдохнуть душой — досуг ${value('leisure')}`;
     case 'order':
       return 'так велел наблюдатель';
   }
@@ -618,6 +645,8 @@ const AHEAD_WORDS: Readonly<Record<string, string>> = {
   sit: 'к огню',
   warm: 'греться',
   store: 'запасы',
+  talk: 'поговорить',
+  roam: 'прогулка',
 };
 
 /** The words of the villager's card (step 2.1, GDD §11.4). */

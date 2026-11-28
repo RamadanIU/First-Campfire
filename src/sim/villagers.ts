@@ -96,6 +96,8 @@ import {
   searchLoose,
   searchPick,
   searchSeat,
+  sitWorth,
+  talkRoom,
   type Why,
 } from './minds.ts';
 import {
@@ -111,6 +113,7 @@ import { findObject, hasFood, objectAt, takeFood } from './objects.ts';
 import { canStep, DIAGONAL, findPath, type PathResult, type Tile, tileSpeed } from './path.ts';
 import { firstComer, type Memory } from './profile.ts';
 import { intRange } from './rng.ts';
+import { changeRelation, meet, talkDelta } from './social.ts';
 import { isFreezing } from './weather.ts';
 import type { System, World } from './world.ts';
 
@@ -144,7 +147,9 @@ export type WalkPurpose =
   | 'sit'
   | 'bed'
   | 'scout'
-  | 'pick';
+  | 'pick'
+  | 'talk'
+  | 'roam';
 
 /**
  * What a walk leads to. A need is met (step 1.4) beside a bush with food — object `object` on
@@ -160,7 +165,9 @@ export type Source =
   | { kind: 'pile'; resource: string; x: number; y: number }
   | { kind: 'store'; item: number; resource: string; x: number; y: number }
   | { kind: 'fire'; x: number; y: number }
-  | { kind: 'spot'; x: number; y: number };
+  | { kind: 'spot'; x: number; y: number }
+  /** Another villager to talk to (step 2.2), where it stood when chosen. */
+  | { kind: 'villager'; villager: number; x: number; y: number };
 
 export type VillagerAction =
   /** Stands (breathes) until tick `until`, thinking now and then (./minds.ts); then strolls. */
@@ -205,7 +212,17 @@ export type VillagerAction =
   /** Puts the wood it holds into the burning fire beside it; done at tick `until` (step 1.9). */
   | { kind: 'stoke'; until: number }
   /** Sits by the fire, facing it, until the mind prefers anything else (step 1.9). */
-  | { kind: 'sit' };
+  | { kind: 'sit' }
+  /**
+   * Talks with villager `with` (step 2.2), facing it, till tick `until`; `seated` — both sit at the
+   * fire. Since `since` the two speak in turns of `social.turnTicks`, the one who came (`lead`)
+   * first.
+   */
+  | { kind: 'talk'; with: number; since: number; until: number; seated: boolean; lead: boolean }
+  /** Waits for villager `with`, who comes to talk (step 2.2), facing it; gives up at tick `until`. */
+  | { kind: 'await'; with: number; until: number }
+  /** At the end of a stroll (step 2.2) stands and looks around till tick `until`. */
+  | { kind: 'gaze'; until: number };
 
 export interface Villager {
   id: number;
@@ -754,6 +771,14 @@ function startPlan(
     case 'store':
       walkFor(world, villager, 'pick', choice);
       return;
+    case 'talk':
+      invite(world, villager, choice.partner, choice.seated, choice.utility);
+      if (choice.seated) startTalk(world, villager, findVillager(world, choice.partner)!, true);
+      else walkFor(world, villager, 'talk', choice);
+      return;
+    case 'roam':
+      walkFor(world, villager, 'roam', choice);
+      return;
     default:
       walkFor(world, villager, choice.kind, choice);
   }
@@ -829,6 +854,15 @@ function nextStep(world: World, villager: Villager, source: Source | null = null
     case 'to_fire':
       toFire(world, villager);
       return;
+    case 'talk':
+      if (source?.kind === 'villager') comeToTalk(world, villager, source.villager);
+      else fail(world, villager, 0);
+      return;
+    case 'gaze': {
+      const { min, max } = DATA.balance.leisure.gazeTicks;
+      villager.action = { kind: 'gaze', until: world.tick + intRange(world.rng.social, min, max) };
+      return;
+    }
     case 'gather':
       gather(world, villager);
       return;
@@ -1420,10 +1454,134 @@ function decide(world: World, villager: Villager): boolean {
     case 'idle':
       if (world.tick >= action.until) nextStep(world, villager);
       break;
+    case 'talk':
+      talking(world, villager, action);
+      return false;
+    case 'await':
+      awaiting(world, villager, action);
+      break;
+    case 'gaze':
+      if (world.tick >= action.until) nextStep(world, villager);
+      break;
     case 'walk':
       break;
   }
   return stepOn(world, villager);
+}
+
+// ── Talks (step 2.2) ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * `villager` chose to talk with `partnerId`: the partner takes up the talk too (its journal says
+ * it was invited) and, unless both sit at the fire, stands and waits facing the one who comes.
+ */
+function invite(
+  world: World,
+  villager: Villager,
+  partnerId: number,
+  seated: boolean,
+  utility: number,
+): void {
+  const partner = findVillager(world, partnerId);
+  if (!partner) return;
+  adopt(world, partner, { activity: 'talk', utility, since: world.tick, steps: [] }, 'invited');
+  // What it was carrying stays where it stands (it is not carrying any more).
+  if (partner.load) dropLoad(world, partner);
+  if (seated) return;
+  const { awaitTicks } = DATA.balance.social;
+  // A step under way is finished first (stepOn does nothing while waiting).
+  partner.action = { kind: 'await', with: villager.id, until: world.tick + awaitTicks };
+}
+
+/**
+ * The two begin to talk (step 2.2): they face each other (sitting — each still faces the fire),
+ * tell each other what they saw (food, the land — ./memory.ts), and the talk changes their relation
+ * (./social.ts); an event of the journal. It lasts `social.talkTicks`.
+ */
+function startTalk(world: World, villager: Villager, partner: Villager, seated: boolean): void {
+  const { min, max } = DATA.balance.social.talkTicks;
+  const until = world.tick + Math.min(intRange(world.rng.social, min, max), talkRoom(world.tick));
+  if (!seated) {
+    villager.facing = facingOf(partner.x - villager.x, partner.y - villager.y);
+    partner.facing = facingOf(villager.x - partner.x, villager.y - partner.y);
+  }
+  const talk = { kind: 'talk', since: world.tick, until, seated } as const;
+  villager.action = { ...talk, with: partner.id, lead: true };
+  partner.action = { ...talk, with: villager.id, lead: false };
+  share(villager, partner);
+  const relation = meet(world, villager.id, partner.id);
+  changeRelation(world, villager.id, partner.id, talkDelta(relation));
+  emit(
+    world,
+    {
+      type: 'villagers_talked',
+      villager: villager.id,
+      other: partner.id,
+      x: villager.x,
+      y: villager.y,
+      seated,
+      relation: Math.round(relation.value * 10) / 10,
+    },
+    { kind: 'decision', villager: villager.id, activity: 'talk' },
+  );
+}
+
+/** Come to the partner's side: it still waits for this one, a tile away — the talk begins. */
+function comeToTalk(world: World, villager: Villager, partnerId: number): void {
+  const partner = findVillager(world, partnerId);
+  const waits =
+    partner?.action.kind === 'await' &&
+    partner.action.with === villager.id &&
+    !isStepping(partner) &&
+    Math.abs(partner.x - villager.x) + Math.abs(partner.y - villager.y) === 1;
+  if (!partner || !waits) {
+    fail(world, villager, 0);
+    return;
+  }
+  startTalk(world, villager, partner, false);
+}
+
+/**
+ * A talk goes on till its end, or till the other one breaks it off. Then: one sitting at the fire
+ * sits on; one standing rests (and thinks again at once).
+ */
+function talking(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'talk' }>,
+): void {
+  const partner = findVillager(world, action.with);
+  const on = partner?.action.kind === 'talk' && partner.action.with === villager.id;
+  if (on && world.tick < action.until) return;
+  if (action.seated) {
+    adopt(
+      world,
+      villager,
+      { activity: 'sit', utility: sitWorth(world, villager), since: world.tick, steps: [] },
+      'done',
+    );
+    villager.action = { kind: 'sit' };
+    return;
+  }
+  settle(world, villager, 'done', 0);
+}
+
+/** Waiting for the one who comes to talk: it gave up the talk, or took too long — rest. */
+function awaiting(
+  world: World,
+  villager: Villager,
+  action: Extract<VillagerAction, { kind: 'await' }>,
+): void {
+  const comer = findVillager(world, action.with);
+  if (!comer || comer.plan.activity !== 'talk' || world.tick >= action.until) {
+    fail(world, villager, 0);
+    return;
+  }
+  if (!isStepping(villager)) {
+    const dx = comer.x - villager.x;
+    const dy = comer.y - villager.y;
+    if (dx !== 0 || dy !== 0) villager.facing = facingOf(dx, dy);
+  }
 }
 
 /** A walker takes the next step of its path (or arrives, or waits). Returns true if it stepped. */
