@@ -727,11 +727,14 @@ function pressingOf(need: Meal): (world: World, villager: Villager) => number {
   };
 }
 
-/** The need factor of a need of the soul (step 2.2): urgency², as of a meal. */
+/**
+ * The need factor of a need of the soul (step 2.2): urgency² × `social.soulFactor` — weaker than a
+ * meal's: longing for company does not keep one from the wood the fire needs.
+ */
 function pressingSoul(need: Soul): (world: World, villager: Villager) => number {
   return (_world, villager) => {
     const pressing = urgency(villager.needs[need]);
-    return pressing * pressing;
+    return pressing * pressing * DATA.balance.social.soulFactor;
   };
 }
 
@@ -1349,8 +1352,7 @@ function canTalkTo(world: World, other: Villager, seated: boolean): boolean {
   if (action.kind === 'sleep' || action.kind === 'talk' || action.kind === 'await') return false;
   if (plan.activity === 'talk' || plan.activity === 'sleep') return false;
   if (plan.activity === 'rest') return action.kind === 'idle' || action.kind === 'walk';
-  const wish = urgency(other.needs.social);
-  return wish * wish > holdOf(world, other, plan);
+  return ACTIVITY.talk.utility!(world, other) > holdOf(world, other, plan);
 }
 
 /**

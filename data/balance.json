@@ -117,7 +117,8 @@
     "talkPoints": 4,
     "togetherPerDay": 6,
     "togetherTiles": 3,
-    "chemistryWeight": 0.5
+    "chemistryWeight": 0.5,
+    "soulFactor": 0.6
   },
   "leisure": {
     "fireFillDays": 1,
