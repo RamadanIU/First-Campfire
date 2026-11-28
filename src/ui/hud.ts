@@ -5,7 +5,7 @@
  *   │ События                                                           (menu «Мир») │
  *   │  ☠ Умерла женщина — голод                                                      │
  *   │                                                                                │
- *   │ (the chosen villager: name, what it does, five scales)            (debug lines) │
+ *   │ (the card: portrait, name, age, doing and why, scales, family, memory) (debug) │
  *   └────────────────────────────────────────────────────────────────────────────────┘
  *
  * - The top bar: the date, an icon of the time of day, the weather and the temperature (step
@@ -14,8 +14,10 @@
  *   menu of the world (how it is saved, «Save to file», «To the menu», the keys).
  * - The event feed (./feed.ts): the latest significant events; a click flies the camera to the
  *   place (or to the villager, while it lives).
- * - The card of the chosen villager: what it does and its five scales — warmth since step 1.10
- *   (the full card — step 2.1).
+ * - The card of the chosen villager (step 2.1, GDD §11.4): a portrait (its sprite, enlarged), the
+ *   name, sex and age, where it comes from; what it does now and why (from its journal of
+ *   decisions); five scales; the family — a click on a relative opens the relative's card; the last
+ *   memories of its life. Of a dead villager — its name and what it died of.
  *
  * Everything stands at the edges: the middle of the screen stays the world's. `ui=0` shows none of
  * it (the scene does not create the panel). The panel only reads the world; what it changes is
@@ -23,20 +25,25 @@
  */
 import { DATA } from '../data/index.ts';
 import { calendarAt, type DayPhase } from '../sim/calendar.ts';
+import type { Decision } from '../sim/minds.ts';
 import type { Tile } from '../sim/path.ts';
-import { findVillager } from '../sim/villagers.ts';
+import { ageOf, cameFromOutside } from '../sim/profile.ts';
+import { findVillager, type Villager } from '../sim/villagers.ts';
 import { airTemperature, type WeatherKind } from '../sim/weather.ts';
 import type { World } from '../sim/world.ts';
 import { dateOf, shortDateOf } from './dates.ts';
 import { createFeed, type FeedEntry } from './feed.ts';
 import {
+  CARD,
   capitalize,
   deathNote,
   doingOf,
   HUD,
+  memoryText,
   SCALE_NAME,
   speedName,
   temperatureText,
+  whyOf,
 } from './texts.ts';
 
 /** The icon of each weather in the top bar (step 1.10); clear — none (the sun or moon says it). */
@@ -69,6 +76,9 @@ const PHASE_ICON: Record<DayPhase, string> = {
   night: 'hud_night',
 };
 
+/** The bubble of a need that nearly killed (step 2.1). */
+const NEED_ICON = { food: 'bubble_food', water: 'bubble_water', warmth: 'bubble_cold' } as const;
+
 function feedIcon(entry: FeedEntry, world: World): string {
   switch (entry.type) {
     case 'villager_arrived':
@@ -77,6 +87,11 @@ function feedIcon(entry: FeedEntry, world: World): string {
       return 'hud_death';
     case 'villager_fainted':
       return 'bubble_sleep';
+    case 'villager_nearly_died': {
+      const event = world.events.list[entry.id - 1];
+      if (event?.type !== 'villager_nearly_died') return 'hud_death';
+      return NEED_ICON[event.need];
+    }
     case 'fire_lit':
       return 'hud_fire';
     case 'fire_out':
@@ -108,6 +123,8 @@ export interface HudSource {
   flyToVillager(id: number): boolean;
   /** A canvas with the sprite `name` drawn at ×`scale` (crisp: the canvas is exactly its size). */
   icon(name: string, scale: number): HTMLCanvasElement;
+  /** A canvas with the villager's portrait: its own sprite and colours, head and shoulders, enlarged. */
+  portrait(villager: Villager): HTMLCanvasElement;
   /** The menu «Мир» is open at the start (`menu=1`). */
   menuOpen: boolean;
 }
@@ -238,11 +255,15 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
     else feedList.replaceChildren(...rows);
   };
 
-  // ── The card of the chosen villager ──
+  // ── The card of the chosen villager (step 2.1) ──
+  const portrait = h('div', 'hud-card-portrait');
   const cardTitle = h('div', 'hud-card-title');
+  const cardWho = h('div', 'hud-card-who');
+  const cardOrigin = h('div', 'hud-card-origin');
   const close = button('hud-card-close', HUD.close, '×');
   close.addEventListener('click', () => source.select(null));
   const cardDoing = h('div', 'hud-card-doing');
+  const cardWhy = h('div', 'hud-card-why');
   const scales = (['food', 'water', 'sleep', 'warmth', 'health'] as const).map((key) => {
     const fill = h('i', 'hud-scale-fill');
     const value = h('span', 'hud-scale-value');
@@ -256,12 +277,40 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
     return { key, row, fill, value };
   });
   const cardScales = h('div', 'hud-card-scales', ...scales.map((scale) => scale.row));
+  const familyRows = h('dl', 'hud-card-family');
+  const cardFamily = h(
+    'section',
+    'hud-card-section',
+    h('h3', 'hud-card-heading', CARD.family),
+    familyRows,
+  );
+  const memoryList = h('ol', 'hud-card-memory');
+  const cardMemory = h(
+    'section',
+    'hud-card-section',
+    h('h3', 'hud-card-heading', CARD.memory),
+    memoryList,
+  );
+  const cardLiving = h(
+    'div',
+    'hud-card-living',
+    cardDoing,
+    cardWhy,
+    cardScales,
+    cardFamily,
+    cardMemory,
+  );
   const card = h(
     'section',
     'hud-card',
-    h('div', 'hud-card-head', cardTitle, close),
-    cardDoing,
-    cardScales,
+    h(
+      'div',
+      'hud-card-head',
+      portrait,
+      h('div', 'hud-card-id', cardTitle, cardWho, cardOrigin),
+      close,
+    ),
+    cardLiving,
   );
   card.hidden = true;
 
@@ -284,41 +333,151 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
   const weatherIcons = new Map<WeatherKind, HTMLCanvasElement>();
   let shownSpeed = -1;
   const phaseIcons = new Map<DayPhase, HTMLCanvasElement>();
-  /** The dead the card was asked about: id → who it was and its last words. */
-  const deaths = new Map<number, { title: string; note: string }>();
+  /** The dead the card was asked about: id → its name, sex and last words. */
+  const deaths = new Map<number, { name: string; note: string } | null>();
   const deathOf = (id: number) => {
-    let found = deaths.get(id);
-    if (!found) {
+    if (!deaths.has(id)) {
       const event = world.events.list.findLast(
         (e) => e.type === 'villager_died' && e.villager === id,
       );
-      found =
+      deaths.set(
+        id,
         event?.type === 'villager_died'
           ? {
-              title: HUD.cardTitle(event.sex, id),
+              name: event.name,
               note: capitalize(deathNote(event.sex, calendarAt(event.tick).day, event.reason)),
             }
-          : { title: HUD.cardTitle(undefined, id), note: '' };
-      deaths.set(id, found);
+          : null,
+      );
     }
-    return found;
+    return deaths.get(id) ?? null;
+  };
+  /** A relative's name: of the living, or of the dead from the journal; null — unknown to the world. */
+  const nameOf = (id: number): { name: string; alive: boolean } | null => {
+    const living = findVillager(world, id);
+    if (living) return { name: living.name, alive: true };
+    const dead = deathOf(id);
+    return dead ? { name: dead.name, alive: false } : null;
+  };
+
+  /** A relative in the card: a button that opens its card (and flies the camera to it). */
+  const kinButton = (id: number) => {
+    const kin = nameOf(id);
+    const name = kin?.name ?? HUD.cardTitle(undefined, id);
+    const control = button('hud-kin', CARD.kinTitle(name), CARD.kin(name, kin?.alive ?? false));
+    control.dataset.villager = String(id);
+    control.addEventListener('click', () => {
+      source.select(id);
+      source.flyToVillager(id);
+    });
+    return control;
+  };
+  const familyRow = (label: string, ...value: Child[]) =>
+    [h('dt', '', label), h('dd', '', ...value)] as const;
+  const kinList = (ids: readonly number[]): Child[] => {
+    if (ids.length === 0) return [CARD.none];
+    return ids.flatMap((id, index) => (index === 0 ? [kinButton(id)] : [', ', kinButton(id)]));
+  };
+
+  /** What the family and memory rows were built from: rebuilt only when it changes. */
+  let shownId: number | null = null;
+  let shownFamily = '';
+  let shownMemory = '';
+  let shownPortrait = '';
+
+  const showFamily = (villager: Villager) => {
+    const key = JSON.stringify([
+      villager.mother,
+      villager.father,
+      villager.spouse,
+      villager.children,
+      [villager.mother, villager.father, villager.spouse, ...villager.children].map(
+        (id) => id !== null && findVillager(world, id) !== undefined,
+      ),
+    ]);
+    if (key === shownFamily) return;
+    shownFamily = key;
+    const parent = (id: number | null, unknown: string) =>
+      id === null ? [unknown] : [kinButton(id)];
+    familyRows.replaceChildren(
+      ...familyRow(CARD.mother, ...parent(villager.mother, CARD.unknownMother)),
+      ...familyRow(CARD.father, ...parent(villager.father, CARD.unknownFather)),
+      ...familyRow(
+        CARD.spouse(villager.sex),
+        ...(villager.spouse === null ? [CARD.none] : [kinButton(villager.spouse)]),
+      ),
+      ...familyRow(CARD.children, ...kinList(villager.children)),
+    );
+  };
+
+  const showMemory = (villager: Villager) => {
+    const last = villager.memories.at(-1);
+    const key = `${villager.memories.length}:${last?.event ?? 0}:${last?.tick ?? 0}`;
+    if (key === shownMemory) return;
+    shownMemory = key;
+    if (villager.memories.length === 0) {
+      memoryList.replaceChildren(
+        h('li', 'hud-memory hud-card-empty', CARD.memoryEmpty(villager.sex)),
+      );
+      return;
+    }
+    // The newest first.
+    memoryList.replaceChildren(
+      ...villager.memories
+        .toReversed()
+        .map((memory) =>
+          h(
+            'li',
+            'hud-memory',
+            h('span', '', memoryText(memory, villager.sex)),
+            h('small', 'hud-card-date', shortDateOf(memory.tick)),
+          ),
+        ),
+    );
   };
 
   const updateCard = () => {
     const id = source.selected();
     card.hidden = id === null;
-    if (id === null) return;
+    if (id === null) {
+      shownId = null;
+      return;
+    }
+    if (id !== shownId) {
+      shownId = id;
+      shownFamily = '';
+      shownMemory = '';
+      shownPortrait = '';
+    }
     const villager = findVillager(world, id);
     if (!villager) {
       const dead = deathOf(id);
-      setText(cardTitle, dead.title);
-      setText(cardDoing, dead.note);
-      cardScales.hidden = true;
+      setText(cardTitle, dead ? HUD.deadTitle(dead.name) : HUD.cardTitle(undefined, id));
+      setText(cardWho, dead?.note ?? '');
+      setText(cardOrigin, '');
+      portrait.hidden = true;
+      cardLiving.hidden = true;
       return;
     }
-    cardScales.hidden = false;
-    setText(cardTitle, HUD.cardTitle(villager.sex, id));
-    setText(cardDoing, capitalize(doingOf(villager, resourceName)));
+    cardLiving.hidden = false;
+    portrait.hidden = false;
+    const look = `${villager.id}:${villager.sex}:${villager.skin}:${villager.hair}`;
+    if (look !== shownPortrait) {
+      shownPortrait = look;
+      const canvas = source.portrait(villager);
+      canvas.title = CARD.portrait(villager.name);
+      portrait.replaceChildren(canvas);
+    }
+    setText(cardTitle, villager.name);
+    setText(cardWho, CARD.who(villager.sex, ageOf(villager, world.tick)));
+    setText(
+      cardOrigin,
+      CARD.origin(villager.sex, cameFromOutside(villager), shortDateOf(Math.max(0, villager.born))),
+    );
+    setText(cardDoing, `${CARD.now}: ${doingOf(villager, resourceName)}`);
+    const decision: Decision | undefined = villager.log.at(-1);
+    const night = calendarAt(world.tick).phase === 'night';
+    setText(cardWhy, `${CARD.why}: ${whyOf(villager, decision, night)}`);
     for (const scale of scales) {
       const value = Math.round(
         scale.key === 'health' ? villager.health : villager.needs[scale.key],
@@ -328,6 +487,8 @@ export function createHud(ui: HTMLElement, source: HudSource): Hud {
       setText(scale.value, String(value));
       scale.row.classList.toggle('low', value <= 20);
     }
+    showFamily(villager);
+    showMemory(villager);
   };
 
   return {

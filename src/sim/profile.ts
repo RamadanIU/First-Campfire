@@ -34,8 +34,7 @@ import type { System, World } from './world.ts';
 export type Memory = {
   tick: number;
   event: number;
-} & /** It came to the world (the first pair: at its creation). */
-(
+} /** It came to the world (the first pair: at its creation). */ & (
   | { kind: 'arrived' }
   /** It lit the first fire of the camp. */
   | { kind: 'first_fire' }

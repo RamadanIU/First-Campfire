@@ -33,7 +33,7 @@ describe('лента событий', () => {
     expect(feed.update(world)).toBe(false);
   });
 
-  it('костёр (шаг 1.9): «Горен развёл первый костёр», «Костёр погас — прогорели дрова» — с местом', () => {
+  it('костёр (шаг 1.9): «<имя> развёл первый костёр», «Костёр погас — прогорели дрова» — с местом', () => {
     const world = createWorld(1);
     const [man, woman] = world.villagers.list;
     const feed = createFeed();

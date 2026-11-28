@@ -56,6 +56,8 @@ export const METRICS: readonly Metric[] = [
     (e) => e.foodReachable && e.waterReachable && (e.reason !== 'cold' || e.warmReachable),
   ),
   min('first_death_day', 'Первая смерть, день', 'villager_died', (e) => dayOf(e.tick)),
+  // Step 2.1: health fell below `life.nearDeathHealth` — remembered by the villager.
+  count('near_deaths', 'Чуть не умерли, раз', 'villager_nearly_died'),
   count('starving', 'Сытость падала до нуля, раз', 'need_ran_out', (e) => e.need === 'food'),
   count('thirsting', 'Жажда падала до нуля, раз', 'need_ran_out', (e) => e.need === 'water'),
   // Sleep (step 1.5): a need at zero fells a villager — a faint.

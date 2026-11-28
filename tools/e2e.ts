@@ -97,6 +97,7 @@ interface CameraState {
 /** A villager as the scene `world` tells checks (src/main.ts, VillagerInfo). */
 interface VillagerState {
   id: number;
+  name: string;
   sex: string;
   x: number;
   y: number;
@@ -914,10 +915,20 @@ try {
     await page.waitForTimeout(100);
     check(
       (await page.isVisible('.hud-card')) &&
-        (await text(page, '.hud-card-title')) === 'Женщина · житель 2' &&
+        (await text(page, '.hud-card-title')) === woman.name &&
         // Five scales since step 1.10: satiety, thirst, sleep, warmth, health.
         (await page.evaluate<number>("document.querySelectorAll('.hud-scale').length")) === 5,
       `щелчок по женщине — карточка: «${await text(page, '.hud-card-title')}», ${await text(page, '.hud-card-doing')}`,
+    );
+    // The full card (step 2.1): portrait, age, why, family, memory.
+    const cardText = await text(page, '.hud-card');
+    check(
+      (await page.isVisible('.hud-card-portrait canvas')) &&
+        /женщина, \d+ (год|года|лет)/.test(cardText) &&
+        cardText.includes('Почему:') &&
+        cardText.includes('Мать') &&
+        cardText.includes('Пришла к стоянке в день сотворения мира'),
+      `карточка жителя целиком: ${cardText.replace(/\s+/g, ' ')}`,
     );
     const empty = onPage(34 * 16 + 8, 29 * 16 + 8);
     await page.mouse.click(empty.x, empty.y);
@@ -927,7 +938,7 @@ try {
     await page.mouse.click(him.x, him.y);
     await page.waitForTimeout(100);
     check(
-      (await text(page, '.hud-card-title')) === 'Мужчина · житель 1',
+      (await text(page, '.hud-card-title')) === man.name,
       `щелчок по мужчине: ${await text(page, '.hud-card-title')}`,
     );
     await page.keyboard.press('Escape');
@@ -939,12 +950,14 @@ try {
     const lines = await page.evaluate<number>("document.querySelectorAll('.hud-event').length");
     const feedText = await text(page, '.hud-feed-list');
     check(
-      lines === 3 && feedText.includes('Пришла женщина') && feedText.includes('первый костёр'),
+      lines === 3 &&
+        feedText.includes(`Пришла ${woman.name}`) &&
+        feedText.includes('первый костёр'),
       `лента: ${lines} строки — ${feedText}`,
     );
     await mouseDrag(page, { x: 900, y: 400 }, { x: 300, y: 400 });
     const away = await camera(page);
-    await page.click('.hud-event:has-text("Пришла женщина")');
+    await page.click(`.hud-event:has-text("Пришла ${woman.name}")`);
     const flying = (await camera(page)).flying;
     await page.waitForTimeout(1100);
     const there = await camera(page);
@@ -956,7 +969,7 @@ try {
         !there.flying &&
         Math.abs(there.x - goal.x) < 0.5 &&
         Math.abs(there.y - goal.y) < 0.5,
-      `щелчок по «Пришла женщина»: камера летит (${flying}) из x ${away.x} к месту (${there.x}, ${there.y}) = (${goal.x}, ${goal.y})`,
+      `щелчок по «Пришла ${woman.name}»: камера летит (${flying}) из x ${away.x} к месту (${there.x}, ${there.y}) = (${goal.x}, ${goal.y})`,
     );
 
     // The menu «Мир»: closed at the start, opens by its button.

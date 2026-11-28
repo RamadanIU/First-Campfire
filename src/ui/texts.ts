@@ -939,6 +939,11 @@ export const DATA_SCENE = {
     'Роняет',
     'Спрайт',
   ],
+  names: (file: string) => `Имена — ${file}`,
+  namesMeta:
+    'Имена жителей складываются из слогов культурного набора (GDD §8.6, шаг 2.1): корень и окончание своего пола — «Рад» + «омир» = Радомир, «Люб» + «ава» = Любава. Среди живых имена не повторяются; пропущенные сочетания не даются.',
+  nameHeads: ['Набор · id', 'Корни', 'Мужские окончания', 'Женские окончания', 'Не даются', 'Имён'],
+  nameCount: (male: number, female: number) => `${male} мужских, ${female} женских`,
   balance: (file: string) => `Баланс — ${file}`,
   balanceMeta: (season: string, year: string, days: number, minutes: string) =>
     `Числа GDD §2.1 и §13.1; карта — §2.2 и §3.1; потребности и выбор действия — §4.2, §13.2 и §2.3. Ядро симуляции берёт время отсюда: сезон — ${season}, год — ${year} (${days} сут, ${minutes} мин на ×1).`,
@@ -960,6 +965,7 @@ export const DATA_SCENE = {
     тайлов: FORMS.tile,
     рационов: FORMS.ration,
     пунктов: FORMS.point,
+    записей: ['запись', 'записи', 'записей'],
     охапок: FORMS.armful,
     веток: FORMS.branch,
   } as Readonly<Record<string, Forms>>,
