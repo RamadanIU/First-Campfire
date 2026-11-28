@@ -828,7 +828,7 @@ try {
       const panel = () => text(page, '.world-panel-needs');
       const first = await panel();
       check(
-        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · сон \d+ · тепло \d+ · здоровье 100/.test(
+        /мужчина \(житель 1\): .* · сытость \d+ · жажда \d+ · сон \d+ · тепло \d+ · общение \d+ · досуг \d+ · здоровье 100/.test(
           first,
         ) && first.includes('женщина (житель 2)'),
         `панель: ${first}`,
@@ -916,8 +916,8 @@ try {
     check(
       (await page.isVisible('.hud-card')) &&
         (await text(page, '.hud-card-title')) === woman.name &&
-        // Five scales since step 1.10: satiety, thirst, sleep, warmth, health.
-        (await page.evaluate<number>("document.querySelectorAll('.hud-scale').length")) === 5,
+        // Seven scales since step 2.2: satiety, thirst, sleep, warmth, company, leisure, health.
+        (await page.evaluate<number>("document.querySelectorAll('.hud-scale').length")) === 7,
       `щелчок по женщине — карточка: «${await text(page, '.hud-card-title')}», ${await text(page, '.hud-card-doing')}`,
     );
     // The full card (step 2.1): portrait, age, why, family, memory.
@@ -930,6 +930,18 @@ try {
         cardText.includes('Пришла к стоянке в день сотворения мира'),
       `карточка жителя целиком: ${cardText.replace(/\s+/g, ' ')}`,
     );
+    // Step 2.2: relations — the man is her acquaintance; a click on his name opens his card.
+    const relation = await text(page, '.hud-card-relations');
+    await page.click('.hud-card-relations .hud-kin');
+    await page.waitForTimeout(100);
+    const opened = await text(page, '.hud-card-title');
+    check(
+      relation.includes(man.name) && opened === man.name,
+      `отношения: «${relation.replace(/\s+/g, ' ')}», щелчок по имени — карточка «${opened}»`,
+    );
+    const herAgain = drawnAt(woman);
+    await page.mouse.click(herAgain.x, herAgain.y);
+    await page.waitForTimeout(100);
     const empty = onPage(34 * 16 + 8, 29 * 16 + 8);
     await page.mouse.click(empty.x, empty.y);
     await page.waitForTimeout(100);
