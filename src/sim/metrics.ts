@@ -172,6 +172,30 @@ export const METRICS: readonly Metric[] = [
   share('time_meals', 'Доля времени: из неё еда и питьё (с дорогой)', (v) =>
     MEALS.has(v.plan.activity),
   ),
+  // Step 2.2: company and leisure, relations of acquaintances.
+  share(
+    'time_talk',
+    'Доля времени: из неё разговоры (с дорогой)',
+    (v) => v.plan.activity === 'talk',
+  ),
+  share('time_roam', 'Доля времени: из неё прогулки', (v) => v.plan.activity === 'roam'),
+  count('talks', 'Разговоров', 'villagers_talked'),
+  count('talks_seated', 'Из них у костра', 'villagers_talked', (e) => e.seated),
+  count('lonely', 'Общение падало до нуля, раз', 'need_ran_out', (e) => e.need === 'social'),
+  count('bored', 'Досуг падал до нуля, раз', 'need_ran_out', (e) => e.need === 'leisure'),
+  gauge('relation_mean', 'Отношения знакомых (на конец), среднее', (world) =>
+    world.relations.length === 0
+      ? 0
+      : Math.round(
+          world.relations.reduce((total, relation) => total + relation.value, 0) /
+            world.relations.length,
+        ),
+  ),
+  gauge('relation_min', 'Отношения знакомых (на конец), меньшее', (world) =>
+    world.relations.length === 0
+      ? 0
+      : Math.round(Math.min(...world.relations.map((relation) => relation.value))),
+  ),
 ];
 
 /** Work — what the villager does for the camp: wood, the fire, food for the store, scouting. */

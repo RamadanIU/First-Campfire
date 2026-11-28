@@ -237,6 +237,7 @@ export function createMapRenderer(
           alpha,
           stride,
           villager.load ? loadLook(villager.load.resource) : null,
+          world.tick,
         ),
       )
       .sort((a, b) => a.depth - b.depth || a.x - b.x || a.id - b.id);

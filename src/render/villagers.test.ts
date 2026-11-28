@@ -9,6 +9,7 @@ import { linePixels, pathPixels } from './debugOverlay.ts';
 import { bubbleOf, INTENT_TICKS, intentOf, PRESSING, pressingOf } from './thoughts.ts';
 import {
   ACTION_ANIMATION,
+  animationOf,
   FEET,
   HAIR_RAMPS,
   SKIN_RAMPS,
@@ -44,11 +45,11 @@ function villager(fields: Partial<Villager> = {}): Villager {
     facing: 's',
     walked: 0,
     action: { kind: 'idle', until: 0 },
-    needs: { food: 100, water: 100, sleep: 100, warmth: 100 },
+    needs: { food: 100, water: 100, sleep: 100, warmth: 100, social: 100, leisure: 100 },
     health: 100,
-    ranOut: { food: 0, water: 0, sleep: 0, warmth: 0 },
-    nowhere: { food: 0, water: 0, sleep: 0, warmth: 0 },
-    tooFar: { food: 0, water: 0, sleep: 0, warmth: 0 },
+    ranOut: { food: 0, water: 0, sleep: 0, warmth: 0, social: 0, leisure: 0 },
+    nowhere: { food: 0, water: 0, sleep: 0, warmth: 0, social: 0, leisure: 0 },
+    tooFar: { food: 0, water: 0, sleep: 0, warmth: 0, social: 0, leisure: 0 },
     load: null,
     noWork: 0,
     noStore: 0,
@@ -234,7 +235,7 @@ describe('позы действий (шаг 1.12)', () => {
 
   it('состояние видно по позе: голодный бредёт, замёрзший дрожит, сонный зевает', () => {
     const walking = { x: 10, toX: 11, progress: 0.5, prevX: 10.25, facing: 'e' as const };
-    const full = { food: 100, water: 100, sleep: 100, warmth: 100 };
+    const full = { food: 100, water: 100, sleep: 100, warmth: 100, social: 100, leisure: 100 };
     const hungry = { ...full, food: DATA.balance.movement.hungryPoints - 1 };
     expect(animation({ ...walking, needs: full })).toBe('walk_e');
     expect(animation({ ...walking, needs: hungry })).toBe('trudge_e');
@@ -262,7 +263,7 @@ describe('позы действий (шаг 1.12)', () => {
 });
 
 describe('пузырьки мыслей (шаг 1.12)', () => {
-  const full = { food: 100, water: 100, sleep: 100, warmth: 100 };
+  const full = { food: 100, water: 100, sleep: 100, warmth: 100, social: 100, leisure: 100 };
   const plan = (activity: Villager['plan']['activity'], since = 100) => ({
     activity,
     utility: 0.5,
@@ -316,5 +317,33 @@ describe('пузырьки мыслей (шаг 1.12)', () => {
     expect(bubbleOf(cold, 0, false, 1)).toBe('cold');
     expect(bubbleOf(cold, 0, false, 0.5)).toBeNull();
     expect(bubbleOf(villager(), 0, true, 0.5)).toBeNull();
+  });
+});
+
+describe('разговор (шаг 2.2): говорят по очереди — жесты и пузырёк речи', () => {
+  const { turnTicks } = DATA.balance.social;
+  const talk = (lead: boolean, seated: boolean) =>
+    ({ kind: 'talk', with: 2, since: 100, until: 1000, seated, lead }) as const;
+
+  it('говорящий жестикулирует, слушающий стоит или сидит спокойно', () => {
+    const speaker = villager({ action: talk(true, false), facing: 'e' });
+    const listener = villager({ action: talk(false, false), facing: 'w' });
+    expect(animationOf(speaker, false, false, 100)).toBe('talk');
+    expect(animationOf(listener, false, false, 100)).toBe('idle');
+    // The next turn — the other one speaks.
+    expect(animationOf(speaker, false, false, 100 + turnTicks)).toBe('idle');
+    expect(animationOf(listener, false, false, 100 + turnTicks)).toBe('talk');
+    const seated = villager({ action: talk(true, true) });
+    expect(animationOf(seated, false, false, 100)).toBe('sit_talk');
+    expect(animationOf(seated, false, false, 100 + turnTicks)).toBe('sit');
+  });
+
+  it('пузырёк — над говорящим, в сторону от собеседника; на ×0,5 не виден', () => {
+    const facingRight = villager({ action: talk(true, false), facing: 'e' });
+    const facingLeft = villager({ action: talk(true, false), facing: 'w' });
+    expect(bubbleOf(facingRight, 100, false, 2)).toBe('talk_left');
+    expect(bubbleOf(facingLeft, 100, false, 1)).toBe('talk');
+    expect(bubbleOf(facingLeft, 100 + turnTicks, false, 2)).toBeNull();
+    expect(bubbleOf(facingLeft, 100, false, 0.5)).toBeNull();
   });
 });

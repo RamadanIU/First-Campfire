@@ -12,6 +12,7 @@ import type { Cause } from '../src/sim/events.ts';
 import { hearthOf, WOOD } from '../src/sim/fire.ts';
 import { inPile, lay, pileTiles, stackOf } from '../src/sim/items.ts';
 import { objectAt } from '../src/sim/objects.ts';
+import { isSeated } from '../src/sim/social.ts';
 import type { Villager } from '../src/sim/villagers.ts';
 import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
 import { brokenRules, meadow, worldOn } from './scenario.ts';
@@ -61,7 +62,8 @@ describe('критерий: ночью двое сидят или спят у о
         }
         if (tickOfDay >= PHASE_START.dusk - 40 && tickOfDay < PHASE_START.night) {
           evening++;
-          if (villager.action.kind === 'sit') {
+          // Talking seated at the fire (step 2.2) is sitting at it too.
+          if (isSeated(villager)) {
             sitting++;
             // Sitting beside the fire, facing it sideways.
             const dx = world.camp.x - villager.x;

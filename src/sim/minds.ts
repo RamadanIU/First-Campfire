@@ -89,13 +89,21 @@ import {
   type Need,
   portionOf,
   portionTicks,
+  type Soul,
   urgency,
   warmthPerTick,
 } from './needs.ts';
 import { defOf, hasFood, type MapObject, objectAt } from './objects.ts';
 import { DIAGONAL, findNearest, findPath, leastCost, type Tile, tileSpeed } from './path.ts';
-import { floatRange } from './rng.ts';
-import { isGoalOfAnother, isTaken, paceOf, type Source, type Villager } from './villagers.ts';
+import { floatRange, intRange } from './rng.ts';
+import {
+  isGoalOfAnother,
+  isStepping,
+  isTaken,
+  paceOf,
+  type Source,
+  type Villager,
+} from './villagers.ts';
 import { airTemperature, isRaining } from './weather.ts';
 import type { World } from './world.ts';
 
@@ -366,6 +374,7 @@ export function canUse(world: World, source: Source, x: number, y: number): bool
     return source.x === x && source.y === y && item?.id === source.item && item.place === 'pile';
   }
   if (source.kind === 'spot') return source.x === x && source.y === y;
+  if (source.kind === 'villager') return true;
   if (Math.abs(source.x - x) + Math.abs(source.y - y) !== 1) return false;
   if (source.kind === 'fire') return world.camp.x === source.x && world.camp.y === source.y;
   if (source.kind === 'water') return isWater(world.map, source.x, source.y);
@@ -629,6 +638,8 @@ export type Activity =
   | 'warm'
   | 'scout'
   | 'store'
+  | 'talk'
+  | 'roam'
   | 'order';
 
 /**
@@ -656,7 +667,9 @@ export type Option = Exclude<Activity, 'order'>;
  * take as much as the fire takes; `to_fire` — walk to its side; `kindle` — light it; `stoke` — put
  * the wood in; `sit` — walk to a place by it and sit, facing it; `bed` — walk to a place by it to
  * sleep (if it is near enough; else sleep where one stands). The store (step 1.11b): `pick` — pick
- * food from the bush beside into the hands (`gather` then goes on to another bush near).
+ * food from the bush beside into the hands (`gather` then goes on to another bush near). Social life
+ * (step 2.2): `talk` — beside the other one (or sitting at the fire), talk till the talk is over;
+ * `gaze` — at the end of a stroll stand and look around a while.
  */
 export type PlanStep =
   | 'stand'
@@ -677,7 +690,9 @@ export type PlanStep =
   | 'stoke'
   | 'sit'
   | 'bed'
-  | 'pick';
+  | 'pick'
+  | 'talk'
+  | 'gaze';
 
 /**
  * How a begun plan holds on (hysteresis): `firm` — broken off only for an option better than its
@@ -709,6 +724,17 @@ function pressingOf(need: Meal): (world: World, villager: Villager) => number {
   return (_world, villager) => {
     const pressing = urgency(villager.needs[need]);
     return pressing * pressing;
+  };
+}
+
+/**
+ * The need factor of a need of the soul (step 2.2): urgency² × `social.soulFactor` — weaker than a
+ * meal's: longing for company does not keep one from the wood the fire needs.
+ */
+function pressingSoul(need: Soul): (world: World, villager: Villager) => number {
+  return (_world, villager) => {
+    const pressing = urgency(villager.needs[need]);
+    return pressing * pressing * DATA.balance.social.soulFactor;
   };
 }
 
@@ -790,6 +816,20 @@ export const ACTIVITY: Readonly<Record<Activity, ActivityDef>> = {
     utility: (world) => storeWorth(world),
     hold: 'firm',
     steps: ['go', 'pick', 'gather', 'carry', 'put_down'],
+  },
+  talk: {
+    id: 'talk',
+    need: 'social',
+    utility: pressingSoul('social'),
+    hold: 'firm',
+    steps: ['go', 'talk'],
+  },
+  roam: {
+    id: 'roam',
+    need: 'leisure',
+    utility: pressingSoul('leisure'),
+    hold: 'firm',
+    steps: ['go', 'gaze'],
   },
   order: {
     id: 'order',
@@ -996,7 +1036,18 @@ export type Choice =
   | Scout
   | Haul
   | Stock
-  | Tend;
+  | Tend
+  | Chat
+  | Roam;
+
+/**
+ * A choice to talk (step 2.2) with villager `partner`: walk to the tile beside it (the found
+ * goal), or — both sitting at the fire near each other (`seated`) — talk without getting up.
+ */
+export type Chat = { kind: 'talk'; utility: number; partner: number; seated: boolean } & Found;
+
+/** A choice to stroll (step 2.2): walk to a pretty place (the goal) and look around there. */
+export type Roam = { kind: 'roam'; utility: number } & Found;
 
 /**
  * A choice to scout (step 1.11b): no food known — walk to the edge of the known land (the goal),
@@ -1263,6 +1314,9 @@ function weigh(
   }
   // The store (step 1.11b): drawn after the fire, so the numbers before stay as they were.
   const storing = score('store');
+  // Social life (step 2.2): drawn last.
+  const talking = score('talk');
+  const roaming = score('roam');
   if (current === 'store') {
     note({ kind: 'store', utility: bar, searched: false, nowhere: false });
   } else {
@@ -1270,9 +1324,258 @@ function weigh(
   }
   if (current === 'haul') {
     note({ kind: 'haul', utility: bar, searched: false, nowhere: false });
-    return best;
+  } else {
+    best = haul(world, villager, work, best, beat(), vainIfFar(), note) ?? best;
   }
-  return haul(world, villager, work, best, beat(), vainIfFar(), note) ?? best;
+  if (current === 'talk') {
+    note({ kind: 'talk', utility: bar, searched: false, nowhere: false });
+  } else {
+    best = chat(world, villager, talking, best, beat(), note) ?? best;
+  }
+  if (current === 'roam') {
+    note({ kind: 'roam', utility: bar, searched: false, nowhere: false });
+  } else {
+    best = roam(world, villager, roaming, best, beat(), note) ?? best;
+  }
+  return best;
+}
+
+/**
+ * Could `other` be talked to now (step 2.2): if `seated` — it sits at the fire; else it is awake,
+ * not in a talk already, and at rest (standing or strolling near home), or busy with something its
+ * own wish to talk (urgency of company²) outweighs — one who longs for company leaves the
+ * branches for a talk, one who does not goes on working.
+ */
+function canTalkTo(world: World, other: Villager, seated: boolean): boolean {
+  const { action, plan } = other;
+  if (seated) return action.kind === 'sit';
+  if (action.kind === 'sleep' || action.kind === 'talk' || action.kind === 'await') return false;
+  if (plan.activity === 'talk' || plan.activity === 'sleep') return false;
+  if (plan.activity === 'rest') return action.kind === 'idle' || action.kind === 'walk';
+  return ACTIVITY.talk.utility!(world, other) > holdOf(world, other, plan);
+}
+
+/**
+ * Ticks left for a talk begun now (step 2.2): it ends by nightfall — at night one sleeps.
+ */
+export function talkRoom(tick: number): number {
+  const { tickOfDay } = calendarAt(tick);
+  return tickOfDay < PHASE_START.night ? PHASE_START.night - tickOfDay : 0;
+}
+
+/**
+ * A talk (step 2.2), if it beats `best` and `beat`. Sitting at the fire with another one sitting
+ * within `social.seatedTiles`: one talks without getting up — worth the need (`ceiling`) plus
+ * sitting at the fire itself (`sitWorth`: talking there is sitting there too). Otherwise: walk to
+ * the nearest one at rest within `social.reachTiles` (and the warmth of the cold) — `ceiling` ×
+ * availability of the tile beside it. Null — not chosen.
+ */
+function chat(
+  world: World,
+  villager: Villager,
+  ceiling: number,
+  best: Choice,
+  beat: number,
+  note: (entry: Omit<Considered, 'current'>) => void,
+): Chat | null {
+  // Not begun so late that it could not last its shortest before nightfall.
+  if (talkRoom(world.tick) < DATA.balance.social.talkTicks.min) {
+    note({ kind: 'talk', utility: 0, searched: false, nowhere: false });
+    return null;
+  }
+  const others = world.villagers.list.filter((other) => other !== villager);
+  if (villager.action.kind === 'sit') {
+    const near = DATA.balance.social.seatedTiles;
+    const seated = others
+      .filter(
+        (other) =>
+          canTalkTo(world, other, true) &&
+          Math.max(Math.abs(other.x - villager.x), Math.abs(other.y - villager.y)) <= near,
+      )
+      .sort((a, b) => leastCost(villager, a) - leastCost(villager, b) || a.id - b.id)[0];
+    if (seated) {
+      const utility = ceiling + sitWorth(world, villager);
+      note({ kind: 'talk', utility, searched: true, nowhere: false });
+      if (utility <= Math.max(best.utility, beat)) return null;
+      return {
+        kind: 'talk',
+        utility,
+        partner: seated.id,
+        seated: true,
+        source: { kind: 'villager', villager: seated.id, x: seated.x, y: seated.y },
+        goal: { x: villager.x, y: villager.y },
+        path: [],
+        cost: 0,
+      };
+    }
+  }
+  if (ceiling <= beat) {
+    note({ kind: 'talk', utility: ceiling, searched: false, nowhere: false });
+    return null;
+  }
+  const maxCost = Math.min(
+    reachFor(ceiling, beat),
+    DATA.balance.social.reachTiles,
+    coldReach(world, villager),
+  );
+  const free = others
+    .filter((other) => canTalkTo(world, other, false) && leastCost(villager, other) <= maxCost)
+    .sort((a, b) => leastCost(villager, a) - leastCost(villager, b) || a.id - b.id);
+  if (free.length === 0) {
+    note({ kind: 'talk', utility: 0, searched: false, nowhere: true });
+    return null;
+  }
+  const partner = free[0]!;
+  const found = searchBeside(world, villager, partner, maxCost);
+  const utility = found ? ceiling * availability(found.cost) : 0;
+  note({ kind: 'talk', utility, searched: true, nowhere: found === null });
+  if (!found || utility <= best.utility) return null;
+  return { kind: 'talk', utility, partner: partner.id, seated: false, ...found };
+}
+
+/**
+ * A tile beside villager `other` for `villager` to stand on and talk (step 2.2): to its left or
+ * right (they face each other in profile), else above or below it; bare, nobody there or walking
+ * there. Null — none within `maxCost`.
+ */
+export function searchBeside(
+  world: World,
+  villager: Villager,
+  other: Villager,
+  maxCost?: number,
+): Found | null {
+  const { map, objects } = world;
+  const at = { x: other.toX, y: other.toY };
+  const spot = (x: number, y: number) =>
+    inside(map, x, y) &&
+    (x !== world.camp.x || y !== world.camp.y) &&
+    tileSpeed(map, objects, x, y) > 0 &&
+    objectAt(map, objects, x, y) === undefined &&
+    !isTaken(world, x, y, villager) &&
+    !isGoalOfAnother(world, { x, y }, villager);
+  for (const sides of [
+    [
+      [1, 0],
+      [-1, 0],
+    ],
+    [
+      [0, 1],
+      [0, -1],
+    ],
+  ] as const) {
+    const tiles = sides
+      .map(([dx, dy]) => ({ x: at.x + dx, y: at.y + dy }))
+      .filter((tile) => spot(tile.x, tile.y));
+    if (tiles.length === 0) continue;
+    const here = tiles.find((tile) => tile.x === villager.x && tile.y === villager.y);
+    const source = { kind: 'villager', villager: other.id, x: at.x, y: at.y } as const;
+    if (here && !isStepping(villager)) return { source, goal: here, path: [], cost: 0 };
+    const result = findNearest(
+      map,
+      objects,
+      { x: villager.x, y: villager.y },
+      (x, y) => tiles.some((tile) => tile.x === x && tile.y === y),
+      {
+        avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+        ...(maxCost === undefined ? {} : { maxCost }),
+        towards: tiles,
+      },
+    );
+    if (result.ok) return { source, goal: result.tile, path: result.path, cost: result.cost };
+  }
+  return null;
+}
+
+/**
+ * A stroll (step 2.2), if it beats `best` and `beat`: worth the need of leisure (`ceiling`) —
+ * the way is the point of it, not a cost — but not in the evening or at night with a hearth (that
+ * is the time of the fire), no farther than one gets back by the evening and than one's warmth
+ * lasts. The goal — the prettiest of `leisure.roamTries` random places (`roamGoal`). Null — not
+ * chosen.
+ */
+function roam(
+  world: World,
+  villager: Villager,
+  ceiling: number,
+  best: Choice,
+  beat: number,
+  note: (entry: Omit<Considered, 'current'>) => void,
+): Roam | null {
+  if (ceiling <= beat) {
+    note({ kind: 'roam', utility: ceiling, searched: false, nowhere: false });
+    return null;
+  }
+  let maxCost = coldReach(world, villager);
+  if (hearthOf(world)) {
+    if (isEveningOrNight(world.tick)) {
+      note({ kind: 'roam', utility: 0, searched: false, nowhere: false });
+      return null;
+    }
+    const gaze = DATA.balance.leisure.gazeTicks.max;
+    const spare = untilEvening(world.tick) - gaze;
+    maxCost = Math.min(maxCost, spare / (2 * paceOf(villager)));
+  }
+  const found = maxCost > 0 ? roamGoal(world, villager, maxCost) : null;
+  const utility = found ? ceiling : 0;
+  note({ kind: 'roam', utility, searched: true, nowhere: found === null });
+  if (!found || utility <= best.utility) return null;
+  return { kind: 'roam', utility, ...found };
+}
+
+/** How pretty a place is to look around (step 2.2): water and flowers within 2 tiles. */
+function beauty(world: World, x: number, y: number): number {
+  const { map, objects } = world;
+  let points = 0;
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const tx = x + dx;
+      const ty = y + dy;
+      if (!inside(map, tx, ty)) continue;
+      if (isWater(map, tx, ty)) points += 1;
+      const object = objectAt(map, objects, tx, ty);
+      if (object && (object.def === 'flowers' || object.def === 'tall_grass')) points += 2;
+    }
+  }
+  return points;
+}
+
+/**
+ * Where to stroll (step 2.2): of `leisure.roamTries` random places `leisure.roamTiles` away from
+ * where the villager stands (draws from the stream `social`), the prettiest it can reach within
+ * `maxCost`; ties — the first drawn. Null — none.
+ */
+export function roamGoal(world: World, villager: Villager, maxCost: number): Found | null {
+  const { roamTiles, roamTries } = DATA.balance.leisure;
+  const { map, objects } = world;
+  const rng = world.rng.social;
+  const places: { tile: Tile; beauty: number }[] = [];
+  for (let attempt = 0; attempt < roamTries; attempt++) {
+    const dx = intRange(rng, -roamTiles.max, roamTiles.max);
+    const dy = intRange(rng, -roamTiles.max, roamTiles.max);
+    const far = Math.max(Math.abs(dx), Math.abs(dy));
+    if (far < roamTiles.min) continue;
+    const x = villager.x + dx;
+    const y = villager.y + dy;
+    if (!inside(map, x, y) || (x === world.camp.x && y === world.camp.y)) continue;
+    if (tileSpeed(map, objects, x, y) <= 0 || objectAt(map, objects, x, y) !== undefined) continue;
+    if (isTaken(world, x, y, villager) || isGoalOfAnother(world, { x, y }, villager)) continue;
+    if (leastCost(villager, { x, y }) > maxCost) continue;
+    places.push({ tile: { x, y }, beauty: beauty(world, x, y) });
+  }
+  places.sort((a, b) => b.beauty - a.beauty);
+  for (const place of places) {
+    const result = findPath(map, objects, { x: villager.x, y: villager.y }, place.tile, {
+      avoid: (x: number, y: number) => isTaken(world, x, y, villager),
+    });
+    if (!result.ok || result.cost > maxCost) continue;
+    return {
+      source: { kind: 'spot', x: place.tile.x, y: place.tile.y },
+      goal: place.tile,
+      path: result.path,
+      cost: result.cost,
+    };
+  }
+  return null;
 }
 
 /**
@@ -1602,9 +1905,10 @@ export function fillTicks(need: Meal, villager: Villager): number {
  * Why a plan began (the journal of decisions): `chose` — at a moment of thought it beat the plan
  * under way; `done` — the plan before was carried out (rest follows); `failed` — it could not go
  * on (the bush picked clean, the item gone, no way, no room in the pile; rest follows); `order` —
- * the observer sent the villager; `faint` — sleep ran out.
+ * the observer sent the villager; `faint` — sleep ran out; `invited` — another one came to talk to
+ * it (step 2.2).
  */
-export type Why = 'chose' | 'done' | 'failed' | 'order' | 'faint';
+export type Why = 'chose' | 'done' | 'failed' | 'order' | 'faint' | 'invited';
 
 /** A decision of the villager's mind: what it set itself to do, when, why, and what else it weighed. */
 export interface Decision {

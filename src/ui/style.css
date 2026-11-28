@@ -1131,8 +1131,11 @@ button.menu-card:focus-visible {
   bottom: 8px;
   width: 290px;
   max-width: calc(100% - 16px);
-  /* Below the feed of five lines (top 48 px, ≈ 225 px tall): a long memory scrolls instead. */
-  max-height: calc(100% - 280px);
+  /*
+   * Below the feed of five lines (top 48 px, ≈ 225 px tall): a long memory scrolls instead. The
+   * height is of the content: padding and border (18 px) come on top of it.
+   */
+  max-height: calc(100% - 298px);
   min-height: 0;
   overflow-y: auto;
   padding: 6px 8px 8px;
@@ -1235,6 +1238,11 @@ button.menu-card:focus-visible {
   margin: 0;
 }
 
+/* A line across both columns (step 2.2: «no acquaintances yet»). */
+.hud-card-family .hud-card-wide {
+  grid-column: 1 / -1;
+}
+
 .observer .hud-kin {
   padding: 0 3px;
   color: #ffe48f;
@@ -1305,6 +1313,14 @@ button.menu-card:focus-visible {
 
 .hud-scale-warmth .hud-scale-fill {
   background: #e8692c;
+}
+
+.hud-scale-social .hud-scale-fill {
+  background: #c58bd6;
+}
+
+.hud-scale-leisure .hud-scale-fill {
+  background: #e6c24a;
 }
 
 .hud-scale-health .hud-scale-fill {

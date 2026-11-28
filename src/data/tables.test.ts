@@ -283,6 +283,9 @@ describe('испорченная запись даёт понятную ошиб
       sleep: { emptyDays: 1.5 },
       // Warmth (step 1.10): GDD §4.2 «зависит от погоды и одежды» — numbers of ADR-030.
       warmth: { comfort: 10, pointsPerDegreeDay: 6, deathDays: 1, shiverPoints: 40 },
+      // Company and leisure (step 2.2): GDD §4.2 as it is — 4 and 5 days.
+      social: { emptyDays: 4 },
+      leisure: { emptyDays: 5 },
       healDays: 2,
     });
     // Sleep (step 1.5): GDD §4.2 — 1.5 days, the ground ×0.5.

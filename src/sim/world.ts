@@ -25,6 +25,7 @@ import { type GeneratedMap, generateMap } from './mapgen.ts';
 import type { MapObjects } from './objects.ts';
 import { memoriesSystem, recallTick } from './profile.ts';
 import { createRng, type Rng } from './rng.ts';
+import { type Relation, socialSystem } from './social.ts';
 import { calendarEventsSystem } from './systems/calendarEvents.ts';
 import { createFireflies, type Fireflies, firefliesSystem } from './systems/fireflies.ts';
 import { createVillagers, settleFirstPair, type Villagers, villagersSystem } from './villagers.ts';
@@ -42,6 +43,7 @@ export const RNG_STREAMS = [
   'items',
   'weather',
   'profiles',
+  'social',
 ] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
@@ -68,6 +70,8 @@ export interface World {
   fire: Fire;
   /** The weather now (./weather.ts, step 1.10); the temperature follows from it and the calendar. */
   weather: Weather;
+  /** Relations of acquaintances (./social.ts, step 2.2), sorted by the pair. */
+  relations: Relation[];
 }
 
 /** A system updates one aspect of the world once per tick. */
@@ -83,7 +87,8 @@ export interface System {
  * day, before anyone looks for food; stored food that has kept its time spoils then too (./items.ts
  * — step 1.11b). Life (needs, health, death — ./life.ts) goes before the villagers act;
  * the fire (./fire.ts — step 1.9) burns after they have fed it; litter (branches falling from trees,
- * ./items.ts — step 1.7) comes after them; memories (./profile.ts — step 2.1) are last: villagers remember the
+ * ./items.ts — step 1.7) comes after them; social life (./social.ts — step 2.2: company and leisure come
+ * back by what each one did, acquaintances, time together) follows; memories (./profile.ts — step 2.1) are last: villagers remember the
  * events of the tick once every system has had its say.
  */
 export const SYSTEMS: readonly System[] = [
@@ -96,6 +101,7 @@ export const SYSTEMS: readonly System[] = [
   villagersSystem,
   fireSystem,
   litterSystem,
+  socialSystem,
   memoriesSystem,
 ];
 
@@ -128,6 +134,7 @@ export function createWorld(seed: number, options: WorldOptions = {}): World {
     items: createItems(),
     fire: createFire(),
     weather: createWeather(rng.weather),
+    relations: [],
   };
   setCrops(world);
   const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
