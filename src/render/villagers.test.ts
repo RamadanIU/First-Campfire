@@ -9,6 +9,7 @@ import { linePixels, pathPixels } from './debugOverlay.ts';
 import { bubbleOf, INTENT_TICKS, intentOf, PRESSING, pressingOf } from './thoughts.ts';
 import {
   ACTION_ANIMATION,
+  animationOf,
   FEET,
   HAIR_RAMPS,
   SKIN_RAMPS,
@@ -316,5 +317,33 @@ describe('пузырьки мыслей (шаг 1.12)', () => {
     expect(bubbleOf(cold, 0, false, 1)).toBe('cold');
     expect(bubbleOf(cold, 0, false, 0.5)).toBeNull();
     expect(bubbleOf(villager(), 0, true, 0.5)).toBeNull();
+  });
+});
+
+describe('разговор (шаг 2.2): говорят по очереди — жесты и пузырёк речи', () => {
+  const { turnTicks } = DATA.balance.social;
+  const talk = (lead: boolean, seated: boolean) =>
+    ({ kind: 'talk', with: 2, since: 100, until: 1000, seated, lead }) as const;
+
+  it('говорящий жестикулирует, слушающий стоит или сидит спокойно', () => {
+    const speaker = villager({ action: talk(true, false), facing: 'e' });
+    const listener = villager({ action: talk(false, false), facing: 'w' });
+    expect(animationOf(speaker, false, false, 100)).toBe('talk');
+    expect(animationOf(listener, false, false, 100)).toBe('idle');
+    // The next turn — the other one speaks.
+    expect(animationOf(speaker, false, false, 100 + turnTicks)).toBe('idle');
+    expect(animationOf(listener, false, false, 100 + turnTicks)).toBe('talk');
+    const seated = villager({ action: talk(true, true) });
+    expect(animationOf(seated, false, false, 100)).toBe('sit_talk');
+    expect(animationOf(seated, false, false, 100 + turnTicks)).toBe('sit');
+  });
+
+  it('пузырёк — над говорящим, в сторону от собеседника; на ×0,5 не виден', () => {
+    const facingRight = villager({ action: talk(true, false), facing: 'e' });
+    const facingLeft = villager({ action: talk(true, false), facing: 'w' });
+    expect(bubbleOf(facingRight, 100, false, 2)).toBe('talk_left');
+    expect(bubbleOf(facingLeft, 100, false, 1)).toBe('talk');
+    expect(bubbleOf(facingLeft, 100 + turnTicks, false, 2)).toBeNull();
+    expect(bubbleOf(facingLeft, 100, false, 0.5)).toBeNull();
   });
 });

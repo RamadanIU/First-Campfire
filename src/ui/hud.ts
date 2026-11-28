@@ -80,6 +80,16 @@ const PHASE_ICON: Record<DayPhase, string> = {
   night: 'hud_night',
 };
 
+/** The bubble of a need that ran out (the feed): longing for company (step 2.2) — the speech bubble, boredom — flowers (a stroll). */
+const RAN_OUT_ICON = {
+  food: 'bubble_food',
+  water: 'bubble_water',
+  sleep: 'bubble_sleep',
+  warmth: 'bubble_cold',
+  social: 'bubble_talk',
+  leisure: 'flowers',
+} as const;
+
 /** The bubble of a need that nearly killed (step 2.1). */
 const NEED_ICON = { food: 'bubble_food', water: 'bubble_water', warmth: 'bubble_cold' } as const;
 
@@ -102,9 +112,8 @@ function feedIcon(entry: FeedEntry, world: World): string {
       return 'hud_fire_out';
     default: {
       const event = world.events.list[entry.id - 1];
-      return event?.type === 'need_ran_out' && event.need === 'water'
-        ? 'bubble_water'
-        : 'bubble_food';
+      if (event?.type !== 'need_ran_out') return 'bubble_food';
+      return RAN_OUT_ICON[event.need];
     }
   }
 }

@@ -1131,8 +1131,11 @@ button.menu-card:focus-visible {
   bottom: 8px;
   width: 290px;
   max-width: calc(100% - 16px);
-  /* Below the feed of five lines (top 48 px, ≈ 225 px tall): a long memory scrolls instead. */
-  max-height: calc(100% - 280px);
+  /*
+   * Below the feed of five lines (top 48 px, ≈ 225 px tall): a long memory scrolls instead. The
+   * height is of the content: padding and border (18 px) come on top of it.
+   */
+  max-height: calc(100% - 298px);
   min-height: 0;
   overflow-y: auto;
   padding: 6px 8px 8px;

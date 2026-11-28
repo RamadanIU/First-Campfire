@@ -20,7 +20,16 @@ import { isShivering } from '../sim/needs.ts';
 import { isSpeaking } from '../sim/social.ts';
 import { isTrudging, type Villager } from '../sim/villagers.ts';
 
-export type Thought = 'food' | 'water' | 'sleep' | 'cold' | 'carry' | 'lost' | 'fire' | 'talk';
+export type Thought =
+  | 'food'
+  | 'water'
+  | 'sleep'
+  | 'cold'
+  | 'carry'
+  | 'lost'
+  | 'fire'
+  | 'talk'
+  | 'talk_left';
 
 /** The sprite of each thought (src/art/sprites/bubble_*.ts). */
 export const BUBBLE_SPRITE: Readonly<Record<Thought, string>> = {
@@ -32,6 +41,7 @@ export const BUBBLE_SPRITE: Readonly<Record<Thought, string>> = {
   lost: 'bubble_lost',
   fire: 'bubble_fire',
   talk: 'bubble_talk',
+  talk_left: 'bubble_talk_left',
 };
 
 /** How long a new intention shows over the head, ticks (5 s at ×1). */
@@ -89,7 +99,8 @@ export function bubbleOf(
   if (zoom < 1) return null;
   if (asleep) return 'sleep';
   // Talking (step 2.2): the one whose turn it is to speak.
-  if (isSpeaking(villager, tick)) return 'talk';
+  // It reaches away from the one spoken to: to the left of one facing right.
+  if (isSpeaking(villager, tick)) return villager.facing === 'e' ? 'talk_left' : 'talk';
   const pressing = pressingOf(villager);
   if (pressing) return pressing;
   return zoom >= 2 ? intentOf(villager, tick) : null;
