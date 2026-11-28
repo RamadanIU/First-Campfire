@@ -109,6 +109,7 @@ import {
 } from './needs.ts';
 import { findObject, hasFood, objectAt, takeFood } from './objects.ts';
 import { canStep, DIAGONAL, findPath, type PathResult, type Tile, tileSpeed } from './path.ts';
+import { firstComer, type Memory } from './profile.ts';
 import { intRange } from './rng.ts';
 import { isFreezing } from './weather.ts';
 import type { System, World } from './world.ts';
@@ -208,7 +209,23 @@ export type VillagerAction =
 
 export interface Villager {
   id: number;
+  /** Its name (step 2.1, ./names.ts): not repeated among the living. */
+  name: string;
   sex: Sex;
+  /**
+   * The tick of its birth (step 2.1, ./profile.ts): its age goes with the calendar. The first pair
+   * was born before the world — the tick is negative.
+   */
+  born: number;
+  /** Where it was born; the first pair — the tile where it came to the world. */
+  birthplace: Tile;
+  /** Kin by ids (step 2.1): mother and father (null — unknown: the first pair), spouse, children. */
+  mother: number | null;
+  father: number | null;
+  spouse: number | null;
+  children: number[];
+  /** The last significant events of its life, the oldest first (./profile.ts `Memory`). */
+  memories: Memory[];
   /** Skin tone and hair colour: indices below LOOKS.skinTones / LOOKS.hairColors. */
   skin: number;
   hair: number;
@@ -401,9 +418,18 @@ function addVillager(world: World, sex: Sex, tile: Tile, home: Tile): Villager {
   const skin = intRange(rng, 0, LOOKS.skinTones - 1);
   const hair = intRange(rng, 0, LOOKS.hairColors - 1);
   const until = world.tick + restTicks(world);
+  const profile = firstComer(world, sex, tile, world.villagers.list);
   const villager: Villager = {
     id: world.villagers.nextId,
+    name: profile.name,
     sex,
+    born: profile.born,
+    birthplace: profile.birthplace,
+    mother: profile.mother,
+    father: profile.father,
+    spouse: profile.spouse,
+    children: profile.children,
+    memories: profile.memories,
     skin,
     hair,
     home: { ...home },
@@ -456,6 +482,7 @@ export function settleFirstPair(world: World, cause: Cause): void {
       {
         type: 'villager_arrived',
         villager: villager.id,
+        name: villager.name,
         sex,
         x: tile.x,
         y: tile.y,

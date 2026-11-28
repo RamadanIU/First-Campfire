@@ -11,7 +11,13 @@ import { DAY_PHASES, loadTables, type RawTables, TABLES } from './tables.ts';
 type Json = Record<string, unknown>;
 
 /** Load a corrupted copy of the real tables and return the messages of the error. */
-type Tables = { balance: Json; resources: Json[]; terrain: Json[]; objects: Json[] };
+type Tables = {
+  balance: Json;
+  resources: Json[];
+  terrain: Json[];
+  objects: Json[];
+  names: Json[];
+};
 
 function problemsWith(corrupt: (tables: Tables) => void) {
   const copy = structuredClone(RAW_TABLES) as Tables;
@@ -31,7 +37,7 @@ const berries = (tables: { resources: Json[] }) =>
 describe('таблицы игры', () => {
   it('все таблицы загружаются без ошибок', () => {
     expect(() => loadTables(RAW_TABLES)).not.toThrow();
-    expect(Object.keys(TABLES)).toEqual(['balance', 'resources', 'terrain', 'objects']);
+    expect(Object.keys(TABLES)).toEqual(['balance', 'resources', 'terrain', 'objects', 'names']);
   });
 
   it('время — из GDD §2.1 и §13.1', () => {
@@ -52,7 +58,24 @@ describe('таблицы игры', () => {
       fertileAge: { from: 16, to: 45 },
       pregnancySeasons: 3,
       minYearsBetweenChildren: 2,
+      firstPairAge: { min: 18, max: 22 },
+      memorySize: 8,
+      nearDeathHealth: 30,
     });
+  });
+
+  it('имена (шаг 2.1): повтор слога и корень с маленькой буквы — понятная ошибка', () => {
+    const problems = problemsWith((tables) => {
+      const set = tables.names[0]!;
+      set.male = [...(set.male as string[]), 'ан'];
+      set.roots = [...(set.roots as string[]), 'тих'];
+    });
+    expect(problems.join('\n')).toMatch(/data\/names\.json.*слоги повторяются: ан/);
+    const lower = problemsWith((tables) => {
+      const set = tables.names[0]!;
+      set.roots = [...(set.roots as string[]), 'зар'];
+    });
+    expect(lower.join('\n')).toMatch(/с большой буквы: зар/);
   });
 
   it('запись по id', () => {

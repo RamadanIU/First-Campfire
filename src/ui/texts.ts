@@ -16,7 +16,8 @@
 import type { CalendarDate, DayPhase, Season } from '../sim/calendar.ts';
 import type { Cause, DeathReason, WorldEvent } from '../sim/events.ts';
 import type { Activity, Considered, Decision, Hold, PlanStep, Why } from '../sim/minds.ts';
-import type { Need } from '../sim/needs.ts';
+import type { Deadly, Need } from '../sim/needs.ts';
+import type { Memory } from '../sim/profile.ts';
 import type { LoadError, LoadWarning } from '../sim/save.ts';
 import type { Plan, Sex, Villager } from '../sim/villagers.ts';
 import type { WeatherKind } from '../sim/weather.ts';
@@ -365,6 +366,13 @@ export const DIED_OF: Record<DeathReason, string> = {
   cold: 'холод',
 };
 
+/** «от голода» — what a villager nearly died of (step 2.1). */
+export const NEAR_DEATH_OF: Record<Deadly, string> = {
+  food: 'от голода',
+  water: 'от жажды',
+  warmth: 'от холода',
+};
+
 /** «умерла на 104-й день — голод» — of a dead villager; `day` — the day of the world, from 1. */
 export function deathNote(sex: Sex, day: number, reason: DeathReason): string {
   return `${sex === 'male' ? 'умер' : 'умерла'} на ${day}-й день — ${DIED_OF[reason]}`;
@@ -424,13 +432,15 @@ export function describeEvent(event: WorldEvent): string {
     case 'fireflies_gone':
       return `светлячки исчезли: ${event.count}`;
     case 'villager_arrived':
-      return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} (житель ${event.villager})`;
+      return `${event.sex === 'male' ? 'пришёл мужчина' : 'пришла женщина'} ${event.name} (житель ${event.villager})`;
+    case 'villager_nearly_died':
+      return `житель ${event.villager} чуть не ${event.sex === 'male' ? 'умер' : 'умерла'} ${NEAR_DEATH_OF[event.need]}`;
     case 'need_ran_out':
       return `житель ${event.villager} ${RAN_OUT[event.need]}`;
     case 'villager_fainted':
       return `${event.sex === 'male' ? 'упал' : 'упала'} без сил житель ${event.villager}`;
     case 'villager_died':
-      return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager}: ${DIED_OF[event.reason]}`;
+      return `${event.sex === 'male' ? 'умер' : 'умерла'} житель ${event.villager} ${event.name}: ${DIED_OF[event.reason]}`;
     case 'fire_lit':
       return `${event.sex === 'male' ? 'развёл' : 'развела'} костёр житель ${event.villager}${event.first ? ' (первый костёр стоянки)' : ''}`;
     case 'fire_out':
@@ -482,26 +492,36 @@ export function describeCause(cause: Cause, source: string | null): string {
   return source === null ? `#${cause.event}` : `#${cause.event} ${source}`;
 }
 
+/** Who an event of the feed is about: its sex and name (step 2.1), as far as the feed knows. */
+export interface FeedWho {
+  sex: Sex;
+  name: string;
+}
+
 /**
- * A line of the observer's event feed: the event told for a viewer, with who it was; null — not
- * for the feed. (Which events go to the feed is decided by src/ui/feed.ts.)
+ * A line of the observer's event feed: the event told for a viewer, with who it was (by name —
+ * step 2.1); null — not for the feed. (Which events go to the feed is decided by src/ui/feed.ts.)
  */
-export function feedText(event: WorldEvent, sex: Sex | undefined): string | null {
-  const who = sex ? WHO[sex] : 'житель';
+export function feedText(event: WorldEvent, who: FeedWho | undefined): string | null {
+  // Not seen arriving (a test's journal): by the sex the event carries, if any.
+  const sex = who?.sex ?? ('sex' in event ? event.sex : undefined);
+  const name = who?.name ?? (sex ? WHO[sex] : 'житель');
   const female = sex === 'female';
   switch (event.type) {
     case 'villager_arrived':
-      return `${female ? 'Пришла' : 'Пришёл'} ${who}`;
+      return `${female ? 'Пришла' : 'Пришёл'} ${name}`;
     case 'need_ran_out':
-      return event.need === 'sleep' ? null : `${capitalize(who)} ${RAN_OUT[event.need]}`;
+      return event.need === 'sleep' ? null : `${capitalize(name)} ${RAN_OUT[event.need]}`;
+    case 'villager_nearly_died':
+      return `${capitalize(name)} чуть не ${female ? 'умерла' : 'умер'} ${NEAR_DEATH_OF[event.need]}`;
     case 'villager_fainted':
-      return `${capitalize(who)} ${female ? 'упала' : 'упал'} без сил — не спал${female ? 'а' : ''}`;
+      return `${capitalize(name)} ${female ? 'упала' : 'упал'} без сил — не спал${female ? 'а' : ''}`;
     case 'villager_died':
-      return `${female ? 'Умерла' : 'Умер'} ${who} — ${DIED_OF[event.reason]}`;
+      return `${female ? 'Умерла' : 'Умер'} ${name} — ${DIED_OF[event.reason]}`;
     case 'fire_lit':
       return event.first
-        ? `${capitalize(who)} ${female ? 'развела' : 'развёл'} первый костёр`
-        : `${capitalize(who)} ${female ? 'развела' : 'развёл'} костёр`;
+        ? `${capitalize(name)} ${female ? 'развела' : 'развёл'} первый костёр`
+        : `${capitalize(name)} ${female ? 'развела' : 'развёл'} костёр`;
     case 'fire_out':
       return event.cause.kind === 'rule' && event.cause.rule === 'rain'
         ? 'Костёр залило дождём'
@@ -510,6 +530,123 @@ export function feedText(event: WorldEvent, sex: Sex | undefined): string | null
       return null;
   }
 }
+
+// ── The villager's card (step 2.1) ───────────────────────────────────────────────────────────
+
+/** A word by the sex: «пришёл» / «пришла». */
+function bySex(sex: Sex, male: string, female: string): string {
+  return sex === 'female' ? female : male;
+}
+
+/** What a villager remembers, in words (./profile.ts `Memory`), without the date. */
+export function memoryText(memory: Memory, sex: Sex): string {
+  switch (memory.kind) {
+    case 'arrived':
+      return memory.tick === 0
+        ? `${bySex(sex, 'Пришёл', 'Пришла')} к стоянке в день сотворения мира`
+        : `${bySex(sex, 'Пришёл', 'Пришла')} к стоянке`;
+    case 'first_fire':
+      return `${bySex(sex, 'Развёл', 'Развела')} первый костёр стоянки`;
+    case 'fainted':
+      return `${bySex(sex, 'Упал', 'Упала')} без сил — долго не ${bySex(sex, 'спал', 'спала')}`;
+    case 'near_death':
+      return `Чуть не ${bySex(sex, 'умер', 'умерла')} ${NEAR_DEATH_OF[memory.need]}`;
+    case 'loss':
+      return `${bySex(memory.sex, 'Умер', 'Умерла')} ${memory.name} — ${DIED_OF[memory.reason]}`;
+  }
+}
+
+/**
+ * Why a villager does what it does — the reason of its plan for a viewer (from its journal of
+ * decisions: the last decision says how the plan came; the scales say what presses now).
+ * `decision` — the last of the journal (undefined — it has decided nothing yet); `night` — it is
+ * night now.
+ */
+export function whyOf(villager: Villager, decision: Decision | undefined, night: boolean): string {
+  const sex = villager.sex;
+  const value = (need: Need) => Math.round(villager.needs[need]);
+  if (!decision) return `ещё ничего не ${bySex(sex, 'решал', 'решала')} — отдыхает с начала мира`;
+  if (decision.why === 'faint') {
+    return `${bySex(sex, 'упал', 'упала')} без сил — долго не ${bySex(sex, 'спал', 'спала')}`;
+  }
+  const before =
+    decision.ahead === null || decision.plan !== villager.plan.activity
+      ? ''
+      : ` — сначала это, потом ${AHEAD_WORDS[decision.ahead]}`;
+  switch (villager.plan.activity) {
+    case 'rest':
+      return decision.why === 'failed'
+        ? 'задуманное не вышло — отдыхает и думает, что дальше'
+        : 'нужды утолены, дел у стоянки нет';
+    case 'sleep':
+      return night
+        ? 'ночь — время спать'
+        : `${bySex(sex, 'устал', 'устала')} — сон ${value('sleep')}`;
+    case 'eat':
+      return `${bySex(sex, 'проголодался', 'проголодалась')} — сытость ${value('food')}${before}`;
+    case 'drink':
+      return `хочет пить — жажда ${value('water')}${before}`;
+    case 'haul':
+      return 'под деревьями лежат ветки — их нужно снести в кучу для костра';
+    case 'kindle':
+      return 'костёр не горит, а в куче есть дрова';
+    case 'stoke':
+      return 'костёр прогорает — нужны дрова';
+    case 'sit':
+      return 'вечер — время посидеть у огня';
+    case 'warm':
+      return `${bySex(sex, 'замёрз', 'замёрзла')} — тепло ${value('warmth')}`;
+    case 'scout':
+      return `вся знакомая еда собрана — ищет новую${before}`;
+    case 'store':
+      return 'осень — запасает еду на зиму';
+    case 'order':
+      return 'так велел наблюдатель';
+  }
+}
+
+/** What a villager put off for a precaution (`Decision.ahead`): «потом за едой». */
+const AHEAD_WORDS: Readonly<Record<string, string>> = {
+  eat: 'за едой',
+  drink: 'к воде',
+  scout: 'на разведку',
+  rest: 'отдых',
+  sleep: 'сон',
+  haul: 'работа',
+  kindle: 'огонь',
+  stoke: 'дрова в костёр',
+  sit: 'к огню',
+  warm: 'греться',
+  store: 'запасы',
+};
+
+/** The words of the villager's card (step 2.1, GDD §11.4). */
+export const CARD = {
+  /** «мужчина, 20 лет». */
+  who: (sex: Sex, years: number) => `${WHO[sex]}, ${countOf(years, FORMS.year)}`,
+  /** Where it comes from: the first pair came at the creation; the born — their date of birth. */
+  origin: (sex: Sex, came: boolean, born: string) =>
+    came
+      ? `${bySex(sex, 'пришёл', 'пришла')} при сотворении мира`
+      : `${bySex(sex, 'родился', 'родилась')}: ${born}`,
+  now: 'Сейчас',
+  why: 'Почему',
+  needs: 'Нужды',
+  family: 'Семья',
+  mother: 'Мать',
+  father: 'Отец',
+  spouse: (sex: Sex) => bySex(sex, 'Жена', 'Муж'),
+  children: 'Дети',
+  unknownMother: 'неизвестна',
+  unknownFather: 'неизвестен',
+  none: 'нет',
+  /** A relative in the list: «Любава», a dead one — «Любава †». */
+  kin: (name: string, alive: boolean) => (alive ? name : `${name} †`),
+  kinTitle: (name: string) => `Открыть карточку: ${name}`,
+  memory: 'Память',
+  memoryEmpty: (sex: Sex) => `Пока ничего не ${bySex(sex, 'запомнил', 'запомнила')}`,
+  portrait: (name: string) => `Портрет: ${name}`,
+} as const;
 
 // ── Saves ────────────────────────────────────────────────────────────────────────────────────
 
@@ -628,6 +765,8 @@ export const HUD = {
   feedToggle: 'Свернуть или развернуть события',
   cardTitle: (sex: Sex | undefined, id: number) =>
     sex ? `${WHO_TITLE[sex]} · житель ${id}` : `Житель ${id}`,
+  /** The card of a dead villager (step 2.1): its name, of what and when it died. */
+  deadTitle: (name: string) => `${name} †`,
   feedEmpty: 'Пока ничего не случилось',
   feedHint: 'Щелчок по событию — камера летит к месту',
   close: 'Закрыть',

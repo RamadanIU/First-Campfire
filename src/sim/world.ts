@@ -23,6 +23,7 @@ import { lifeSystem } from './life.ts';
 import type { WorldMap } from './map.ts';
 import { type GeneratedMap, generateMap } from './mapgen.ts';
 import type { MapObjects } from './objects.ts';
+import { memoriesSystem, recallTick } from './profile.ts';
 import { createRng, type Rng } from './rng.ts';
 import { calendarEventsSystem } from './systems/calendarEvents.ts';
 import { createFireflies, type Fireflies, firefliesSystem } from './systems/fireflies.ts';
@@ -33,7 +34,15 @@ import { createWeather, type Weather, weatherSystem } from './weather.ts';
  * Named random streams, one per system. A new system adds its name to the end; streams are
  * derived from (seed, name), so adding one does not change the numbers of the others.
  */
-export const RNG_STREAMS = ['fireflies', 'map', 'villagers', 'minds', 'items', 'weather'] as const;
+export const RNG_STREAMS = [
+  'fireflies',
+  'map',
+  'villagers',
+  'minds',
+  'items',
+  'weather',
+  'profiles',
+] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 
 export interface World {
@@ -74,7 +83,8 @@ export interface System {
  * day, before anyone looks for food; stored food that has kept its time spoils then too (./items.ts
  * — step 1.11b). Life (needs, health, death — ./life.ts) goes before the villagers act;
  * the fire (./fire.ts — step 1.9) burns after they have fed it; litter (branches falling from trees,
- * ./items.ts — step 1.7) comes last.
+ * ./items.ts — step 1.7) comes after them; memories (./profile.ts — step 2.1) are last: villagers remember the
+ * events of the tick once every system has had its say.
  */
 export const SYSTEMS: readonly System[] = [
   calendarEventsSystem,
@@ -86,6 +96,7 @@ export const SYSTEMS: readonly System[] = [
   villagersSystem,
   fireSystem,
   litterSystem,
+  memoriesSystem,
 ];
 
 export interface WorldOptions {
@@ -122,6 +133,8 @@ export function createWorld(seed: number, options: WorldOptions = {}): World {
   const created = emit(world, { type: 'world_created', seed }, { kind: 'rule', rule: 'genesis' });
   settleFirstPair(world, { kind: 'event', event: created.id });
   scatterLitter(world);
+  // The events of the creation are the first memories (no system runs on tick 0).
+  recallTick(world);
   return world;
 }
 

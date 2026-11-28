@@ -6,6 +6,7 @@
  *   data/resources.json  resources: food, materials, products (GDD §5.1, §5.2)
  *   data/terrain.json    types of ground: can one walk there, how fast (GDD §13.1, §6.1)
  *   data/objects.json    objects of the map: trees, bushes, boulders, flowers (GDD §2.2, §3.3)
+ *   data/names.json      syllables of names, a set per culture (step 2.1, GDD §8.6)
  *
  * A new table: a schema here, an entry in TABLES, an import in ./index.ts. A new record of an
  * existing table needs no code at all.
@@ -233,6 +234,28 @@ const balanceSchema = obj({
         max: 10,
         unit: 'лет',
         doc: 'Минимальный перерыв между детьми',
+      }),
+      firstPairAge: obj(
+        {
+          min: int({ min: 10, max: 60, unit: 'лет', doc: 'от' }),
+          max: int({ min: 10, max: 60, unit: 'лет', doc: 'до' }),
+        },
+        {
+          doc: 'Возраст первой пары при сотворении мира (шаг 2.1: молодые взрослые, GDD §4.3)',
+          check: ({ min, max }) => (min <= max ? null : `от (${min}) больше, чем до (${max})`),
+        },
+      ),
+      memorySize: int({
+        min: 5,
+        max: 10,
+        unit: 'записей',
+        doc: 'Сколько последних значимых событий помнит житель (GDD §4.1: 5–10)',
+      }),
+      nearDeathHealth: int({
+        min: 1,
+        max: 99,
+        unit: 'пунктов',
+        doc: '«Чуть не умер»: здоровье упало ниже этого от голода, жажды или холода — событие и запись в памяти (шаг 2.1)',
       }),
     },
     { doc: 'Жизнь (GDD §13.1)' },
@@ -973,6 +996,41 @@ const objectsSchema = table(
 
 export type MapObjectDef = Infer<typeof objectsSchema>[number];
 
+// ── names.json ─────────────────────────────────────────────────────────────────────────────
+
+/** A syllable of a name: a few Cyrillic letters. */
+const syllable = (doc: string) => text({ maxLength: 12, doc });
+
+const namesSchema = table(
+  {
+    id: id({ doc: 'Идентификатор культурного набора имён (GDD §8.6)' }),
+    name: text({ maxLength: 40, doc: 'Чьи это имена — для игрока' }),
+    roots: list(syllable('корень с большой буквы: «Рад»'), {
+      min: 2,
+      doc: 'Корни имён: имя — корень и окончание («Рад» + «омир» = Радомир)',
+    }),
+    male: list(syllable('окончание: «омир»'), { min: 2, doc: 'Окончания мужских имён' }),
+    female: list(syllable('окончание: «ава»'), { min: 2, doc: 'Окончания женских имён' }),
+    skip: list(syllable('имя целиком'), {
+      doc: 'Имена, которые не даются: сочетания, которые звучат плохо',
+    }),
+  },
+  {
+    check: ({ roots, male, female }) => {
+      const repeated = [roots, male, female].flatMap((part) =>
+        part.filter((item, index) => part.indexOf(item) !== index),
+      );
+      if (repeated.length > 0) return `слоги повторяются: ${repeated.join(', ')}`;
+      const lower = roots.filter((root) => root.charAt(0) !== root.charAt(0).toUpperCase());
+      return lower.length > 0
+        ? `корни должны начинаться с большой буквы: ${lower.join(', ')}`
+        : null;
+    },
+  },
+);
+
+export type NameSet = Infer<typeof namesSchema>[number];
+
 // ── All tables ─────────────────────────────────────────────────────────────────────────────
 
 /** Every table: its file and schema. The scene `data` documents the tables from here. */
@@ -981,6 +1039,7 @@ export const TABLES = {
   resources: { file: 'data/resources.json', schema: resourcesSchema },
   terrain: { file: 'data/terrain.json', schema: terrainSchema },
   objects: { file: 'data/objects.json', schema: objectsSchema },
+  names: { file: 'data/names.json', schema: namesSchema },
 } as const satisfies Record<string, TableSchema<unknown>>;
 
 export type TableName = keyof typeof TABLES;
@@ -1017,6 +1076,8 @@ export interface GameData {
   readonly resources: Table<Resource>;
   readonly terrain: Table<Terrain>;
   readonly objects: Table<MapObjectDef>;
+  /** Syllables of names (step 2.1, GDD §8.6): a set per culture; the first is the people of the camp. */
+  readonly names: Table<NameSet>;
   /**
    * References to sprites and looks of the ground. src/data cannot check them (it does not
    * import src/art): tests/data.test.ts and the scene `data` do, with `checkExternalRefs`.
@@ -1037,6 +1098,7 @@ export function loadTables(raw: RawTables): GameData {
     resources: makeTable(values.resources, TABLES.resources.file),
     terrain: makeTable(values.terrain, TABLES.terrain.file),
     objects: makeTable(values.objects, TABLES.objects.file),
+    names: makeTable(values.names, TABLES.names.file),
     external: refs,
   });
 }

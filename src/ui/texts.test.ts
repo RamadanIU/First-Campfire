@@ -107,30 +107,35 @@ describe('модуль текстов', () => {
     expect(storedSize(1_800_000)).toBe('1,7 МБ');
   });
 
-  it('строки ленты событий: кто и что, с причиной; не для ленты — null', () => {
-    expect(feedText(event({ type: 'villager_arrived', sex: 'female' }), 'female')).toBe(
-      'Пришла женщина',
+  it('строки ленты событий: кто (по имени) и что, с причиной; не для ленты — null', () => {
+    const lada = { sex: 'female', name: 'Лада' } as const;
+    const rad = { sex: 'male', name: 'Радомир' } as const;
+    expect(feedText(event({ type: 'villager_arrived', sex: 'female' }), lada)).toBe('Пришла Лада');
+    expect(feedText(event({ type: 'villager_arrived', sex: 'male' }), rad)).toBe('Пришёл Радомир');
+    expect(feedText(event({ type: 'villager_died', sex: 'female', reason: 'hunger' }), lada)).toBe(
+      'Умерла Лада — голод',
     );
-    expect(feedText(event({ type: 'villager_arrived', sex: 'male' }), 'male')).toBe(
-      'Пришёл мужчина',
+    expect(feedText(event({ type: 'villager_died', sex: 'male', reason: 'thirst' }), rad)).toBe(
+      'Умер Радомир — жажда',
     );
-    expect(
-      feedText(event({ type: 'villager_died', sex: 'female', reason: 'hunger' }), 'female'),
-    ).toBe('Умерла женщина — голод');
-    expect(feedText(event({ type: 'villager_died', sex: 'male', reason: 'thirst' }), 'male')).toBe(
-      'Умер мужчина — жажда',
+    expect(feedText(event({ type: 'villager_fainted', sex: 'female' }), lada)).toBe(
+      'Лада упала без сил — не спала',
     );
-    expect(feedText(event({ type: 'villager_fainted', sex: 'female' }), 'female')).toBe(
+    expect(feedText(event({ type: 'villager_nearly_died', sex: 'male', need: 'food' }), rad)).toBe(
+      'Радомир чуть не умер от голода',
+    );
+    expect(feedText(event({ type: 'need_ran_out', need: 'water' }), rad)).toBe(
+      'Радомир мучается жаждой',
+    );
+    // Unknown to the feed: by the sex the event carries, or just «житель».
+    expect(feedText(event({ type: 'villager_fainted', sex: 'female' }), undefined)).toBe(
       'Женщина упала без сил — не спала',
-    );
-    expect(feedText(event({ type: 'need_ran_out', need: 'water' }), 'male')).toBe(
-      'Мужчина мучается жаждой',
     );
     expect(feedText(event({ type: 'need_ran_out', need: 'food' }), undefined)).toBe(
       'Житель голодает',
     );
     // A need of sleep running out is told by the fainting that follows.
-    expect(feedText(event({ type: 'need_ran_out', need: 'sleep' }), 'male')).toBeNull();
+    expect(feedText(event({ type: 'need_ran_out', need: 'sleep' }), rad)).toBeNull();
     expect(
       feedText(event({ type: 'phase_started', phase: 'night', day: 2 }), undefined),
     ).toBeNull();
