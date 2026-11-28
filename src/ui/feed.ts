@@ -4,16 +4,16 @@
  * a click on a line flies the camera there.
  *
  * Significant for now: people came (the creation of the world), a villager starves or thirsts,
- * faints from want of sleep, dies — with the reason; the campfire is lit or goes out (step 1.9). The rest of the journal (the turn of days and
+ * faints from want of sleep, nearly dies (step 2.1), dies — with the reason; villagers are named
+ * by their names (step 2.1); the campfire is lit or goes out (step 1.9). The rest of the journal (the turn of days and
  * seasons, fireflies) is the rhythm of the world, not news.
  *
  * The journal only grows, so the feed reads each event once: `update` goes on from the last event
  * it saw (a loaded world of 200 years is read once, then a few events a day).
  */
 import type { WorldEvent } from '../sim/events.ts';
-import type { Sex } from '../sim/villagers.ts';
 import type { World } from '../sim/world.ts';
-import { feedText } from './texts.ts';
+import { type FeedWho, feedText } from './texts.ts';
 
 /** How many lines the feed keeps (the newest first). */
 export const FEED_SIZE = 5;
@@ -45,8 +45,11 @@ export function createFeed(size = FEED_SIZE): Feed {
   let entries: FeedEntry[] = [];
   /** Id of the next event to read. */
   let next = 1;
-  /** Who is who: the sex of every villager seen arriving (events of needs do not carry it). */
-  const sexes = new Map<number, Sex>();
+  /**
+   * Who is who: the sex and name of every villager seen arriving (step 2.1: by name; events of
+   * needs and of the fire do not carry them).
+   */
+  const people = new Map<number, FeedWho>();
 
   return {
     get entries() {
@@ -61,7 +64,7 @@ export function createFeed(size = FEED_SIZE): Feed {
       const added: FeedEntry[] = [];
       for (let i = Math.max(0, start); i < list.length; i++) {
         const event = list[i]!;
-        const entry = toEntry(event, sexes);
+        const entry = toEntry(event, people);
         if (entry) added.push(entry);
       }
       next = list[list.length - 1]!.id + 1;
@@ -73,53 +76,20 @@ export function createFeed(size = FEED_SIZE): Feed {
 }
 
 /** A line of the feed for an event, or null if the event is not for the feed. */
-function toEntry(event: WorldEvent, sexes: Map<number, Sex>): FeedEntry | null {
+function toEntry(event: WorldEvent, people: Map<number, FeedWho>): FeedEntry | null {
   switch (event.type) {
     case 'villager_arrived':
+    case 'villager_died':
+      people.set(event.villager, { sex: event.sex, name: event.name });
+      return placed(event, event.villager, feedText(event, people.get(event.villager)));
     case 'villager_fainted':
-    case 'villager_died': {
-      sexes.set(event.villager, event.sex);
-      const text = feedText(event, event.sex);
-      return text === null
-        ? null
-        : {
-            id: event.id,
-            tick: event.tick,
-            type: event.type,
-            villager: event.villager,
-            text,
-            place: { x: event.x, y: event.y },
-          };
-    }
-    case 'fire_lit': {
-      sexes.set(event.villager, event.sex);
-      const text = feedText(event, event.sex);
-      return text === null
-        ? null
-        : {
-            id: event.id,
-            tick: event.tick,
-            type: event.type,
-            villager: event.villager,
-            text,
-            place: { x: event.x, y: event.y },
-          };
-    }
-    case 'fire_out': {
-      const text = feedText(event, undefined);
-      return text === null
-        ? null
-        : {
-            id: event.id,
-            tick: event.tick,
-            type: event.type,
-            villager: 0,
-            text,
-            place: { x: event.x, y: event.y },
-          };
-    }
+    case 'villager_nearly_died':
+    case 'fire_lit':
+      return placed(event, event.villager, feedText(event, people.get(event.villager)));
+    case 'fire_out':
+      return placed(event, 0, feedText(event, undefined));
     case 'need_ran_out': {
-      const text = feedText(event, sexes.get(event.villager));
+      const text = feedText(event, people.get(event.villager));
       return text === null
         ? null
         : {
@@ -134,4 +104,22 @@ function toEntry(event: WorldEvent, sexes: Map<number, Sex>): FeedEntry | null {
     default:
       return null;
   }
+}
+
+/** A line of the feed with the place of its event; null if the event says nothing to the viewer. */
+function placed(
+  event: WorldEvent & { x: number; y: number },
+  villager: number,
+  text: string | null,
+): FeedEntry | null {
+  return text === null
+    ? null
+    : {
+        id: event.id,
+        tick: event.tick,
+        type: event.type,
+        villager,
+        text,
+        place: { x: event.x, y: event.y },
+      };
 }

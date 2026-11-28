@@ -13,6 +13,7 @@ import {
 } from '../data/tables.ts';
 import { createSpriteSheet, type SpriteSheet } from '../render/spriteSheet.ts';
 import { DAYS_PER_YEAR, TICKS_PER_SEASON, TICKS_PER_YEAR } from '../sim/calendar.ts';
+import { namesOf } from '../sim/names.ts';
 import { DATA_SCENE, FORMS, plural, SEASON_NAME } from '../ui/texts.ts';
 import { checkDataRefs } from './dataRefs.ts';
 import type { Scene, SceneContext } from './scene.ts';
@@ -389,6 +390,25 @@ export function createDataScene({ canvas, ui, params }: SceneContext): Scene {
     ),
   );
   root.append(things);
+
+  // Names (step 2.1).
+  const names = document.createElement('section');
+  names.innerHTML = `<h2>${DATA_SCENE.names(TABLES.names.file)}</h2><p class="meta">${DATA_SCENE.namesMeta}</p>`;
+  names.append(
+    table(
+      DATA_SCENE.nameHeads,
+      DATA.names.records.map((set) => [
+        named(set.name, set.id),
+        set.roots.join(' · '),
+        set.male.map((ending) => `-${ending}`).join(' · '),
+        set.female.map((ending) => `-${ending}`).join(' · '),
+        set.skip.join(', '),
+        DATA_SCENE.nameCount(namesOf(set, 'male').length, namesOf(set, 'female').length),
+      ]),
+      ['name'],
+    ),
+  );
+  root.append(names);
 
   // Balance.
   const numbersSection = document.createElement('section');

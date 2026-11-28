@@ -16,7 +16,10 @@
     "adultAge": 15,
     "fertileAge": { "from": 16, "to": 45 },
     "pregnancySeasons": 3,
-    "minYearsBetweenChildren": 2
+    "minYearsBetweenChildren": 2,
+    "firstPairAge": { "min": 18, "max": 22 },
+    "memorySize": 8,
+    "nearDeathHealth": 30
   },
   "villagers": {
     "wanderRadius": 6,

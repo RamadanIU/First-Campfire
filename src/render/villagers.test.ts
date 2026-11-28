@@ -22,7 +22,15 @@ import {
 function villager(fields: Partial<Villager> = {}): Villager {
   return {
     id: 1,
+    name: 'Радомир',
     sex: 'male',
+    born: -80_000,
+    birthplace: { x: 0, y: 0 },
+    mother: null,
+    father: null,
+    spouse: null,
+    children: [],
+    memories: [],
     skin: 0,
     hair: 0,
     home: { x: 0, y: 0 },

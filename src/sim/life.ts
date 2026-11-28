@@ -7,6 +7,8 @@
  *     need itself — the villager starts to starve or to thirst;
  *   - warmth (step 1.10) follows the temperature felt on the villager's tile (./weather.ts `feltAt`);
  *   - hunger, thirst or cold at zero harms health (sleep at zero fells — ./villagers.ts), and health heals while nothing is at zero;
+ *   - health falling below `life.nearDeathHealth` from hunger, thirst or cold is an event
+ *     `villager_nearly_died` (step 2.1): the villager remembers it (./profile.ts);
  *   - health at zero is death: an event `villager_died` with what it died of (`reason` — the need
  *     that ran out first, its event is the cause) and whether food and water could be reached from
  *     where it died; then the villager leaves the world.
@@ -58,6 +60,7 @@ function die(world: World, villager: Villager, empty: readonly Deadly[]): void {
     {
       type: 'villager_died',
       villager: villager.id,
+      name: villager.name,
       sex: villager.sex,
       x: villager.x,
       y: villager.y,
@@ -71,6 +74,29 @@ function die(world: World, villager: Villager, empty: readonly Deadly[]): void {
   removeVillager(world, villager.id);
 }
 
+/** Did health just fall below `life.nearDeathHealth` (step 2.1)? */
+function nearlyDied(before: number, after: number): boolean {
+  const line = DATA.balance.life.nearDeathHealth;
+  return before >= line && after < line;
+}
+
+/** The villager nearly died of the need among `empty` that ran out first (step 2.1). */
+function nearDeath(world: World, villager: Villager, empty: readonly Deadly[]): void {
+  const need = firstRanOut(villager, empty);
+  emit(
+    world,
+    {
+      type: 'villager_nearly_died',
+      villager: villager.id,
+      sex: villager.sex,
+      x: villager.x,
+      y: villager.y,
+      need,
+    },
+    { kind: 'event', event: villager.ranOut[need] },
+  );
+}
+
 export const lifeSystem: System = {
   id: 'life',
   step(world) {
@@ -78,6 +104,7 @@ export const lifeSystem: System = {
     for (const villager of [...world.villagers.list]) {
       const asleep = villager.action.kind === 'sleep';
       const felt = feltAt(world, villager.x, villager.y);
+      const before = villager.health;
       const { ranOut, empty, health } = liveTick(villager.needs, villager.health, asleep, felt);
       villager.health = health;
       for (const need of NEEDS) if (villager.needs[need] > 0) villager.ranOut[need] = 0;
@@ -91,6 +118,7 @@ export const lifeSystem: System = {
       }
       const deadly = empty.filter(isDeadly);
       if (health <= 0 && deadly.length > 0) die(world, villager, deadly);
+      else if (deadly.length > 0 && nearlyDied(before, health)) nearDeath(world, villager, deadly);
     }
   },
 };

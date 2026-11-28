@@ -1129,25 +1129,61 @@ button.menu-card:focus-visible {
   position: absolute;
   left: 8px;
   bottom: 8px;
-  width: 240px;
+  width: 290px;
   max-width: calc(100% - 16px);
+  /* Below the feed of five lines (top 48 px, ≈ 225 px tall): a long memory scrolls instead. */
+  max-height: calc(100% - 280px);
+  min-height: 0;
+  overflow-y: auto;
   padding: 6px 8px 8px;
-  box-sizing: border-box;
 }
 
+/* The head of the card (step 2.1): the portrait, the name, sex and age, where it comes from. */
 .hud-card-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hud-card-portrait {
+  flex: none;
+  line-height: 0;
+  padding: 2px;
+  background: #2b2633;
+  box-shadow:
+    inset 0 0 0 1px #4a3a36,
+    0 0 0 1px #15131b;
+}
+
+.hud-card-portrait[hidden],
+.hud-card-living[hidden] {
+  display: none;
+}
+
+.hud-card-id {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .hud-card-title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: bold;
+  line-height: 1.2;
   color: #ffe48f;
 }
 
+.hud-card-who {
+  color: #f0e9d6;
+}
+
+.hud-card-origin {
+  font-size: 11px;
+  color: #b6b9c2;
+}
+
 .observer .hud-card-close {
+  flex: none;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -1155,12 +1191,81 @@ button.menu-card:focus-visible {
 }
 
 .hud-card-doing {
-  margin: 2px 0 6px;
+  margin: 6px 0 0;
+  color: #f0e9d6;
+}
+
+.hud-card-why {
+  margin: 1px 0 6px;
+  font-size: 11px;
   color: #c7bea9;
 }
 
 .hud-card-scales[hidden] {
   display: none;
+}
+
+.hud-card-section {
+  margin-top: 7px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(240, 233, 214, 0.14);
+}
+
+.hud-card-heading {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 0.08em;
+  color: #f9aa3c;
+}
+
+.hud-card-family {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 8px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.hud-card-family dt {
+  color: #b6b9c2;
+}
+
+.hud-card-family dd {
+  margin: 0;
+}
+
+.observer .hud-kin {
+  padding: 0 3px;
+  color: #ffe48f;
+  background: none;
+  border: none;
+  border-bottom: 1px dotted rgba(255, 228, 143, 0.6);
+}
+
+.hud-card-memory {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+}
+
+.hud-memory {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-memory + .hud-memory {
+  margin-top: 2px;
+}
+
+.hud-card-date {
+  font-size: 10px;
+  color: #8f8a99;
+}
+
+.hud-card-empty {
+  color: #8f8a99;
 }
 
 .hud-scale {
@@ -1261,6 +1366,7 @@ button.menu-card:focus-visible {
   .hud-card {
     width: auto;
     right: 8px;
+    max-height: 46%;
   }
 
   .hud-debug {

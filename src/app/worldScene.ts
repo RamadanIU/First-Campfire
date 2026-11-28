@@ -17,9 +17,11 @@
 import { PALETTE } from '../art/palette.ts';
 import { SPRITES } from '../art/registry.ts';
 import { createSpriteSheet, type SpriteSheet } from '../render/spriteSheet.ts';
+import { spriteOf, swapOf } from '../render/villagers.ts';
 import { hashState } from '../sim/hash.ts';
 import type { LoadWarning } from '../sim/save.ts';
 import { saveWorld } from '../sim/save.ts';
+import type { Villager } from '../sim/villagers.ts';
 import type { World } from '../sim/world.ts';
 import { dateOf } from '../ui/dates.ts';
 import { createHud, type Hud } from '../ui/hud.ts';
@@ -69,6 +71,7 @@ export function createWorldScene(context: SceneContext): Scene {
       flyToTile: view.flyToTile,
       flyToVillager: view.flyToVillager,
       icon: (name, scale) => iconCanvas(sheet, name, scale),
+      portrait: (villager) => portraitCanvas(sheet, villager),
       menuOpen: params.menu,
     });
     panel = createWorldPanel(hud, world, view, autosave, origin, warnings);
@@ -90,6 +93,7 @@ export function createWorldScene(context: SceneContext): Scene {
     villagers: () =>
       world.villagers.list.map((villager) => ({
         id: villager.id,
+        name: villager.name,
         sex: villager.sex,
         x: villager.x,
         y: villager.y,
@@ -130,6 +134,32 @@ function iconCanvas(sheet: SpriteSheet, name: string, scale: number): HTMLCanvas
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
   sheet.draw(ctx, name, entry.anchor.x * scale, entry.anchor.y * scale, { scale, frame: 0 });
+  return canvas;
+}
+
+/** How the portrait of the card is cut and enlarged (step 2.1): head and shoulders, ×4. */
+const PORTRAIT = { scale: 4, rows: 14 } as const;
+
+/**
+ * The portrait of a villager for its card (step 2.1): its own sprite with its skin and hair, standing
+ * face to the viewer, the top `PORTRAIT.rows` pixels — head and shoulders — at ×`PORTRAIT.scale`.
+ */
+function portraitCanvas(sheet: SpriteSheet, villager: Villager): HTMLCanvasElement {
+  const name = spriteOf(villager);
+  const entry = sheet.entry(name);
+  const { scale, rows } = PORTRAIT;
+  const canvas = document.createElement('canvas');
+  canvas.width = entry.width * scale;
+  canvas.height = rows * scale;
+  canvas.className = 'pixel-icon';
+  const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  sheet.draw(ctx, name, entry.anchor.x * scale, entry.anchor.y * scale, {
+    scale,
+    frame: 0,
+    animation: 'idle_s',
+    swap: swapOf(villager),
+  });
   return canvas;
 }
 

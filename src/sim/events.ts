@@ -10,7 +10,7 @@
  */
 import type { DayPhase, Season } from './calendar.ts';
 import type { Activity } from './minds.ts';
-import type { Need } from './needs.ts';
+import type { Deadly, Need } from './needs.ts';
 import type { Sex } from './villagers.ts';
 import type { WeatherKind } from './weather.ts';
 import type { World } from './world.ts';
@@ -47,12 +47,18 @@ export type EventBody =
   /** The weather changed (step 1.10): its spell was over; the cause is the rule `weather`. */
   | { type: 'weather_changed'; from: WeatherKind; to: WeatherKind }
   /** A villager came to the world: the first two at its creation (step 1.3). */
-  | { type: 'villager_arrived'; villager: number; sex: Sex; x: number; y: number }
+  | { type: 'villager_arrived'; villager: number; name: string; sex: Sex; x: number; y: number }
   /**
    * A need of a villager fell to zero (step 1.4): hunger or thirst begins to harm health. The
    * cause is the need itself; the death it may lead to points here.
    */
   | { type: 'need_ran_out'; villager: number; need: Need }
+  /**
+   * A villager nearly died (step 2.1): its health fell below `life.nearDeathHealth` while `need`
+   * (hunger, thirst, cold) was at zero — it remembers it (./profile.ts). The cause is the event of
+   * that need running out.
+   */
+  | { type: 'villager_nearly_died'; villager: number; sex: Sex; x: number; y: number; need: Deadly }
   /**
    * A villager fainted from want of sleep (step 1.5): it falls where it stands and lies until
    * `sleeping.faintWakePoints`. The cause is the event of its sleep running out.
@@ -106,6 +112,8 @@ export type EventBody =
   | {
       type: 'villager_died';
       villager: number;
+      /** Its name (step 2.1): the villager is gone from the world, its name stays in the journal. */
+      name: string;
       sex: Sex;
       x: number;
       y: number;

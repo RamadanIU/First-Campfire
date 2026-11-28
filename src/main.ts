@@ -52,6 +52,8 @@ export interface WorldInfo {
 /** A villager as automated checks see it. */
 export interface VillagerInfo {
   id: number;
+  /** Its name (step 2.1). */
+  name: string;
   sex: string;
   /** Tile it stands on and the tile of its current step. */
   x: number;

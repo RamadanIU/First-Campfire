@@ -358,6 +358,7 @@ const CURRENT_SHAPE: string[] = [
   'events.list[].from: string',
   'events.list[].id: number',
   'events.list[].lit: number',
+  'events.list[].name: string',
   'events.list[].object: number',
   'events.list[].phase: string',
   'events.list[].season: string',
@@ -458,6 +459,11 @@ const CURRENT_SHAPE: string[] = [
   'rng.minds.c: number',
   'rng.minds.d: number',
   'rng.minds: object',
+  'rng.profiles.a: number',
+  'rng.profiles.b: number',
+  'rng.profiles.c: number',
+  'rng.profiles.d: number',
+  'rng.profiles: object',
   'rng.villagers.a: number',
   'rng.villagers.b: number',
   'rng.villagers.c: number',
@@ -517,7 +523,13 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].action.water.y: number',
   'villagers.list[].action.water: object',
   'villagers.list[].action: object',
+  'villagers.list[].birthplace.x: number',
+  'villagers.list[].birthplace.y: number',
+  'villagers.list[].birthplace: object',
+  'villagers.list[].born: number',
+  'villagers.list[].children: array',
   'villagers.list[].facing: string',
+  'villagers.list[].father: null',
   'villagers.list[].foods: array',
   'villagers.list[].foods[].at: number',
   'villagers.list[].foods[].full: boolean',
@@ -562,6 +574,14 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].log[].utility: number',
   'villagers.list[].log[].why: string',
   'villagers.list[].log[]: object',
+  'villagers.list[].memories: array',
+  'villagers.list[].memories[].event: number',
+  'villagers.list[].memories[].kind = "arrived"',
+  'villagers.list[].memories[].kind = "first_fire"',
+  'villagers.list[].memories[].tick: number',
+  'villagers.list[].memories[]: object',
+  'villagers.list[].mother: null',
+  'villagers.list[].name: string',
   'villagers.list[].needs.food: number',
   'villagers.list[].needs.sleep: number',
   'villagers.list[].needs.warmth: number',
@@ -592,6 +612,7 @@ const CURRENT_SHAPE: string[] = [
   'villagers.list[].seen[]: number',
   'villagers.list[].sex: string',
   'villagers.list[].skin: number',
+  'villagers.list[].spouse: null',
   'villagers.list[].thought: number',
   'villagers.list[].toX: number',
   'villagers.list[].toY: number',
@@ -628,6 +649,7 @@ const SHAPE_HISTORY: Record<number, string> = {
   9: '4421a8b21c8842c5', // step 1.10: weather and its stream, warmth, a wet fire, rotting branches, food of a meal
   10: '88a01f5330f35507', // step 1.11a: the yearly crop, food found (how far from the camp), «too far» memory
   11: 'd5667b56b227a0aa', // step 1.11b: memory of the land and of food, scouting, the store of food, spoiling
+  12: 'a178a2746a5d3b29', // step 2.1: the profile — name, birth, kin, memories; names in events; «nearly died»
 };
 
 describe('форма мира и версия формата сохранения', () => {

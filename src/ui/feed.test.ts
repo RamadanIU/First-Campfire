@@ -8,7 +8,11 @@ describe('лента событий', () => {
     const world = createWorld(1);
     const feed = createFeed();
     expect(feed.update(world)).toBe(true);
-    expect(feed.entries.map((entry) => entry.text)).toEqual(['Пришла женщина', 'Пришёл мужчина']);
+    const [man, woman] = world.villagers.list;
+    expect(feed.entries.map((entry) => entry.text)).toEqual([
+      `Пришла ${woman!.name}`,
+      `Пришёл ${man!.name}`,
+    ]);
     for (const entry of feed.entries) {
       const villager = world.villagers.list.find((v) => v.id === entry.villager)!;
       expect(entry.place).toEqual({ x: villager.x, y: villager.y });
@@ -29,8 +33,9 @@ describe('лента событий', () => {
     expect(feed.update(world)).toBe(false);
   });
 
-  it('костёр (шаг 1.9): «Мужчина развёл первый костёр», «Костёр погас — прогорели дрова» — с местом', () => {
+  it('костёр (шаг 1.9): «<имя> развёл первый костёр», «Костёр погас — прогорели дрова» — с местом', () => {
     const world = createWorld(1);
+    const [man, woman] = world.villagers.list;
     const feed = createFeed();
     const { camp } = world;
     emit(
@@ -50,13 +55,13 @@ describe('лента событий', () => {
     );
     feed.update(world);
     expect(feed.entries.slice(0, 3).map((e) => [e.text, e.place])).toEqual([
-      ['Женщина развела костёр', { x: camp.x, y: camp.y }],
+      [`${woman!.name} развела костёр`, { x: camp.x, y: camp.y }],
       ['Костёр погас — прогорели дрова', { x: camp.x, y: camp.y }],
-      ['Мужчина развёл первый костёр', { x: camp.x, y: camp.y }],
+      [`${man!.name} развёл первый костёр`, { x: camp.x, y: camp.y }],
     ]);
   });
 
-  it('голод, обморок и смерть — с причиной и местом; пол берётся из прихода', () => {
+  it('голод, обморок и смерть — с причиной и местом; пол и имя берутся из прихода', () => {
     const world = createWorld(1);
     const feed = createFeed();
     feed.update(world);
@@ -76,6 +81,7 @@ describe('лента событий', () => {
       {
         type: 'villager_died',
         villager: woman!.id,
+        name: woman!.name,
         sex: 'female',
         x: 10,
         y: 12,
@@ -87,10 +93,11 @@ describe('лента событий', () => {
       { kind: 'event', event: ran.id },
     );
     expect(feed.update(world)).toBe(true);
+    // By name (step 2.1): the feed knows them from their arrival.
     expect(feed.entries.slice(0, 3)).toMatchObject([
-      { text: 'Умерла женщина — голод', place: { x: 10, y: 12 }, type: 'villager_died' },
-      { text: 'Мужчина упал без сил — не спал', place: { x: 3, y: 4 } },
-      { text: 'Женщина голодает', place: null, villager: woman!.id },
+      { text: `Умерла ${woman!.name} — голод`, place: { x: 10, y: 12 }, type: 'villager_died' },
+      { text: `${man!.name} упал без сил — не спал`, place: { x: 3, y: 4 } },
+      { text: `${woman!.name} голодает`, place: null, villager: woman!.id },
     ]);
   });
 
